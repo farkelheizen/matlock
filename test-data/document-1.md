@@ -12,7 +12,7 @@ parent: "[[Personal Development, Super-Project]]"
 ---
 # This is the top-level header
 
-- [ ] Check repos
+- [ ] Check repos 📅 2026-04-10 { project: Project 2 }
   - [ ] Check repo 1
   - [ ] Check repo 2
     - [ ] Commit repo 2
@@ -22,4 +22,3 @@ parent: "[[Personal Development, Super-Project]]"
 
 - [ ] Find classes to update
   - [ ] Exclude classes that have no fields
-

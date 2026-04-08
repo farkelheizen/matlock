@@ -103,3 +103,12 @@ scripts/
 test-data/
     document-1.md
 ```
+
+## Generating Parsed Documents
+
+```shell
+poetry run python scripts/parse_with_markdownit.py test-data/document-1.md > test-data/parsed/markdownit-document-1.txt
+poetry run python scripts/parse_with_marko.py test-data/document-1.md > test-data/parsed/marko-document-1.txt
+poetry run python scripts/parse_with_markdownit.py test-data/document-2.md > test-data/parsed/markdownit-document-2.txt
+poetry run python scripts/parse_with_marko.py test-data/document-2.md > test-data/parsed/marko-document-2.txt
+```
