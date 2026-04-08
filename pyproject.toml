@@ -1,0 +1,17 @@
+[project]
+name = "markdown-stuff"
+version = "0.1.0"
+description = "Utilities for parsing Markdown into token and AST structures"
+authors = [
+    {name = "farkelheizen",email = "billspratley@gmail.com"}
+]
+requires-python = ">=3.11,<4.0"
+dependencies = [
+    "markdown-it-py (>=4.0.0,<5.0.0)",
+    "marko (>=2.2.2,<3.0.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
