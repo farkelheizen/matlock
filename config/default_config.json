@@ -1,0 +1,13 @@
+{
+  "task_text_maxlen": 200,
+  "header_text_maxlen": 50,
+  "aliases": {
+    "🆔": {"attribute": "id", "type": "string"},
+    "📅": {"attribute": "due_date", "type": "date"},
+    "⏳": {"attribute": "scheduled_date", "type": "date"},
+    "🏁": {"attribute": "on_completion", "type": "domain", "allowed": ["keep", "delete"]},
+    "⏫": {"attribute": "priority", "type": "literal", "value": "High"},
+    "🔼": {"attribute": "priority", "type": "literal", "value": "Medium"},
+    "🔽": {"attribute": "priority", "type": "literal", "value": "Low"}
+  }
+}
