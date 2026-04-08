@@ -4,7 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
-from markdown_stuff import parse_tokens
+from markdown_stuff import parse_tokens, parse_front_matter
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -29,9 +29,17 @@ def main() -> int:
         return 1
 
     markdown_text = markdown_path.read_text(encoding="utf-8")
-    tokens = parse_tokens(markdown_text)
+
+    metadata, body = parse_front_matter(markdown_text)
+
+    tokens = parse_tokens(body)
     token_tree = [token.as_dict() for token in tokens]
 
+    print(f"File: {markdown_path}")
+    print("Metadata:")
+    print(json.dumps(metadata, indent=2, default=str))
+
+    print("Token Tree:")
     print(json.dumps(token_tree, indent=2))
     return 0
 

@@ -4,7 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
-from markdown_stuff import parse_ast
+from markdown_stuff import parse_ast, parse_front_matter
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -29,8 +29,16 @@ def main() -> int:
         return 1
 
     markdown_text = markdown_path.read_text(encoding="utf-8")
-    ast = parse_ast(markdown_text)
 
+    metadata, body = parse_front_matter(markdown_text)
+    
+    ast = parse_ast(body)
+
+    print(f"File: {markdown_path}")
+    print("Metadata:")
+    print(json.dumps(metadata, indent=2, default=str))
+
+    print("AST:")
     print(json.dumps(ast, indent=2))
     return 0
 
