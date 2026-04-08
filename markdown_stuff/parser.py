@@ -6,11 +6,12 @@ from markdown_it import MarkdownIt
 from markdown_it.token import Token
 from marko import Markdown
 from marko.ast_renderer import ASTRenderer
+from marko.ext.gfm import GFM
 import frontmatter
 
 
 _TOKEN_PARSER = MarkdownIt()
-_AST_PARSER = Markdown(renderer=ASTRenderer)
+_AST_PARSER = Markdown(renderer=ASTRenderer, extensions=[GFM])
 
 
 def parse_tokens(markdown_text: str) -> list[Token]:

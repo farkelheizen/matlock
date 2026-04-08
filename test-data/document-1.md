@@ -15,10 +15,11 @@ parent: "[[Personal Development, Super-Project]]"
 - [ ] Check repos 📅 2026-04-10 { project: Project 2 }
   - [ ] Check repo 1
   - [ ] Check repo 2
-    - [ ] Commit repo 2
+    - [x] Commit repo 2
     - [ ] Issue PR for repo 2
 
 ## Backlog
 
 - [ ] Find classes to update
   - [ ] Exclude classes that have no fields
+        Is this still cool?
