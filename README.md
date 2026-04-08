@@ -41,6 +41,18 @@ poetry run python scripts/parse_with_marko.py test-data/document-1.md
 
 Each script prints the complete parser output to the CLI in formatted JSON.
 
+Print front-matter metadata and body:
+
+```bash
+poetry run python scripts/parse_with_frontmatter.py
+```
+
+Or for a specific file:
+
+```bash
+poetry run python scripts/parse_with_frontmatter.py test-data/document-1.md
+```
+
 ## Usage
 
 Parse a Markdown string into tokens:

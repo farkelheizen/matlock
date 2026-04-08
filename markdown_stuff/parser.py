@@ -6,6 +6,7 @@ from markdown_it import MarkdownIt
 from markdown_it.token import Token
 from marko import Markdown
 from marko.ast_renderer import ASTRenderer
+import frontmatter
 
 
 _TOKEN_PARSER = MarkdownIt()
@@ -18,3 +19,12 @@ def parse_tokens(markdown_text: str) -> list[Token]:
 
 def parse_ast(markdown_text: str) -> dict[str, Any]:
     return _AST_PARSER.convert(markdown_text)
+
+
+def parse_front_matter(markdown_text: str) -> tuple[dict[str, Any], str]:
+    """Parse YAML/TOML front-matter and return (metadata, content).
+
+    Returns the parsed front-matter mapping and the remaining Markdown body.
+    """
+    post = frontmatter.loads(markdown_text)
+    return dict(post.metadata), post.content
