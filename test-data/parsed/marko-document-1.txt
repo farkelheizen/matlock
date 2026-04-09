@@ -45,7 +45,7 @@ AST:
               "children": [
                 {
                   "element": "raw_text",
-                  "children": " Check repos \ud83d\udcc5 2026-04-10 { project: Project 2 }",
+                  "children": " Check repos \ud83d\udcc5 2026-04-1j { project: Project 2 }",
                   "escape": true
                 }
               ],
@@ -133,6 +133,23 @@ AST:
                     }
                   ],
                   "element": "list_item"
+                },
+                {
+                  "children": [
+                    {
+                      "inline_body": "",
+                      "checked": false,
+                      "children": [
+                        {
+                          "element": "raw_text",
+                          "children": " Check repo 1",
+                          "escape": true
+                        }
+                      ],
+                      "element": "paragraph"
+                    }
+                  ],
+                  "element": "list_item"
                 }
               ],
               "element": "list"
@@ -205,7 +222,7 @@ AST:
                         },
                         {
                           "element": "raw_text",
-                          "children": "Is this still cool?",
+                          "children": "Is this still cool?  \ud83d\udcc5 2026-04-12",
                           "escape": true
                         }
                       ],
