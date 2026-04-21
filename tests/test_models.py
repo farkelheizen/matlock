@@ -71,10 +71,11 @@ def test_parsed_task_with_twin_index():
 
 def test_parsed_document():
     task = ParsedTask(**make_task())
-    doc = ParsedDocument(meta_data={"status": "Active"}, tasks=[task])
+    doc = ParsedDocument(meta_data={"status": "Active"}, tasks=[task], word_count=3)
     assert doc.meta_data == {"status": "Active"}
     assert len(doc.tasks) == 1
     assert doc.tasks[0].task_text == "Do the thing"
+    assert doc.word_count == 3
 
 
 def test_parsed_document_empty_tasks():

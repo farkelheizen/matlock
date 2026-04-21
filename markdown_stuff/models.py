@@ -24,4 +24,5 @@ class ParsedDocument(BaseModel):
     created: int | None = None
     modified: int | None = None
     length: int | None = None
+    word_count: int | None = None
     sha256: str | None = None

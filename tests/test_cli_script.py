@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -62,6 +63,7 @@ def test_cli_output_has_expected_keys():
     assert "created" in data
     assert "modified" in data
     assert "length" in data
+    assert "word_count" in data
     assert "sha256" in data
 
 
@@ -82,11 +84,13 @@ def test_cli_output_includes_file_metadata():
     data = json.loads(result.stdout)
     stat_result = markdown_path.stat()
     created_timestamp = getattr(stat_result, "st_birthtime", stat_result.st_ctime)
+    markdown_text = markdown_path.read_text(encoding="utf-8")
 
     assert data["file_path"] == "test-data/document-1.md"
     assert data["created"] == int(created_timestamp * 1000)
     assert data["modified"] == int(stat_result.st_mtime * 1000)
     assert data["length"] == stat_result.st_size
+    assert data["word_count"] == len(re.findall(r"\S+", markdown_text))
     assert data["sha256"] == hashlib.sha256(markdown_path.read_bytes()).hexdigest()
 
 
