@@ -12,12 +12,11 @@ parent: "[[Personal Development, Super-Project]]"
 ---
 # This is the top-level header
 
-- [ ] Check repos 📅 2026-04-1j { project: Project 2 }
+- [ ] Check repos 📅 2026-04-10 { project: Project 2 }
   - [ ] Check repo 1
   - [ ] Check repo 2
     - [x] Commit repo 2
     - [ ] Issue PR for repo 2
-  - [ ] Check repo 1
 
 ## Backlog
 

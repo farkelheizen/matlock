@@ -128,10 +128,12 @@ def compute_task_id(
     headers: list[str],
     parent_task_id: str | None,
     twin_index: int,
+    file_path: str | None = None,
 ) -> str:
     """Compute a deterministic SHA-256 task ID from the given fields."""
     payload = json.dumps(
         {
+            "file_path": file_path,
             "task_text": task_text,
             "overflow": overflow,
             "headers": headers,
@@ -208,13 +210,22 @@ def walk_ast(
     config: dict,
     tasks: list,
     twin_tracker: dict,
+    file_path: str | None = None,
 ) -> None:
     """Recursively walk the marko AST and accumulate ParsedTask objects."""
     node_type = type(node).__name__
 
     if node_type == "Document":
         for child in node.children:
-            walk_ast(child, header_state, parent_task_id, config, tasks, twin_tracker)
+            walk_ast(
+                child,
+                header_state,
+                parent_task_id,
+                config,
+                tasks,
+                twin_tracker,
+                file_path,
+            )
 
     elif node_type == "Heading":
         level = node.level
@@ -227,13 +238,27 @@ def walk_ast(
     elif node_type == "List":
         for item in node.children:
             _process_list_item(
-                item, header_state, parent_task_id, config, tasks, twin_tracker
+                item,
+                header_state,
+                parent_task_id,
+                config,
+                tasks,
+                twin_tracker,
+                file_path,
             )
 
     elif hasattr(node, "children") and isinstance(node.children, list):
         # Other block-level nodes (Quote, etc.) — recurse
         for child in node.children:
-            walk_ast(child, header_state, parent_task_id, config, tasks, twin_tracker)
+            walk_ast(
+                child,
+                header_state,
+                parent_task_id,
+                config,
+                tasks,
+                twin_tracker,
+                file_path,
+            )
 
 
 def _process_list_item(
@@ -243,6 +268,7 @@ def _process_list_item(
     config: dict,
     tasks: list,
     twin_tracker: dict,
+    file_path: str | None = None,
 ) -> None:
     """Process a single ListItem node."""
     # Find the first Paragraph child to check 'checked'
@@ -261,7 +287,13 @@ def _process_list_item(
         # Not a task item — still recurse into sub-lists at same parent level
         for sub_list in sub_lists:
             walk_ast(
-                sub_list, header_state, parent_task_id, config, tasks, twin_tracker
+                sub_list,
+                header_state,
+                parent_task_id,
+                config,
+                tasks,
+                twin_tracker,
+                file_path,
             )
         return
 
@@ -289,7 +321,14 @@ def _process_list_item(
     twin_tracker[twin_key] = twin_index + 1
 
     # Compute task_id
-    task_id = compute_task_id(task_text, overflowed, headers, parent_task_id, twin_index)
+    task_id = compute_task_id(
+        task_text,
+        overflowed,
+        headers,
+        parent_task_id,
+        twin_index,
+        file_path,
+    )
 
     task = ParsedTask(
         checked=bool(checked),
@@ -306,10 +345,12 @@ def _process_list_item(
 
     # Recurse into sub-lists
     for sub_list in sub_lists:
-        walk_ast(sub_list, header_state, task_id, config, tasks, twin_tracker)
+        walk_ast(sub_list, header_state, task_id, config, tasks, twin_tracker, file_path)
 
 
-def extract_tasks_from_markdown(md_string: str, config_dict: dict) -> ParsedDocument:
+def extract_tasks_from_markdown(
+    md_string: str, config_dict: dict, file_path: str | None = None
+) -> ParsedDocument:
     """Parse a Markdown string and extract tasks, returning a ParsedDocument."""
     meta_data, body = parse_front_matter(md_string)
 
@@ -320,6 +361,6 @@ def extract_tasks_from_markdown(md_string: str, config_dict: dict) -> ParsedDocu
     tasks: list[ParsedTask] = []
     twin_tracker: dict = {}
 
-    walk_ast(root, header_state, None, config_dict, tasks, twin_tracker)
+    walk_ast(root, header_state, None, config_dict, tasks, twin_tracker, file_path)
 
-    return ParsedDocument(meta_data=meta_data, tasks=tasks)
+    return ParsedDocument(meta_data=meta_data, tasks=tasks, file_path=file_path)

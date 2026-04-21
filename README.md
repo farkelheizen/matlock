@@ -99,13 +99,13 @@ nesting, section headers, inline emoji aliases, and curly-brace attributes.
 ### CLI
 
 ```bash
-poetry run python scripts/extract_tasks.py test-data/document-1.md
+poetry run python scripts/extract_tasks.py --base-path . test-data/document-1.md
 ```
 
 Use a custom config file:
 
 ```bash
-poetry run python scripts/extract_tasks.py my-notes.md --config config/default_config.json
+poetry run python scripts/extract_tasks.py --base-path . test-data/document-1.md --config config/default_config.json
 ```
 
 Output is printed to stdout as formatted JSON.
@@ -120,7 +120,7 @@ from markdown_stuff import extract_tasks_from_markdown
 config = json.loads(Path("config/default_config.json").read_text(encoding="utf-8"))
 md = Path("test-data/document-1.md").read_text(encoding="utf-8")
 
-doc = extract_tasks_from_markdown(md, config)
+doc = extract_tasks_from_markdown(md, config, file_path="test-data/document-1.md")
 
 print(doc.meta_data)       # front-matter fields (if any)
 for task in doc.tasks:
@@ -133,7 +133,7 @@ Each task is a `ParsedTask` with these fields:
 
 | Field | Type | Description |
 |---|---|---|
-| `task_id` | `str` | SHA-256 derived from text, headers, and position |
+| `task_id` | `str` | SHA-256 derived from file path, text, headers, and position |
 | `checked` | `bool` | Whether the checkbox is checked |
 | `task_text` | `str` | Cleaned task text (aliases and curly-brace blocks removed) |
 | `overflow` | `bool` | `True` if `task_text` was truncated |

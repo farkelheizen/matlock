@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
 
@@ -12,10 +13,15 @@ def build_parser() -> argparse.ArgumentParser:
         description="Extract tasks from a Markdown file and print as JSON."
     )
     parser.add_argument(
-        "markdown_file",
+        "file_path",
         nargs="?",
         default="test-data/document-1.md",
-        help="Path to the Markdown file to process.",
+        help="Path to the Markdown file to process, relative to --base-path.",
+    )
+    parser.add_argument(
+        "--base-path",
+        default=".",
+        help="Base directory used to resolve file_path.",
     )
     parser.add_argument(
         "--config",
@@ -25,10 +31,22 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def build_file_metadata(markdown_path: Path) -> dict[str, int | str]:
+    stat_result = markdown_path.stat()
+    created_timestamp = getattr(stat_result, "st_birthtime", stat_result.st_ctime)
+    return {
+        "created": int(created_timestamp * 1000),
+        "modified": int(stat_result.st_mtime * 1000),
+        "length": stat_result.st_size,
+        "sha256": hashlib.sha256(markdown_path.read_bytes()).hexdigest(),
+    }
+
+
 def main() -> int:
     args = build_parser().parse_args()
 
-    markdown_path = Path(args.markdown_file)
+    base_path = Path(args.base_path)
+    markdown_path = base_path / args.file_path
     config_path = Path(args.config)
 
     if not markdown_path.exists():
@@ -42,7 +60,8 @@ def main() -> int:
         config_dict = json.load(f)
 
     md_string = markdown_path.read_text(encoding="utf-8")
-    doc = extract_tasks_from_markdown(md_string, config_dict)
+    doc = extract_tasks_from_markdown(md_string, config_dict, file_path=args.file_path)
+    doc = doc.model_copy(update=build_file_metadata(markdown_path.resolve()))
 
     print(json.dumps(doc.model_dump(), indent=2, default=str))
     return 0

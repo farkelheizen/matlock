@@ -89,7 +89,7 @@ Token Tree:
     "attrs": null,
     "map": [
       2,
-      9
+      8
     ],
     "level": 0,
     "children": null,
@@ -107,7 +107,7 @@ Token Tree:
     "attrs": null,
     "map": [
       2,
-      9
+      8
     ],
     "level": 1,
     "children": null,
@@ -155,7 +155,7 @@ Token Tree:
         "map": null,
         "level": 0,
         "children": null,
-        "content": "[ ] Check repos \ud83d\udcc5 2026-04-1j { project: Project 2 }",
+        "content": "[ ] Check repos \ud83d\udcc5 2026-04-10 { project: Project 2 }",
         "markup": "",
         "info": "",
         "meta": {},
@@ -163,7 +163,7 @@ Token Tree:
         "hidden": false
       }
     ],
-    "content": "[ ] Check repos \ud83d\udcc5 2026-04-1j { project: Project 2 }",
+    "content": "[ ] Check repos \ud83d\udcc5 2026-04-10 { project: Project 2 }",
     "markup": "",
     "info": "",
     "meta": {},
@@ -192,7 +192,7 @@ Token Tree:
     "attrs": null,
     "map": [
       3,
-      9
+      8
     ],
     "level": 2,
     "children": null,
@@ -310,7 +310,7 @@ Token Tree:
     "attrs": null,
     "map": [
       4,
-      7
+      8
     ],
     "level": 3,
     "children": null,
@@ -395,7 +395,7 @@ Token Tree:
     "attrs": null,
     "map": [
       5,
-      7
+      8
     ],
     "level": 4,
     "children": null,
@@ -513,7 +513,7 @@ Token Tree:
     "attrs": null,
     "map": [
       6,
-      7
+      8
     ],
     "level": 5,
     "children": null,
@@ -637,106 +637,6 @@ Token Tree:
     "hidden": false
   },
   {
-    "type": "list_item_open",
-    "tag": "li",
-    "nesting": 1,
-    "attrs": null,
-    "map": [
-      7,
-      9
-    ],
-    "level": 3,
-    "children": null,
-    "content": "",
-    "markup": "-",
-    "info": "",
-    "meta": {},
-    "block": true,
-    "hidden": false
-  },
-  {
-    "type": "paragraph_open",
-    "tag": "p",
-    "nesting": 1,
-    "attrs": null,
-    "map": [
-      7,
-      8
-    ],
-    "level": 4,
-    "children": null,
-    "content": "",
-    "markup": "",
-    "info": "",
-    "meta": {},
-    "block": true,
-    "hidden": true
-  },
-  {
-    "type": "inline",
-    "tag": "",
-    "nesting": 0,
-    "attrs": null,
-    "map": [
-      7,
-      8
-    ],
-    "level": 5,
-    "children": [
-      {
-        "type": "text",
-        "tag": "",
-        "nesting": 0,
-        "attrs": null,
-        "map": null,
-        "level": 0,
-        "children": null,
-        "content": "[ ] Check repo 1",
-        "markup": "",
-        "info": "",
-        "meta": {},
-        "block": false,
-        "hidden": false
-      }
-    ],
-    "content": "[ ] Check repo 1",
-    "markup": "",
-    "info": "",
-    "meta": {},
-    "block": true,
-    "hidden": false
-  },
-  {
-    "type": "paragraph_close",
-    "tag": "p",
-    "nesting": -1,
-    "attrs": null,
-    "map": null,
-    "level": 4,
-    "children": null,
-    "content": "",
-    "markup": "",
-    "info": "",
-    "meta": {},
-    "block": true,
-    "hidden": true
-  },
-  {
-    "type": "list_item_close",
-    "tag": "li",
-    "nesting": -1,
-    "attrs": null,
-    "map": null,
-    "level": 3,
-    "children": null,
-    "content": "",
-    "markup": "-",
-    "info": "",
-    "meta": {},
-    "block": true,
-    "hidden": false
-  },
-  {
     "type": "bullet_list_close",
     "tag": "ul",
     "nesting": -1,
@@ -787,8 +687,8 @@ Token Tree:
     "nesting": 1,
     "attrs": null,
     "map": [
-      9,
-      10
+      8,
+      9
     ],
     "level": 0,
     "children": null,
@@ -805,8 +705,8 @@ Token Tree:
     "nesting": 0,
     "attrs": null,
     "map": [
-      9,
-      10
+      8,
+      9
     ],
     "level": 1,
     "children": [
@@ -854,8 +754,8 @@ Token Tree:
     "nesting": 1,
     "attrs": null,
     "map": [
-      11,
-      14
+      10,
+      13
     ],
     "level": 0,
     "children": null,
@@ -872,8 +772,8 @@ Token Tree:
     "nesting": 1,
     "attrs": null,
     "map": [
-      11,
-      14
+      10,
+      13
     ],
     "level": 1,
     "children": null,
@@ -890,8 +790,8 @@ Token Tree:
     "nesting": 1,
     "attrs": null,
     "map": [
-      11,
-      12
+      10,
+      11
     ],
     "level": 2,
     "children": null,
@@ -908,8 +808,8 @@ Token Tree:
     "nesting": 0,
     "attrs": null,
     "map": [
-      11,
-      12
+      10,
+      11
     ],
     "level": 3,
     "children": [
@@ -957,8 +857,8 @@ Token Tree:
     "nesting": 1,
     "attrs": null,
     "map": [
-      12,
-      14
+      11,
+      13
     ],
     "level": 2,
     "children": null,
@@ -975,8 +875,8 @@ Token Tree:
     "nesting": 1,
     "attrs": null,
     "map": [
-      12,
-      14
+      11,
+      13
     ],
     "level": 3,
     "children": null,
@@ -993,8 +893,8 @@ Token Tree:
     "nesting": 1,
     "attrs": null,
     "map": [
-      12,
-      14
+      11,
+      13
     ],
     "level": 4,
     "children": null,
@@ -1011,8 +911,8 @@ Token Tree:
     "nesting": 0,
     "attrs": null,
     "map": [
-      12,
-      14
+      11,
+      13
     ],
     "level": 5,
     "children": [

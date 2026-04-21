@@ -20,3 +20,8 @@ class ParsedTask(BaseModel):
 class ParsedDocument(BaseModel):
     meta_data: dict[str, Any]
     tasks: list[ParsedTask]
+    file_path: str | None = None
+    created: int | None = None
+    modified: int | None = None
+    length: int | None = None
+    sha256: str | None = None

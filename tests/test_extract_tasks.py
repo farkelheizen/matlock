@@ -97,3 +97,11 @@ def test_no_frontmatter(config):
     doc = extract_tasks_from_markdown(md, config)
     assert len(doc.tasks) == 1
     assert doc.meta_data == {}
+
+
+def test_same_content_different_file_path_changes_task_id(config):
+    md = "- [ ] A task\n"
+    doc1 = extract_tasks_from_markdown(md, config, file_path="docs/one.md")
+    doc2 = extract_tasks_from_markdown(md, config, file_path="docs/two.md")
+
+    assert doc1.tasks[0].task_id != doc2.tasks[0].task_id

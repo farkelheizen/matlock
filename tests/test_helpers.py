@@ -40,6 +40,12 @@ def test_compute_task_id_differs_on_headers():
     assert tid1 != tid2
 
 
+def test_compute_task_id_differs_on_file_path():
+    tid1 = compute_task_id("Task", False, [], None, 0, "one.md")
+    tid2 = compute_task_id("Task", False, [], None, 0, "two.md")
+    assert tid1 != tid2
+
+
 def test_truncate_text_within_limit():
     result, truncated = truncate_text("hello", 10)
     assert result == "hello"

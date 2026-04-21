@@ -318,7 +318,7 @@ Use the actual test-data Markdown files and the default config.
    - Load `test-data/document-1.md` and `config/default_config.json`.
    - Call `extract_tasks_from_markdown`.
    - Assert `meta_data["status"]` == `"In Progress"`.
-   - Assert the correct number of tasks are extracted (8 tasks: "Check repos", "Check repo 1", "Check repo 2", "Commit repo 2", "Issue PR for repo 2", "Find classes to update", "Exclude classes that have no fields" — note: count carefully based on document structure).
+   - Assert the correct number of tasks are extracted (7 tasks: "Check repos", "Check repo 1", "Check repo 2", "Commit repo 2", "Issue PR for repo 2", "Find classes to update", "Exclude classes that have no fields").
    - Assert `"Check repos"` task has `attributes` containing `due_date` and `project`.
    - Assert `"Commit repo 2"` has `checked=True`.
    - Assert `"Check repo 1"` has `parent_task_id` equal to `"Check repos"` task's `task_id`.
