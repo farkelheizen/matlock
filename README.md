@@ -75,21 +75,30 @@ Each task is a `ParsedTask` with these fields:
 
 ### Config
 
-The config file (`config/default_config.json`) controls text length limits and
-which emoji aliases map to which attributes:
+The config file (`config/default_config.json`) separates header settings from
+task settings and defines known task attributes:
 
 ```json
 {
-  "task_text_maxlen": 200,
-  "header_text_maxlen": 50,
-  "aliases": {
-    "📅": {"attribute": "due_date", "type": "date"},
-    "⏳": {"attribute": "scheduled_date", "type": "date"},
-    "🆔": {"attribute": "id", "type": "string"},
-    "🏁": {"attribute": "on_completion", "type": "domain", "allowed": ["keep", "delete"]},
-    "⏫": {"attribute": "priority", "type": "literal", "value": "High"},
-    "🔼": {"attribute": "priority", "type": "literal", "value": "Medium"},
-    "🔽": {"attribute": "priority", "type": "literal", "value": "Low"}
+  "headers": {
+    "header_text_maxlen": 200
+  },
+  "tasks": {
+    "task_text_maxlen": 200,
+    "attributes": {
+      "due_date": { "type": "date", "alias": "📅" },
+      "complete_date": { "type": "date", "alias": "✅" },
+      "priority": {
+        "type": "domain",
+        "values": {
+          "low": { "alias": "🔽" },
+          "medium": { "alias": "🔼" },
+          "high": { "alias": "⏫" }
+        }
+      },
+      "estimate": { "type": "time" },
+      "actual": { "type": "time" }
+    }
   }
 }
 ```
@@ -97,8 +106,12 @@ which emoji aliases map to which attributes:
 Curly-brace pairs on the same line are also extracted as free-form attributes:
 
 ```markdown
-- [ ] Review PR { project: Alpha } { reviewer: alice }
+- [ ] Review PR { project: Alpha } { reviewer: alice } { estimate: 2h }
 ```
+
+Known attributes are parsed according to their configured type. `time`
+attributes use `pytimeparse.parse`, so values like `{ estimate: 2h }` and
+`{ actual: 50m }` are converted to seconds.
 
 ## Project Layout
 

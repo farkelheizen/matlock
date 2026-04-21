@@ -19,33 +19,39 @@ def test_config_loads():
 
 def test_config_maxlens_are_integers():
     config = load_config()
-    assert isinstance(config["task_text_maxlen"], int)
-    assert isinstance(config["header_text_maxlen"], int)
+    assert isinstance(config["tasks"]["task_text_maxlen"], int)
+    assert isinstance(config["headers"]["header_text_maxlen"], int)
 
 
 def test_config_aliases_contains_date_key():
     config = load_config()
-    assert isinstance(config["aliases"], dict)
-    assert "📅" in config["aliases"]
+    attributes = config["tasks"]["attributes"]
+    assert isinstance(attributes, dict)
+    assert attributes["due_date"]["alias"] == "📅"
 
 
-def test_config_all_aliases_have_attribute_and_type():
+def test_config_all_attributes_have_type():
     config = load_config()
-    for alias, entry in config["aliases"].items():
-        assert "attribute" in entry, f"Missing 'attribute' for alias {alias!r}"
-        assert "type" in entry, f"Missing 'type' for alias {alias!r}"
+    for attr_name, entry in config["tasks"]["attributes"].items():
+        assert "type" in entry, f"Missing 'type' for attribute {attr_name!r}"
 
 
-def test_config_literal_aliases_have_value():
+def test_config_date_attributes_can_define_alias():
     config = load_config()
-    for alias, entry in config["aliases"].items():
-        if entry["type"] == "literal":
-            assert "value" in entry, f"Literal alias {alias!r} missing 'value'"
+    assert config["tasks"]["attributes"]["complete_date"]["alias"] == "✅"
 
 
-def test_config_domain_aliases_have_allowed_list():
+def test_config_domain_attributes_have_values_map():
     config = load_config()
-    for alias, entry in config["aliases"].items():
-        if entry["type"] == "domain":
-            assert "allowed" in entry, f"Domain alias {alias!r} missing 'allowed'"
-            assert isinstance(entry["allowed"], list)
+    values = config["tasks"]["attributes"]["priority"]["values"]
+    assert isinstance(values, dict)
+    assert values["low"]["alias"] == "🔽"
+    assert values["medium"]["alias"] == "🔼"
+    assert values["high"]["alias"] == "⏫"
+
+
+def test_config_time_attributes_exist():
+    config = load_config()
+    attributes = config["tasks"]["attributes"]
+    assert attributes["estimate"]["type"] == "time"
+    assert attributes["actual"]["type"] == "time"

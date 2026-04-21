@@ -24,13 +24,14 @@ Runtime dependencies (from pyproject.toml)
 
 - Python: `>=3.11,<4.0`
 - `marko` (GFM AST parsing): `>=2.2.2,<3.0.0`
+- `pytimeparse` (time attribute parsing): `>=1.1.8,<2.0.0`
 - `python-frontmatter` (front-matter parsing): `>=1.1.0,<2.0.0`
 - `pydantic` (models): `>=2.0.0,<3.0.0`
 
 Install via pip (example):
 
 ```bash
-python -m pip install "marko>=2.2.2,<3.0.0" "python-frontmatter>=1.1.0,<2.0.0" "pydantic>=2.0.0,<3.0.0"
+python -m pip install "marko>=2.2.2,<3.0.0" "pytimeparse>=1.1.8,<2.0.0" "python-frontmatter>=1.1.0,<2.0.0" "pydantic>=2.0.0,<3.0.0"
 ```
 
 Or add the above entries to your `pyproject.toml` / dependency manager of choice.
@@ -66,14 +67,23 @@ Integration steps (minimal)
 2. Copy `config/default_config.json` or create your own config `dict`
    following the same shape. Minimal required keys used by the extractor:
 
-   - `task_text_maxlen`: int
-   - `header_text_maxlen`: int
-   - `aliases`: mapping of emoji string -> alias descriptor
+   - `headers.header_text_maxlen`: int
+   - `tasks.task_text_maxlen`: int
+   - `tasks.attributes`: mapping of attribute name -> type definition
 
-   Example alias descriptor:
+   Example attribute definitions:
 
    ```json
-   "📅": {"attribute": "due_date", "type": "date"}
+   {
+     "due_date": {"type": "date", "alias": "📅"},
+     "priority": {
+       "type": "domain",
+       "values": {
+         "high": {"alias": "⏫"}
+       }
+     },
+     "estimate": {"type": "time"}
+   }
    ```
 
 3. Install the runtime dependencies listed above.
@@ -99,6 +109,9 @@ CLI behavior, pass the relative path used to locate the file:
 ```py
 parsed_doc = extract_tasks_from_markdown(md, config, file_path="notes.md")
 ```
+
+Known curly-brace attributes are parsed according to the config. `time`
+attributes use `pytimeparse.parse`, so `{ estimate: 2h }` becomes `7200`.
 
 Minimal alternative `parse_front_matter`
 

@@ -5,9 +5,81 @@ import json
 import re
 from typing import Any
 
+from pytimeparse import parse as parse_duration
+
+
+DATE_PATTERN = re.compile(r"\d{4}-\d{2}-\d{2}")
+ATTRIBUTE_PATTERN = re.compile(r"\{\s*([^:}]+?)\s*:\s*([^}]*?)\s*\}")
+
+
+def build_aliases(attribute_defs: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    aliases: dict[str, dict[str, Any]] = {}
+
+    for attr_name, attr_cfg in attribute_defs.items():
+        alias = attr_cfg.get("alias")
+        if alias:
+            aliases[alias] = {"attribute": attr_name, "type": attr_cfg["type"]}
+
+        if attr_cfg.get("type") == "domain":
+            for value_name, value_cfg in attr_cfg.get("values", {}).items():
+                value_alias = value_cfg.get("alias")
+                if value_alias:
+                    aliases[value_alias] = {
+                        "attribute": attr_name,
+                        "type": "literal",
+                        "value": value_name,
+                    }
+
+    return aliases
+
+
+def parse_attribute_value(
+    attr_name: str,
+    value_text: str | None,
+    attribute_defs: dict[str, dict[str, Any]],
+    errors: list[str],
+) -> Any:
+    attr_cfg = attribute_defs.get(attr_name)
+    if attr_cfg is None:
+        return value_text
+
+    parsed_value: Any = value_text if value_text else None
+    attr_type = attr_cfg["type"]
+
+    if attr_type == "date":
+        if parsed_value is not None and not DATE_PATTERN.fullmatch(parsed_value):
+            errors.append(
+                f"Invalid date value {parsed_value!r} for attribute"
+                f" {attr_name!r}; expected YYYY-MM-DD"
+            )
+            return None
+        return parsed_value
+
+    if attr_type == "time":
+        if parsed_value is None:
+            return None
+        duration = parse_duration(parsed_value)
+        if duration is None:
+            errors.append(
+                f"Invalid time value {parsed_value!r} for attribute {attr_name!r}"
+            )
+            return None
+        return duration
+
+    if attr_type == "domain":
+        allowed = list(attr_cfg.get("values", {}).keys())
+        if parsed_value is not None and parsed_value not in allowed:
+            errors.append(
+                f"Invalid value {parsed_value!r} for domain attribute"
+                f" {attr_name!r}; allowed: {allowed}"
+            )
+            return None
+
+    return parsed_value
+
 
 def extract_attributes(
-    raw_text: str, aliases: dict
+    raw_text: str, attribute_defs: dict[str, dict[str, Any]]
 ) -> tuple[str, dict[str, Any], list[str]]:
     """Extract alias-based and curly-brace attributes from raw task text.
 
@@ -16,9 +88,7 @@ def extract_attributes(
     attributes: dict[str, Any] = {}
     errors: list[str] = []
 
-    # --- Step 1: find all alias positions (left-to-right) ---
-    # Build a set of all alias strings so we can detect "next alias" boundaries.
-    all_alias_strings = list(aliases.keys())
+    aliases = build_aliases(attribute_defs)
 
     found: list[tuple[int, str, dict]] = []
     for alias_key, alias_cfg in aliases.items():
@@ -69,26 +139,9 @@ def extract_attributes(
 
         else:
             # string / date / domain
-            parsed_value: Any = value_text if value_text else None
-
-            if alias_type == "date":
-                if parsed_value is not None and not re.fullmatch(
-                    r"\d{4}-\d{2}-\d{2}", parsed_value
-                ):
-                    errors.append(
-                        f"Invalid date value {parsed_value!r} for attribute"
-                        f" {attr_name!r}; expected YYYY-MM-DD"
-                    )
-                    parsed_value = None
-
-            elif alias_type == "domain":
-                allowed = alias_cfg.get("allowed", [])
-                if parsed_value is not None and parsed_value not in allowed:
-                    errors.append(
-                        f"Invalid value {parsed_value!r} for domain attribute"
-                        f" {attr_name!r}; allowed: {allowed}"
-                    )
-                    parsed_value = None
+            parsed_value = parse_attribute_value(
+                attr_name, value_text, attribute_defs, errors
+            )
 
             if attr_name in attributes:
                 errors.append(f"Duplicate attribute {attr_name!r} encountered")
@@ -104,16 +157,15 @@ def extract_attributes(
         cleaned = cleaned[:start] + cleaned[end:]
 
     # --- Step 3: curly-brace attributes ---
-    curly_pattern = re.compile(r"\{\s*([^:}]+?)\s*:\s*([^}]*?)\s*\}")
     new_cleaned = ""
     last = 0
-    for m in curly_pattern.finditer(cleaned):
+    for m in ATTRIBUTE_PATTERN.finditer(cleaned):
         key = m.group(1).strip()
         val = m.group(2).strip()
         if key in attributes:
             errors.append(f"Duplicate attribute {key!r} encountered")
         else:
-            attributes[key] = val
+            attributes[key] = parse_attribute_value(key, val, attribute_defs, errors)
         new_cleaned += cleaned[last : m.start()]
         last = m.end()
     new_cleaned += cleaned[last:]
@@ -306,14 +358,18 @@ def _process_list_item(
     raw_text = raw_text.strip()
 
     # Extract attributes
-    task_text, attributes, errors = extract_attributes(raw_text, config["aliases"])
+    task_config = config["tasks"]
+    header_config = config["headers"]
+    task_text, attributes, errors = extract_attributes(
+        raw_text, task_config["attributes"]
+    )
 
     # Compact headers
     headers: list[str] = [h for h in header_state if h]
 
     # Truncate
-    task_text, overflowed = truncate_text(task_text, config["task_text_maxlen"])
-    headers = truncate_headers(headers, config["header_text_maxlen"])
+    task_text, overflowed = truncate_text(task_text, task_config["task_text_maxlen"])
+    headers = truncate_headers(headers, header_config["header_text_maxlen"])
 
     # Twin index
     twin_key = (tuple(headers), parent_task_id, task_text)
