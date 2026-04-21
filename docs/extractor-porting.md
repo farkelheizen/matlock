@@ -9,9 +9,9 @@ import fixes, and optional config.
 
 Files to copy (exact paths)
 
-- `markdown_stuff/markdown_stuff/extractor.py`
-- `markdown_stuff/markdown_stuff/models.py`
-- `markdown_stuff/markdown_stuff/parser.py`  # for `parse_front_matter`
+- `markdown_stuff/extractor.py`
+- `markdown_stuff/models.py`
+- `markdown_stuff/parser.py`  # for `parse_front_matter`
 - `config/default_config.json` (optional but recommended)
 
 Notes:
@@ -24,14 +24,13 @@ Runtime dependencies (from pyproject.toml)
 
 - Python: `>=3.11,<4.0`
 - `marko` (GFM AST parsing): `>=2.2.2,<3.0.0`
-- `markdown-it-py` (token support used by `parser.py`): `>=4.0.0,<5.0.0`
 - `python-frontmatter` (front-matter parsing): `>=1.1.0,<2.0.0`
 - `pydantic` (models): `>=2.0.0,<3.0.0`
 
 Install via pip (example):
 
 ```bash
-python -m pip install "marko>=2.2.2,<3.0.0" "markdown-it-py>=4.0.0,<5.0.0" "python-frontmatter>=1.1.0,<2.0.0" "pydantic>=2.0.0,<3.0.0"
+python -m pip install "marko>=2.2.2,<3.0.0" "python-frontmatter>=1.1.0,<2.0.0" "pydantic>=2.0.0,<3.0.0"
 ```
 
 Or add the above entries to your `pyproject.toml` / dependency manager of choice.
@@ -94,6 +93,13 @@ for t in parsed_doc.tasks:
     print(t.task_id, t.checked, t.task_text, t.attributes)
 ```
 
+If you want file-path-sensitive `task_id` values that match this repository's
+CLI behavior, pass the relative path used to locate the file:
+
+```py
+parsed_doc = extract_tasks_from_markdown(md, config, file_path="notes.md")
+```
+
 Minimal alternative `parse_front_matter`
 
 If you don't want `parser.py`'s other utilities, you can provide this
@@ -148,8 +154,4 @@ Troubleshooting
 - If attributes are missing, confirm the alias keys in your `aliases` mapping
   exactly match the emoji or strings used in your Markdown.
 
-Contact / Author
-
-This extractors originates from the `markdown-stuff` project. If you need
-help adapting it to a different AST or custom front-matter parser, I can
-provide a migration patch.
+This extractor originates from the `markdown-stuff` project.

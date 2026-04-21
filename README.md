@@ -1,11 +1,6 @@
 # markdown-stuff
 
-Small utilities for parsing Markdown into DOM-like structures in Python.
-
-The project includes two parsing backends:
-
-- `markdown-it-py` for token-based parsing
-- `marko` for AST-style parsing
+Focused utilities for extracting tasks from Markdown checkbox lists.
 
 ## Requirements
 
@@ -16,79 +11,6 @@ The project includes two parsing backends:
 
 ```bash
 poetry install
-```
-
-## Run The CLI Test Scripts
-
-Print the full `markdown-it-py` token tree:
-
-```bash
-poetry run python scripts/parse_with_markdownit.py
-```
-
-Print the full `marko` AST tree:
-
-```bash
-poetry run python scripts/parse_with_marko.py
-```
-
-Use a specific file with either script:
-
-```bash
-poetry run python scripts/parse_with_markdownit.py test-data/document-1.md
-poetry run python scripts/parse_with_marko.py test-data/document-1.md
-```
-
-Each script prints the complete parser output to the CLI in formatted JSON.
-
-Print front-matter metadata and body:
-
-```bash
-poetry run python scripts/parse_with_frontmatter.py
-```
-
-Or for a specific file:
-
-```bash
-poetry run python scripts/parse_with_frontmatter.py test-data/document-1.md
-```
-
-## Usage
-
-Parse a Markdown string into tokens:
-
-```python
-from markdown_stuff import parse_tokens
-
-tokens = parse_tokens("# Title\n\nA short paragraph.")
-
-for token in tokens:
-    print(token.type, token.tag)
-```
-
-Parse a Markdown string into an AST-like dictionary:
-
-```python
-from markdown_stuff import parse_ast
-
-document = parse_ast("# Title\n\nA short paragraph.")
-print(document["children"][0]["element"])
-```
-
-Parse one of the sample files in `test-data`:
-
-```python
-from pathlib import Path
-
-from markdown_stuff import parse_ast, parse_tokens
-
-markdown_text = Path("test-data/document-1.md").read_text(encoding="utf-8")
-
-ast = parse_ast(markdown_text)
-tokens = parse_tokens(markdown_text)
-
-print(ast["element"])
-print(len(tokens))
 ```
 
 ## Extract Tasks
@@ -110,6 +32,14 @@ poetry run python scripts/extract_tasks.py --base-path . test-data/document-1.md
 
 Output is printed to stdout as formatted JSON.
 
+The output includes top-level file metadata:
+
+- `file_path`: the CLI path relative to `--base-path`
+- `created`: creation time in milliseconds since epoch
+- `modified`: modification time in milliseconds since epoch
+- `length`: file size in bytes
+- `sha256`: SHA-256 hex digest of the source file
+
 ### Python API
 
 ```python
@@ -122,11 +52,11 @@ md = Path("test-data/document-1.md").read_text(encoding="utf-8")
 
 doc = extract_tasks_from_markdown(md, config, file_path="test-data/document-1.md")
 
-print(doc.meta_data)       # front-matter fields (if any)
+print(doc.meta_data)
 for task in doc.tasks:
-    print(task.task_id, task.checked, task.task_text)
-    print("  headers:", task.headers)
-    print("  attributes:", task.attributes)
+  print(task.task_id, task.checked, task.task_text)
+  print("  headers:", task.headers)
+  print("  attributes:", task.attributes)
 ```
 
 Each task is a `ParsedTask` with these fields:
@@ -182,20 +112,8 @@ markdown_stuff/
     parser.py
 scripts/
     extract_tasks.py
-    parse_with_markdownit.py
-    parse_with_marko.py
-    parse_with_frontmatter.py
 test-data/
     document-1.md
     document-2.md
 tests/
-```
-
-## Generating Parsed Documents
-
-```shell
-poetry run python scripts/parse_with_markdownit.py test-data/document-1.md > test-data/parsed/markdownit-document-1.txt
-poetry run python scripts/parse_with_marko.py test-data/document-1.md > test-data/parsed/marko-document-1.txt
-poetry run python scripts/parse_with_markdownit.py test-data/document-2.md > test-data/parsed/markdownit-document-2.txt
-poetry run python scripts/parse_with_marko.py test-data/document-2.md > test-data/parsed/marko-document-2.txt
 ```
