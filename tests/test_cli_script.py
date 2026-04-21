@@ -14,7 +14,7 @@ def test_cli_exits_zero():
     result = subprocess.run(
         [
             sys.executable,
-            "scripts/extract_tasks.py",
+            "scripts/parse_markdown_file.py",
             "--base-path",
             str(ROOT),
             "test-data/document-1.md",
@@ -30,7 +30,7 @@ def test_cli_stdout_is_valid_json():
     result = subprocess.run(
         [
             sys.executable,
-            "scripts/extract_tasks.py",
+            "scripts/parse_markdown_file.py",
             "--base-path",
             str(ROOT),
             "test-data/document-1.md",
@@ -47,7 +47,7 @@ def test_cli_output_has_expected_keys():
     result = subprocess.run(
         [
             sys.executable,
-            "scripts/extract_tasks.py",
+            "scripts/parse_markdown_file.py",
             "--base-path",
             str(ROOT),
             "test-data/document-1.md",
@@ -72,7 +72,7 @@ def test_cli_output_includes_file_metadata():
     result = subprocess.run(
         [
             sys.executable,
-            "scripts/extract_tasks.py",
+            "scripts/parse_markdown_file.py",
             "--base-path",
             str(ROOT),
             "test-data/document-1.md",
@@ -98,7 +98,7 @@ def test_cli_task_ids_include_file_path():
     result_1 = subprocess.run(
         [
             sys.executable,
-            "scripts/extract_tasks.py",
+            "scripts/parse_markdown_file.py",
             "--base-path",
             str(ROOT),
             "test-data/document-1.md",
@@ -110,7 +110,7 @@ def test_cli_task_ids_include_file_path():
     result_2 = subprocess.run(
         [
             sys.executable,
-            "scripts/extract_tasks.py",
+            "scripts/parse_markdown_file.py",
             "--base-path",
             str(ROOT / "test-data"),
             "document-1.md",
@@ -133,7 +133,7 @@ def test_cli_missing_file_exits_nonzero():
     result = subprocess.run(
         [
             sys.executable,
-            "scripts/extract_tasks.py",
+            "scripts/parse_markdown_file.py",
             "--base-path",
             str(ROOT),
             "nonexistent.md",

@@ -21,13 +21,13 @@ nesting, section headers, inline emoji aliases, and curly-brace attributes.
 ### CLI
 
 ```bash
-poetry run python scripts/extract_tasks.py --base-path . test-data/document-1.md
+poetry run python scripts/parse_markdown_file.py --base-path . test-data/document-1.md
 ```
 
 Use a custom config file:
 
 ```bash
-poetry run python scripts/extract_tasks.py --base-path . test-data/document-1.md --config config/default_config.json
+poetry run python scripts/parse_markdown_file.py --base-path . test-data/document-1.md --config config/default_config.json
 ```
 
 Output is printed to stdout as formatted JSON.
@@ -111,7 +111,7 @@ markdown_stuff/
     models.py
     parser.py
 scripts/
-    extract_tasks.py
+  parse_markdown_file.py
 test-data/
     document-1.md
     document-2.md
