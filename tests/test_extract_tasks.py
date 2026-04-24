@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from markdown_stuff.extractor import extract_tasks_from_markdown
+from matlock.extractor import extract_tasks_from_markdown
 
 ROOT = Path(__file__).parent.parent
 

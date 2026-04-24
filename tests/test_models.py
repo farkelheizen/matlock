@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from markdown_stuff.models import ParsedDocument, ParsedTask
+from matlock.models import ParsedMarkdownFile, ParsedMarkdownTask
 
 
 def make_task(**overrides) -> dict:
@@ -20,7 +20,7 @@ def make_task(**overrides) -> dict:
 
 
 def test_parsed_task_basic():
-    task = ParsedTask(**make_task())
+    task = ParsedMarkdownTask(**make_task())
     assert task.checked is False
     assert task.task_text == "Do the thing"
     assert task.headers == ["H1"]
@@ -30,48 +30,48 @@ def test_parsed_task_basic():
 
 
 def test_parsed_task_errors_default():
-    task = ParsedTask(**make_task())
+    task = ParsedMarkdownTask(**make_task())
     assert task.errors == []
 
 
 def test_parsed_task_overflow_default():
-    task = ParsedTask(**make_task())
+    task = ParsedMarkdownTask(**make_task())
     assert task.overflow is False
 
 
 def test_parsed_task_twin_index_default():
-    task = ParsedTask(**make_task())
+    task = ParsedMarkdownTask(**make_task())
     assert task.twin_index == 0
 
 
 def test_parsed_task_checked_true():
-    task = ParsedTask(**make_task(checked=True))
+    task = ParsedMarkdownTask(**make_task(checked=True))
     assert task.checked is True
 
 
 def test_parsed_task_with_errors():
-    task = ParsedTask(**make_task(errors=["some error"]))
+    task = ParsedMarkdownTask(**make_task(errors=["some error"]))
     assert task.errors == ["some error"]
 
 
 def test_parsed_task_with_overflow():
-    task = ParsedTask(**make_task(overflow=True))
+    task = ParsedMarkdownTask(**make_task(overflow=True))
     assert task.overflow is True
 
 
 def test_parsed_task_with_parent():
-    task = ParsedTask(**make_task(parent_task_id="parent-id-xyz"))
+    task = ParsedMarkdownTask(**make_task(parent_task_id="parent-id-xyz"))
     assert task.parent_task_id == "parent-id-xyz"
 
 
 def test_parsed_task_with_twin_index():
-    task = ParsedTask(**make_task(twin_index=2))
+    task = ParsedMarkdownTask(**make_task(twin_index=2))
     assert task.twin_index == 2
 
 
 def test_parsed_document():
-    task = ParsedTask(**make_task())
-    doc = ParsedDocument(meta_data={"status": "Active"}, tasks=[task], word_count=3)
+    task = ParsedMarkdownTask(**make_task())
+    doc = ParsedMarkdownFile(meta_data={"status": "Active"}, tasks=[task], word_count=3)
     assert doc.meta_data == {"status": "Active"}
     assert len(doc.tasks) == 1
     assert doc.tasks[0].task_text == "Do the thing"
@@ -79,13 +79,13 @@ def test_parsed_document():
 
 
 def test_parsed_document_empty_tasks():
-    doc = ParsedDocument(meta_data={}, tasks=[])
+    doc = ParsedMarkdownFile(meta_data={}, tasks=[])
     assert doc.tasks == []
 
 
 def test_parsed_task_missing_required_field():
     with pytest.raises(ValidationError):
-        ParsedTask(
+        ParsedMarkdownTask(
             checked=False,
             # task_text missing
             headers=[],
@@ -97,7 +97,7 @@ def test_parsed_task_missing_required_field():
 
 def test_parsed_task_missing_task_id():
     with pytest.raises(ValidationError):
-        ParsedTask(
+        ParsedMarkdownTask(
             checked=False,
             task_text="hello",
             headers=[],

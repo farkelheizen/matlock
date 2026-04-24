@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from markdown_stuff.extractor import compute_task_id, truncate_headers, truncate_text
+from matlock.extractor import compute_task_id, truncate_headers, truncate_text
 
 
 def test_compute_task_id_returns_hex_string():

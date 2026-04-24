@@ -6,7 +6,7 @@ import json
 import re
 from pathlib import Path
 
-from markdown_stuff.extractor import extract_tasks_from_markdown
+from matlock.extractor import extract_tasks_from_markdown
 
 
 def build_parser() -> argparse.ArgumentParser:

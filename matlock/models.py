@@ -5,7 +5,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 
-class ParsedTask(BaseModel):
+class ParsedMarkdownTask(BaseModel):
     checked: bool
     task_text: str
     overflow: bool = False
@@ -17,9 +17,9 @@ class ParsedTask(BaseModel):
     task_id: str
 
 
-class ParsedDocument(BaseModel):
+class ParsedMarkdownFile(BaseModel):
     meta_data: dict[str, Any]
-    tasks: list[ParsedTask]
+    tasks: list[ParsedMarkdownTask]
     file_path: str | None = None
     created: int | None = None
     modified: int | None = None

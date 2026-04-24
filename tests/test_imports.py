@@ -1,24 +1,24 @@
 def test_public_api_imports():
-    from markdown_stuff import (
-        ParsedDocument,
-        ParsedTask,
+    from matlock import (
+        ParsedMarkdownFile,
+        ParsedMarkdownTask,
         extract_tasks_from_markdown,
         parse_front_matter,
     )
 
     assert callable(extract_tasks_from_markdown)
     assert callable(parse_front_matter)
-    assert ParsedTask is not None
-    assert ParsedDocument is not None
+    assert ParsedMarkdownTask is not None
+    assert ParsedMarkdownFile is not None
 
 
 def test_all_exports_present():
-    import markdown_stuff
+    import matlock
 
     for name in [
         "parse_front_matter",
         "extract_tasks_from_markdown",
-        "ParsedTask",
-        "ParsedDocument",
+        "ParsedMarkdownTask",
+        "ParsedMarkdownFile",
     ]:
-        assert hasattr(markdown_stuff, name), f"{name} missing from package"
+        assert hasattr(matlock, name), f"{name} missing from package"

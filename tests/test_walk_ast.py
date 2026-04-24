@@ -7,7 +7,7 @@ import pytest
 from marko import Markdown
 from marko.ext.gfm import GFM
 
-from markdown_stuff.extractor import walk_ast
+from matlock.extractor import walk_ast
 
 
 @pytest.fixture

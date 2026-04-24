@@ -227,8 +227,8 @@ from marko import Markdown as _Markdown  # noqa: E402
 from marko.ext.gfm import GFM as _GFM  # noqa: E402
 from marko.ext.gfm.elements import Paragraph as _GFMParagraph  # noqa: E402
 
-from markdown_stuff.models import ParsedDocument, ParsedTask  # noqa: E402
-from markdown_stuff.parser import parse_front_matter  # noqa: E402
+from matlock.models import ParsedMarkdownFile, ParsedMarkdownTask  # noqa: E402
+from matlock.parser import parse_front_matter  # noqa: E402
 
 
 def extract_text_from_node(node) -> str:
@@ -386,7 +386,7 @@ def _process_list_item(
         file_path,
     )
 
-    task = ParsedTask(
+    task = ParsedMarkdownTask(
         checked=bool(checked),
         task_text=task_text,
         overflow=overflowed,
@@ -406,17 +406,17 @@ def _process_list_item(
 
 def extract_tasks_from_markdown(
     md_string: str, config_dict: dict, file_path: str | None = None
-) -> ParsedDocument:
-    """Parse a Markdown string and extract tasks, returning a ParsedDocument."""
+) -> ParsedMarkdownFile:
+    """Parse a Markdown string and extract tasks, returning a ParsedMarkdownFile."""
     meta_data, body = parse_front_matter(md_string)
 
     md_parser = _Markdown(extensions=[_GFM])
     root = md_parser.parse(body)
 
     header_state: list[str] = [""] * 6
-    tasks: list[ParsedTask] = []
+    tasks: list[ParsedMarkdownTask] = []
     twin_tracker: dict = {}
 
     walk_ast(root, header_state, None, config_dict, tasks, twin_tracker, file_path)
 
-    return ParsedDocument(meta_data=meta_data, tasks=tasks, file_path=file_path)
+    return ParsedMarkdownFile(meta_data=meta_data, tasks=tasks, file_path=file_path)

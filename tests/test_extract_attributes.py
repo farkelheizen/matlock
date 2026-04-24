@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from markdown_stuff.extractor import extract_attributes
+from matlock.extractor import extract_attributes
 
 
 @pytest.fixture

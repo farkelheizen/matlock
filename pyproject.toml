@@ -1,7 +1,7 @@
 [project]
-name = "markdown-stuff"
+name = "matlock"
 version = "0.1.0"
-description = "Task extraction utilities for Markdown checkbox lists"
+description = "Pipeline-driven task extractor and report generator for Markdown second brains"
 authors = [
     {name = "farkelheizen",email = "billspratley@gmail.com"}
 ]
@@ -12,6 +12,9 @@ dependencies = [
     "python-frontmatter (>=1.1.0,<2.0.0)",
     "pydantic (>=2.0.0,<3.0.0)"
 ]
+
+[project.scripts]
+matlock = "matlock.cli:app"
 
 [tool.poetry.group.dev.dependencies]
 pytest = ">=8.0.0,<9.0.0"
