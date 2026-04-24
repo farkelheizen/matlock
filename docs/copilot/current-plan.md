@@ -2,8 +2,8 @@
 
 Use this file to identify the active implementation plan before starting work.
 
-- Active plan: `docs/roadmap/phase-0-rename-and-scaffold.md`
-- Current step: P0-S1 (In Progress)
+- Active plan: `docs/roadmap/phase-0-rename-and-scaffold.md` ✅ Completed
+- Current step: Phase 0 complete — ready to begin Phase 1 (Configuration Layer)
 - Last updated: 2026-04-24
 - Owner: Copilot
 

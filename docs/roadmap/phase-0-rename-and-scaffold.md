@@ -42,10 +42,10 @@ Rename the `markdown_stuff` package to `matlock`, rename `ParsedDocument` → `P
 
 | Step ID | Status | Goal | Planned Changes | Test Coverage |
 |---|---|---|---|---|
-| P0-S1 | Not Started | Rename package directory | `mv markdown_stuff/ matlock/`; update all `from markdown_stuff` imports | Run full suite |
-| P0-S2 | Not Started | Rename models | `ParsedDocument` → `ParsedMarkdownFile`, `ParsedTask` → `ParsedMarkdownTask` in `models.py`, `extractor.py`, `__init__.py`, all test files | `test_models.py`, `test_imports.py`, `test_walk_ast.py` |
-| P0-S3 | Not Started | Update pyproject.toml | `name = "matlock"`, `description`, add `[project.scripts]` stub | `poetry install` succeeds |
-| P0-S4 | Not Started | Create stages stub | `matlock/stages/__init__.py` | Import smoke test |
+| P0-S1 | Completed | Rename package directory | `mv markdown_stuff/ matlock/`; update all `from markdown_stuff` imports | Run full suite |
+| P0-S2 | Completed | Rename models | `ParsedDocument` → `ParsedMarkdownFile`, `ParsedTask` → `ParsedMarkdownTask` in `models.py`, `extractor.py`, `__init__.py`, all test files | `test_models.py`, `test_imports.py`, `test_walk_ast.py` |
+| P0-S3 | Completed | Update pyproject.toml | `name = "matlock"`, `description`, add `[project.scripts]` stub | `poetry install` succeeds |
+| P0-S4 | Completed | Create stages stub | `matlock/stages/__init__.py` | Import smoke test |
 
 Status values: `Not Started` | `In Progress` | `Completed` | `Blocked`
 
@@ -150,12 +150,30 @@ Run tests in this order:
 3. Full suite: `poetry run pytest`
 
 Record results:
-- Focused: [pass/fail + summary]
-- Regression: [pass/fail + summary]
-- Full suite: [pass/fail + summary]
+- Focused: **pass** — `tests/test_models.py` (13 passed), `tests/test_imports.py` (2 passed)
+- Regression: **pass** — `tests/test_walk_ast.py` (11 passed), `tests/test_extract_tasks.py` (13 passed), `tests/test_helpers.py` (15 passed)
+- Full suite: **pass** — 83 passed, 0 failures, 0 errors (1 unrelated deprecation warning from `pytimeparse`)
 
 ---
 
 ## Step Notes Log
 
-*(Updated as steps are completed)*
+### P0-S1 — Completed 2026-04-24
+- `git mv markdown_stuff matlock` used to preserve git history.
+- All `from markdown_stuff.X import Y` → `from matlock.X import Y` in `matlock/extractor.py`, all 7 test files, and `scripts/parse_markdown_file.py`.
+- Validation: full suite green.
+
+### P0-S2 — Completed 2026-04-24
+- `ParsedDocument` → `ParsedMarkdownFile`, `ParsedTask` → `ParsedMarkdownTask` in `matlock/models.py`, `matlock/extractor.py`, `matlock/__init__.py`, `tests/test_models.py`, `tests/test_imports.py`.
+- `test_walk_ast.py` had no direct `ParsedTask` references — no change needed.
+- Validation: `tests/test_models.py`, `tests/test_imports.py`, `tests/test_walk_ast.py` all pass.
+
+### P0-S3 — Completed 2026-04-24
+- `pyproject.toml` `name = "matlock"`, description updated.
+- `[project.scripts]` entry `matlock = "matlock.cli:app"` added as forward declaration.
+- `poetry install` succeeded; full suite still green.
+
+### P0-S4 — Completed 2026-04-24
+- `matlock/stages/__init__.py` created with comment stub.
+- `from matlock import stages` import confirmed working.
+- Validation: full suite green (83 passed).
