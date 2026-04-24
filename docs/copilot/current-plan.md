@@ -2,8 +2,8 @@
 
 Use this file to identify the active implementation plan before starting work.
 
-- Active plan: `docs/roadmap/phase-0-rename-and-scaffold.md` ✅ Completed
-- Current step: Phase 0 complete — ready to begin Phase 1 (Configuration Layer)
+- Active plan: `docs/copilot/plans/20260424-phase-1-configuration-layer.md` ✅ Completed
+- Current step: Phase 1 complete — ready to begin Phase 2 (Database Layer)
 - Last updated: 2026-04-24
 - Owner: Copilot
 

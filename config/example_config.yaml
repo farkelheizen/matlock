@@ -1,0 +1,100 @@
+# ────────────────────────────────────────────────────
+# Matlock — Example Configuration File
+# Copy this file, rename it config.yaml, and adjust
+# values to match your vault.
+# ────────────────────────────────────────────────────
+
+# ── Core paths ──────────────────────────────────────
+
+# Absolute path to your Markdown vault (second brain root).
+base_directory: "/Users/me/SecondBrain"
+
+# Path to the SQLite database file.
+# Relative paths are resolved relative to base_directory.
+db_path: "matlock.db"
+
+# Output directory for generated dashboards.
+# Relative paths are resolved relative to base_directory.
+# This directory is NEVER read as input by the sync stage.
+output_directory: "_Matlock"
+
+# ── Sync behaviour ──────────────────────────────────
+
+# Directories to skip during sync (relative to base_directory).
+# output_directory is always skipped; list additional dirs here.
+ignore_dirs:
+  - ".git"
+  - ".obsidian"
+
+# ── Server mode ─────────────────────────────────────
+
+# Seconds of file-change inactivity before triggering report.
+debounce_seconds: 5
+
+# ── Parser: text limits ─────────────────────────────
+
+headers:
+  header_text_maxlen: 200   # Characters before truncation (adds "...")
+
+tasks:
+  task_text_maxlen: 500     # Characters before truncation (sets overflow=True)
+
+# ── Parser: task attributes ─────────────────────────
+
+# Attribute definitions consumed by the task extraction engine.
+# Supported types: date, time, domain
+# alias: emoji or short string shortcut usable in task text.
+
+task_attributes:
+  due_date:
+    type: date
+    alias: "📅"
+
+  created_date:
+    type: date
+    alias: "➕"
+
+  est_comp_date:
+    type: date
+    alias: "🏁"
+
+  act_comp_date:
+    type: date
+    alias: "✅"
+
+  estimate:
+    type: time
+    alias: "⏱"
+
+  priority:
+    type: domain
+    values:
+      high:
+        alias: "🔴"
+      medium:
+        alias: "🟡"
+      low:
+        alias: "🟢"
+
+# ── Project hierarchy ───────────────────────────────
+
+super_projects:
+  - id: "website_overhaul"
+    title: "Website Overhaul 2026"
+    priority: "high"
+
+projects:
+  - id: "backend_api"
+    super_project_id: "website_overhaul"   # optional; omit for standalone projects
+    title: "Backend API"
+    home_file: "Projects/Backend_Notes.md" # relative to base_directory
+    priority: "high"
+    start_date: "2026-01-01"               # YYYY-MM-DD (optional)
+    due_date: "2026-06-01"                 # YYYY-MM-DD (optional)
+    resources:
+      # Files and directories whose tasks are attributed to this project.
+      # Evaluated by the map-projects stage.
+      - type: "DIRECTORY"
+        path: "Tech/Backend/"
+      - type: "FILE"
+        path: "Projects/Backend_Notes.md"
