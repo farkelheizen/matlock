@@ -15,7 +15,7 @@ This index lists all implementation phases. Each active phase links to its detai
 | 2 | Database Layer | Completed | `docs/copilot/plans/20260424-phase-2-database-layer.md` |
 | 3 | Stage I — Sync | Completed | `docs/copilot/plans/20260427-phase-3-stage-sync.md` |
 | 4 | Stage II — Parse (DB Integration) | Completed | `docs/copilot/plans/20260427-phase-4-stage-parse.md` |
-| 5 | Stage III — Map Projects | Not Started | *(create when Phase 4 complete)* |
+| 5 | Stage III — Map Projects | Completed | `docs/copilot/plans/20260427-phase-5-stage-map-projects.md` |
 | 6 | Stage IV — Rollup | Not Started | *(create when Phase 5 complete)* |
 | 7 | Stage V — Report | Not Started | *(create when Phase 6 complete)* |
 | 8 | `run-all` Command | Not Started | *(create when Phase 7 complete)* |

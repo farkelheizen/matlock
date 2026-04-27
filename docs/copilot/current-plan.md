@@ -2,8 +2,8 @@
 
 Use this file to identify the active implementation plan before starting work.
 
-- Active plan: `docs/copilot/plans/20260427-phase-4-stage-parse.md` ✅ Completed
-- Current step: Phase 4 complete — ready to begin Phase 5 (Stage III: Map Projects)
+- Active plan: `docs/copilot/plans/20260427-phase-5-stage-map-projects.md` ✅ Completed
+- Current step: Phase 5 complete — ready to begin Phase 6 (Stage IV: Rollup)
 - Last updated: 2026-04-27
 - Owner: Copilot
 

@@ -4,6 +4,7 @@ Matlock CLI entrypoint.
 Usage:
     matlock --config PATH sync [--force]
     matlock --config PATH parse
+    matlock --config PATH map-projects
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ import typer
 
 from matlock.config import load_config, validate_config_paths
 from matlock.db import get_connection, init_db
+from matlock.stages.map_projects import run_map_projects
 from matlock.stages.parse import run_parse
 from matlock.stages.sync import run_sync
 
@@ -103,4 +105,23 @@ def parse(ctx: typer.Context) -> None:
     typer.echo(
         f"Parse complete: {result.parsed} parsed, {result.skipped} skipped, "
         f"{result.tasks_inserted} tasks inserted, {result.tasks_deleted} tasks deleted"
+    )
+
+
+@app.command(name="map-projects")
+def map_projects(ctx: typer.Context) -> None:
+    """Rebuild project-to-file associations from config."""
+    cfg = _load_and_validate(ctx.obj[_CONFIG_KEY])
+
+    conn = get_connection(cfg.db_path)
+    try:
+        init_db(conn)
+        result = run_map_projects(cfg, conn)
+    finally:
+        conn.close()
+
+    typer.echo(
+        f"Map-projects complete: {result.super_projects_written} super-projects, "
+        f"{result.projects_written} projects, "
+        f"{result.file_project_rows} file-project links"
     )
