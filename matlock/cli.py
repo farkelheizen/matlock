@@ -6,6 +6,7 @@ Usage:
     matlock --config PATH parse
     matlock --config PATH map-projects
     matlock --config PATH rollup [--date YYYY-MM-DD]
+    matlock --config PATH report [--target {all,dashboard,projects,history}] [--project-id ID]
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ from matlock.config import load_config, validate_config_paths
 from matlock.db import get_connection, init_db
 from matlock.stages.map_projects import run_map_projects
 from matlock.stages.parse import run_parse
+from matlock.stages.report import run_report
 from matlock.stages.rollup import run_rollup
 from matlock.stages.sync import run_sync
 
@@ -160,4 +162,44 @@ def rollup(
 
     typer.echo(
         f"Rollup complete: {result.rollup_date}, {result.rows_written} rows written"
+    )
+
+
+_VALID_REPORT_TARGETS = {"all", "dashboard", "projects", "history"}
+
+
+@app.command()
+def report(
+    ctx: typer.Context,
+    target: str = typer.Option(
+        "all",
+        "--target",
+        help="Which dashboards to regenerate: all, dashboard, projects, history.",
+    ),
+    project_id: str = typer.Option(
+        None,
+        "--project-id",
+        help="Regenerate a single project page (targeted; ignores --target).",
+    ),
+) -> None:
+    """Render Jinja2 Markdown dashboards into the output directory."""
+    if target not in _VALID_REPORT_TARGETS:
+        typer.echo(
+            f"Error: invalid target {target!r} — must be one of: "
+            + ", ".join(sorted(_VALID_REPORT_TARGETS)),
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    cfg = _load_and_validate(ctx.obj[_CONFIG_KEY])
+
+    conn = get_connection(cfg.db_path)
+    try:
+        init_db(conn)
+        result = run_report(cfg, conn, target=target, project_id=project_id or None)
+    finally:
+        conn.close()
+
+    typer.echo(
+        f"Report complete: {result.files_written} files written ({result.target})"
     )

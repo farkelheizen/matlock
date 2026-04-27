@@ -1,0 +1,19 @@
+# 📅 Daily History: {{ metric_date }}
+**Day of Week:** {{ day_of_week }}
+
+## 📈 Daily Totals
+| Metric | Count | Minutes |
+| :--- | :--- | :--- |
+| **Tasks Completed** | {{ totals.tasks_completed_count }} | {{ totals.tasks_completed_minutes }} |
+| **Tasks Created** | {{ totals.tasks_created_count }} | {{ totals.tasks_created_minutes }} |
+| **Files Modified** | {{ totals.files_modified_count }} | — |
+
+## 📊 Breakdown by Project
+{% for row in project_rows %}
+### {% if row.project %}[[{{ row.project.id }}]]{% else %}Unassigned{% endif %}
+- Tasks Completed: {{ row.tasks_completed_count }} ({{ row.tasks_completed_minutes }} mins)
+- End-of-Day Overdue: {{ row.tasks_past_due_count }}
+{% endfor %}
+
+## ⬅️ Navigation
+* **Previous Day:** [[{{ prev_date }}]] | **Back to Dashboard:** [[000_Daily_Dashboard]]

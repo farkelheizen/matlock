@@ -12,7 +12,8 @@ dependencies = [
     "python-frontmatter (>=1.1.0,<2.0.0)",
     "pydantic (>=2.0.0,<3.0.0)",
     "pyyaml (>=6.0.3,<7.0.0)",
-    "typer[all] (>=0.25.0,<0.26.0)"
+    "typer[all] (>=0.25.0,<0.26.0)",
+    "jinja2 (>=3.1.6,<4.0.0)"
 ]
 
 [project.scripts]

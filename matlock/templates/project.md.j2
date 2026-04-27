@@ -1,0 +1,39 @@
+# 🚀 Project: {{ project.title }}
+
+**Priority:** {{ project.priority | title }} | **Start Date:** {{ project.start_date or "—" }} | **Due Date:** {{ project.due_date or "—" }}
+{% if project.super_project_id %}**Super-Project:** [[{{ project.super_project_id }}]]{% endif %}
+
+## 📊 Quick Stats
+| Metric | Count | Estimated Effort |
+| :--- | :--- | :--- |
+| **Open Tasks** | {{ stats.open_count }} | {{ stats.open_minutes }} mins |
+| **Completed** | {{ stats.completed_count }} | {{ stats.completed_minutes }} mins |
+| **Past Due** | {{ stats.past_due_count }} | {{ stats.past_due_minutes }} mins |
+
+{% if past_due_tasks %}
+## ⚠️ Past Due & High Priority
+{% for task in past_due_tasks %}
+- [ ] {{ task.task_text }} *(Due: {{ task.due_date }})* 🔗 [[{{ task.file_path | basename }}]]
+{%- endfor %}
+{% endif %}
+
+## 📝 Open Tasks (By File)
+{% for file_path, tasks in open_by_file.items() %}
+### 📄 [[{{ file_path | basename }}]]
+{% for task in tasks %}
+- [ ] {{ task.task_text }}
+{%- endfor %}
+{% endfor %}
+
+## ✅ Recently Completed (Last 7 Days)
+{% for task in recently_completed %}
+- [x] {{ task.task_text }} 🔗 [[{{ task.file_path | basename }}]]
+{%- endfor %}
+{% if not recently_completed %}
+*No completions in the last 7 days.*
+{% endif %}
+
+## 📁 Source Files
+{% for f in source_files %}
+- [[{{ f | basename }}]]
+{%- endfor %}
