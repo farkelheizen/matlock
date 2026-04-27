@@ -13,7 +13,7 @@ This index lists all implementation phases. Each active phase links to its detai
 | 0 | Foundation: Rename & Scaffold | Completed | `docs/roadmap/phase-0-rename-and-scaffold.md` |
 | 1 | Configuration Layer | Completed | `docs/copilot/plans/20260424-phase-1-configuration-layer.md` |
 | 2 | Database Layer | Completed | `docs/copilot/plans/20260424-phase-2-database-layer.md` |
-| 3 | Stage I — Sync | Not Started | *(create when Phase 2 complete)* |
+| 3 | Stage I — Sync | Completed | `docs/copilot/plans/20260427-phase-3-stage-sync.md` |
 | 4 | Stage II — Parse (DB Integration) | Not Started | *(create when Phase 3 complete)* |
 | 5 | Stage III — Map Projects | Not Started | *(create when Phase 4 complete)* |
 | 6 | Stage IV — Rollup | Not Started | *(create when Phase 5 complete)* |
