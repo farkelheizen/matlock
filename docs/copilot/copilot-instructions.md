@@ -25,7 +25,16 @@ This repository is a **Poetry-managed Python project**.
     
 - **Specs:** Use the detailed markdown specs under `docs/` as the source of truth for logic.
 
-## 2. Step-by-Step Execution
+## 2. Plan Creation & Question Resolution
+
+When creating a plan document:
+
+- **Always** include a `Questions / Concerns` section at the end of the plan.
+- **Every** design ambiguity, missing spec detail, or decision with multiple valid options must be listed there — even if a recommendation is provided.
+- **Do NOT start implementation** until all questions in that section have been resolved and acknowledged by the user.
+- Once resolved, replace the `Questions / Concerns` section with a `Design Decisions (Resolved)` section that records the chosen answers. This becomes the binding record for implementation.
+
+## 3. Step-by-Step Execution
 
 - **Do NOT** attempt to write the entire application at once.
 
@@ -40,14 +49,14 @@ This repository is a **Poetry-managed Python project**.
 - Allowed step statuses are: `Not Started` | `In Progress` | `Completed` | `Blocked`.
     
 
-## 3. The "Test-First" Mandate
+## 4. The "Test-First" Mandate
 
 - For every step involving logic (Classes, Parsers, Runners), you **MUST** write or update a corresponding test file in `tests/` _before_ or _simultaneously_ with the implementation.
     
 - **Constraint:** You are not allowed to mark a step as `Completed` until the tests for that step pass and validation is recorded in the Step Notes Log.
     
 
-## 4. Status Tracking & Logging
+## 5. Status Tracking & Logging
 
 - After completing a step, you must update Plan Doc:
     - Change Status from `In Progress` to `Completed` (or `Blocked` if unresolved).
@@ -58,7 +67,7 @@ This repository is a **Poetry-managed Python project**.
 - If you skip a step or deviate from plan scope, record it explicitly in `Step Notes Log` under Deviations.
     
 
-## 5. Review & Commit Protocol
+## 6. Review & Commit Protocol
 
 **Mandatory gate:** Once a step is marked `Completed`, required validation has passed, and review approval is given, changes for that step must be committed on an appropriately named branch before proceeding.
 

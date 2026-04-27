@@ -100,6 +100,18 @@ Record results:
 
 ---
 
+## Questions / Concerns
+
+> **STOP:** Do not begin implementation until every question below is resolved and this section has been replaced with `Design Decisions (Resolved)`.
+
+**Q1 — [Short question title]**
+[Description of the ambiguity or decision point. Include a Recommendation if one exists.]
+
+**Q2 — [Short question title]**
+[Description.]
+
+---
+
 ## Step Notes Log (update as work progresses)
 
 ### [TAG-S1] Notes
