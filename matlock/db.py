@@ -104,7 +104,7 @@ CREATE TABLE IF NOT EXISTS file_project (
 
 CREATE TABLE IF NOT EXISTS daily_metric (
     metric_date                TEXT    NOT NULL,
-    project_id                 TEXT    NOT NULL,
+    project_id                 TEXT,
     tasks_created_count        INTEGER,
     tasks_created_minutes      INTEGER,
     tasks_completed_count      INTEGER,
@@ -297,3 +297,55 @@ def replace_file_projects(
         " VALUES (:file_path, :project_id)",
         rows,
     )
+
+
+# ---------------------------------------------------------------------------
+# daily_metric table helpers
+# ---------------------------------------------------------------------------
+
+_DAILY_METRIC_COLUMNS = (
+    "metric_date",
+    "project_id",
+    "tasks_created_count",
+    "tasks_created_minutes",
+    "tasks_completed_count",
+    "tasks_completed_minutes",
+    "tasks_due_tomorrow_count",
+    "tasks_due_tomorrow_minutes",
+    "tasks_past_due_count",
+    "tasks_past_due_minutes",
+    "tasks_future_due_count",
+    "tasks_future_due_minutes",
+    "files_created_count",
+    "files_modified_count",
+    "files_deleted_count",
+)
+
+_UPSERT_DAILY_METRIC = (
+    "INSERT OR REPLACE INTO daily_metric ("
+    + ", ".join(_DAILY_METRIC_COLUMNS)
+    + ") VALUES ("
+    + ", ".join(f":{c}" for c in _DAILY_METRIC_COLUMNS)
+    + ")"
+)
+
+
+def upsert_daily_metric(conn: sqlite3.Connection, row: dict) -> None:
+    """Insert or replace a row in the ``daily_metric`` table.
+
+    ``row["project_id"]`` may be ``None`` (stored as SQL NULL).
+    Re-inserting the same ``(metric_date, project_id)`` pair replaces
+    the existing row, making the rollup stage idempotent.
+
+    SQLite treats two NULLs as distinct for uniqueness purposes, so
+    ``INSERT OR REPLACE`` does not detect a conflict when
+    ``project_id IS NULL``.  We handle this by explicitly deleting the
+    existing NULL row before inserting, which is a no-op on the first run.
+    """
+    if row["project_id"] is None:
+        conn.execute(
+            "DELETE FROM daily_metric"
+            " WHERE metric_date = :metric_date AND project_id IS NULL",
+            {"metric_date": row["metric_date"]},
+        )
+    conn.execute(_UPSERT_DAILY_METRIC, row)

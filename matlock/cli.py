@@ -5,10 +5,12 @@ Usage:
     matlock --config PATH sync [--force]
     matlock --config PATH parse
     matlock --config PATH map-projects
+    matlock --config PATH rollup [--date YYYY-MM-DD]
 """
 
 from __future__ import annotations
 
+import datetime
 from pathlib import Path
 
 import typer
@@ -17,6 +19,7 @@ from matlock.config import load_config, validate_config_paths
 from matlock.db import get_connection, init_db
 from matlock.stages.map_projects import run_map_projects
 from matlock.stages.parse import run_parse
+from matlock.stages.rollup import run_rollup
 from matlock.stages.sync import run_sync
 
 app = typer.Typer(
@@ -124,4 +127,37 @@ def map_projects(ctx: typer.Context) -> None:
         f"Map-projects complete: {result.super_projects_written} super-projects, "
         f"{result.projects_written} projects, "
         f"{result.file_project_rows} file-project links"
+    )
+
+
+@app.command()
+def rollup(
+    ctx: typer.Context,
+    date: str = typer.Option(
+        None,
+        "--date",
+        help="Date to roll up (YYYY-MM-DD). Defaults to yesterday.",
+    ),
+) -> None:
+    """Calculate daily metrics for a given date (default: yesterday)."""
+    cfg = _load_and_validate(ctx.obj[_CONFIG_KEY])
+
+    if date is None:
+        rollup_date = datetime.date.today() - datetime.timedelta(days=1)
+    else:
+        try:
+            rollup_date = datetime.date.fromisoformat(date)
+        except ValueError:
+            typer.echo(f"Error: invalid date '{date}' — expected YYYY-MM-DD", err=True)
+            raise typer.Exit(code=1)
+
+    conn = get_connection(cfg.db_path)
+    try:
+        init_db(conn)
+        result = run_rollup(cfg, conn, rollup_date)
+    finally:
+        conn.close()
+
+    typer.echo(
+        f"Rollup complete: {result.rollup_date}, {result.rows_written} rows written"
     )

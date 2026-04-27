@@ -146,13 +146,18 @@ def test_init_db_idempotent(conn):
     assert len(tables) == 6
 
 
-def test_daily_metric_project_id_not_null(conn):
-    with pytest.raises(sqlite3.IntegrityError):
-        conn.execute(
-            "INSERT INTO daily_metric (metric_date, project_id) VALUES (?, ?)",
-            ("2026-01-01", None),
-        )
-        conn.commit()
+def test_daily_metric_project_id_nullable(conn):
+    """project_id accepts NULL (used for the unassigned-tasks row by rollup stage)."""
+    conn.execute(
+        "INSERT INTO daily_metric (metric_date, project_id) VALUES (?, ?)",
+        ("2026-01-01", None),
+    )
+    conn.commit()
+    row = conn.execute(
+        "SELECT * FROM daily_metric WHERE project_id IS NULL"
+    ).fetchone()
+    assert row is not None
+    assert row["project_id"] is None
 
 
 def test_daily_metric_unknown_sentinel_accepted(conn):
