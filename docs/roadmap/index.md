@@ -18,7 +18,7 @@ This index lists all implementation phases. Each active phase links to its detai
 | 5 | Stage III — Map Projects | Completed | `docs/copilot/plans/20260427-phase-5-stage-map-projects.md` |
 | 6 | Stage IV — Rollup | Completed | `docs/copilot/plans/20260427-phase-6-stage-rollup.md` |
 | 7 | Stage V — Report | Completed | `docs/copilot/plans/20260427-phase-7-stage-report.md` |
-| 8 | `run-all` Command | Not Started | *(create when Phase 7 complete)* |
+| 8 | `run-all` Command | Completed | `docs/copilot/plans/20260427-phase-8-run-all.md` |
 | 9 | Server Daemon | Not Started | *(create when Phase 8 complete)* |
 
 ---

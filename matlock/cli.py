@@ -7,6 +7,7 @@ Usage:
     matlock --config PATH map-projects
     matlock --config PATH rollup [--date YYYY-MM-DD]
     matlock --config PATH report [--target {all,dashboard,projects,history}] [--project-id ID]
+    matlock --config PATH run-all [--skip-rollup] [--force-sync]
 """
 
 from __future__ import annotations
@@ -203,3 +204,63 @@ def report(
     typer.echo(
         f"Report complete: {result.files_written} files written ({result.target})"
     )
+
+
+@app.command(name="run-all")
+def run_all(
+    ctx: typer.Context,
+    skip_rollup: bool = typer.Option(
+        False,
+        "--skip-rollup",
+        help="Skip Stage IV rollup (for mid-day runs).",
+    ),
+    force_sync: bool = typer.Option(
+        False,
+        "--force-sync",
+        help="Pass --force to the sync stage (re-hash all files).",
+    ),
+) -> None:
+    """Run all pipeline stages in sequence: sync → parse → map-projects → rollup → report."""
+    cfg = _load_and_validate(ctx.obj[_CONFIG_KEY])
+
+    rollup_date = datetime.date.today() - datetime.timedelta(days=1)
+
+    conn = get_connection(cfg.db_path)
+    try:
+        init_db(conn)
+
+        sync_result = run_sync(cfg, conn, force=force_sync)
+        typer.echo(
+            f"Sync: {sync_result.inserted} inserted, {sync_result.updated} updated, "
+            f"{sync_result.unchanged} unchanged, {sync_result.deleted} deleted"
+        )
+
+        parse_result = run_parse(cfg, conn)
+        typer.echo(
+            f"Parse: {parse_result.parsed} parsed, {parse_result.skipped} skipped, "
+            f"{parse_result.tasks_inserted} tasks inserted, "
+            f"{parse_result.tasks_deleted} tasks deleted"
+        )
+
+        map_result = run_map_projects(cfg, conn)
+        typer.echo(
+            f"Map-projects: {map_result.super_projects_written} super-projects, "
+            f"{map_result.projects_written} projects, "
+            f"{map_result.file_project_rows} file-project links"
+        )
+
+        if not skip_rollup:
+            rollup_result = run_rollup(cfg, conn, rollup_date)
+            typer.echo(
+                f"Rollup: {rollup_result.rollup_date}, "
+                f"{rollup_result.rows_written} rows written"
+            )
+
+        report_result = run_report(cfg, conn, target="all", project_id=None)
+        typer.echo(
+            f"Report: {report_result.files_written} files written ({report_result.target})"
+        )
+    finally:
+        conn.close()
+
+    typer.echo("run-all complete.")
