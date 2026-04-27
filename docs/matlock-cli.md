@@ -114,7 +114,7 @@ matlock report [OPTIONS]
 
 | Option | Default | Description |
 |:-------|:--------|:------------|
-| `--target {all,dashboard,projects,super-projects,history}` | `all` | Limit which report types to generate |
+| `--target {all,dashboard,projects,history}` | `all` | Limit which report types to generate |
 | `--project-id ID` | None | Regenerate a single project page by its config ID |
 | `--config PATH` | `./config.yaml` | Config file location |
 
@@ -124,6 +124,8 @@ poetry run matlock report
 poetry run matlock report --target projects
 poetry run matlock report --project-id backend_api
 ```
+
+**Note:** `--target projects` regenerates both project pages and super-project pages. There is no separate `super-projects` target in the current CLI.
 
 ---
 

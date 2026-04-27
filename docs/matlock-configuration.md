@@ -133,6 +133,43 @@ projects:
         path: "Projects/Backend_Notes.md"
 ```
 
+### Resource Examples
+
+Use `resources` to associate files with a project during the `map-projects` stage.
+
+Example: whole directory
+
+```yaml
+projects:
+  - id: "backend_api"
+    title: "Backend API"
+    resources:
+      - type: "DIRECTORY"
+        path: "Tech/Backend"
+```
+
+This matches files such as:
+
+- `Tech/Backend/API.md`
+- `Tech/Backend/Notes/TODO.md`
+
+It does not match:
+
+- `Tech/BackendExtra/API.md`
+
+Example: single file
+
+```yaml
+projects:
+  - id: "weekly_planning"
+    title: "Weekly Planning"
+    resources:
+      - type: "FILE"
+        path: "Projects/Planning.md"
+```
+
+This matches only `Projects/Planning.md`.
+
 ---
 
 ## Field Reference
@@ -180,6 +217,13 @@ projects:
 | `FILE` | `file.file_path` equals `path` |
 
 A file can match resources from multiple projects (many-to-many).
+
+Important details:
+
+- Resource paths are relative to `base_directory`.
+- `DIRECTORY` paths are normalized internally so both `Tech/Backend` and `Tech/Backend/` behave the same.
+- `DIRECTORY` matching is directory-aware, not a raw substring prefix: `Tech/Backend` does not match `Tech/BackendExtra`.
+- Generated files and deleted files are excluded from `file_project` associations.
 
 ---
 
