@@ -8,6 +8,7 @@ Usage:
     matlock --config PATH rollup [--date YYYY-MM-DD]
     matlock --config PATH report [--target {all,dashboard,projects,history}] [--project-id ID]
     matlock --config PATH run-all [--skip-rollup] [--force-sync]
+    matlock --config PATH server [--debounce SECONDS]
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ import typer
 
 from matlock.config import load_config, validate_config_paths
 from matlock.db import get_connection, init_db
+from matlock.server import run_server
 from matlock.stages.map_projects import run_map_projects
 from matlock.stages.parse import run_parse
 from matlock.stages.report import run_report
@@ -264,3 +266,18 @@ def run_all(
         conn.close()
 
     typer.echo("run-all complete.")
+
+
+@app.command()
+def server(
+    ctx: typer.Context,
+    debounce: int = typer.Option(
+        None,
+        "--debounce",
+        help="Idle seconds before triggering report after file changes. "
+             "Overrides config debounce_seconds.",
+    ),
+) -> None:
+    """Watch the vault and run pipeline stages automatically."""
+    cfg = _load_and_validate(ctx.obj[_CONFIG_KEY])
+    run_server(cfg, debounce_seconds=debounce)
