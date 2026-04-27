@@ -3,6 +3,7 @@ Matlock CLI entrypoint.
 
 Usage:
     matlock --config PATH sync [--force]
+    matlock --config PATH parse
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ import typer
 
 from matlock.config import load_config, validate_config_paths
 from matlock.db import get_connection, init_db
+from matlock.stages.parse import run_parse
 from matlock.stages.sync import run_sync
 
 app = typer.Typer(
@@ -51,22 +53,7 @@ def sync(
     ),
 ) -> None:
     """Sync the file table with the vault on disk."""
-    config_path: Path = ctx.obj[_CONFIG_KEY]
-
-    try:
-        cfg = load_config(config_path)
-    except FileNotFoundError:
-        typer.echo(f"Error: config file not found: {config_path}", err=True)
-        raise typer.Exit(code=1)
-    except Exception as exc:  # pydantic.ValidationError or yaml errors
-        typer.echo(f"Error: invalid config: {exc}", err=True)
-        raise typer.Exit(code=1)
-
-    try:
-        validate_config_paths(cfg)
-    except ValueError as exc:
-        typer.echo(f"Error: {exc}", err=True)
-        raise typer.Exit(code=1)
+    cfg = _load_and_validate(ctx.obj[_CONFIG_KEY])
 
     conn = get_connection(cfg.db_path)
     try:
@@ -78,4 +65,42 @@ def sync(
     typer.echo(
         f"Sync complete: {result.inserted} inserted, {result.updated} updated, "
         f"{result.unchanged} unchanged, {result.deleted} deleted"
+    )
+
+
+def _load_and_validate(config_path: Path):
+    """Shared helper: load config and validate paths. Exits on error."""
+    try:
+        cfg = load_config(config_path)
+    except FileNotFoundError:
+        typer.echo(f"Error: config file not found: {config_path}", err=True)
+        raise typer.Exit(code=1)
+    except Exception as exc:
+        typer.echo(f"Error: invalid config: {exc}", err=True)
+        raise typer.Exit(code=1)
+
+    try:
+        validate_config_paths(cfg)
+    except ValueError as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(code=1)
+
+    return cfg
+
+
+@app.command()
+def parse(ctx: typer.Context) -> None:
+    """Parse all files flagged by sync (needs_parsing=1)."""
+    cfg = _load_and_validate(ctx.obj[_CONFIG_KEY])
+
+    conn = get_connection(cfg.db_path)
+    try:
+        init_db(conn)
+        result = run_parse(cfg, conn)
+    finally:
+        conn.close()
+
+    typer.echo(
+        f"Parse complete: {result.parsed} parsed, {result.skipped} skipped, "
+        f"{result.tasks_inserted} tasks inserted, {result.tasks_deleted} tasks deleted"
     )
