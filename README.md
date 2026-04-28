@@ -1,11 +1,8 @@
-# markdown-stuff
+# Matlock
 
-Small utilities for parsing Markdown into DOM-like structures in Python.
+Pipeline-driven task extractor and report generator for Markdown second brains.
 
-The project includes two parsing backends:
-
-- `markdown-it-py` for token-based parsing
-- `marko` for AST-style parsing
+Matlock walks a Obsidian/Markdown vault, extracts checkbox tasks, maps files to projects, calculates daily metrics, and renders Jinja2 Markdown dashboards — all orchestrated from a single CLI.
 
 ## Requirements
 
@@ -18,97 +15,267 @@ The project includes two parsing backends:
 poetry install
 ```
 
-## Run The CLI Test Scripts
+This registers the `matlock` command in the Poetry virtual environment.
 
-Print the full `markdown-it-py` token tree:
-
-```bash
-poetry run python scripts/parse_with_markdownit.py
-```
-
-Print the full `marko` AST tree:
+## Quick Start
 
 ```bash
-poetry run python scripts/parse_with_marko.py
+# Run the full pipeline (sync → parse → map-projects → rollup → report)
+poetry run matlock run-all
+
+# Or run each stage individually
+poetry run matlock sync
+poetry run matlock parse
+poetry run matlock map-projects
+poetry run matlock rollup
+poetry run matlock report
+
+# Or run the server daemon (watch vault continuously)
+poetry run matlock server
 ```
 
-Use a specific file with either script:
+## Configuration
+
+Matlock is configured via a `config.yaml` file (default: `./config.yaml`). Pass a custom path with `--config PATH` (or `-c PATH`) on any command.
+
+```yaml
+base_directory: /path/to/vault
+db_path: matlock.db
+output_directory: /path/to/vault/_Matlock
+
+ignore_dirs:
+  - .obsidian
+  - _Matlock
+
+debounce_seconds: 5
+
+headers:
+  header_text_maxlen: 200
+
+tasks:
+  task_text_maxlen: 500
+
+task_attributes:
+  due_date:
+    type: date
+    alias: "📅"
+  act_comp_date:
+    type: date
+    alias: "✅"
+  priority:
+    type: domain
+    values:
+      low:
+        alias: "🔽"
+      medium:
+        alias: "🔼"
+      high:
+        alias: "⏫"
+  estimate:
+    type: time
+
+super_projects:
+  - id: work
+    title: Work
+    priority: high
+
+projects:
+  - id: backend_api
+    title: Backend API
+    super_project_id: work
+    home_file: Projects/Backend API.md
+    resources:
+      - type: DIRECTORY
+        path: Tech/Backend
+      - type: FILE
+        path: Projects/Backend API.md
+```
+
+Project `resources` control which files are associated with a project during `map-projects`:
+
+- `type: DIRECTORY` matches every non-generated, non-deleted file under that directory.
+- `type: FILE` matches one exact relative path.
+
+Examples:
+
+```yaml
+projects:
+  - id: backend_api
+    title: Backend API
+    resources:
+      - type: DIRECTORY
+        path: Tech/Backend
+
+  - id: planning
+    title: Planning
+    resources:
+      - type: FILE
+        path: Projects/Planning.md
+```
+
+Notes:
+
+- Resource paths are relative to `base_directory`.
+- `DIRECTORY` matching is path-based, so `Tech/Backend` matches `Tech/Backend/api.md` but not `Tech/BackendExtra/api.md`.
+- A file may belong to multiple projects if it matches multiple resource rules.
+
+## CLI Reference
+
+All commands accept `--config PATH` to override the default config location.
+
+### `matlock run-all`
+
+Run all five pipeline stages in sequence.
+
+```
+matlock run-all [--skip-rollup] [--force-sync] [--config PATH]
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--skip-rollup` | False | Skip Stage IV rollup (useful for mid-day runs) |
+| `--force-sync` | False | Re-hash every file regardless of stored hash |
 
 ```bash
-poetry run python scripts/parse_with_markdownit.py test-data/document-1.md
-poetry run python scripts/parse_with_marko.py test-data/document-1.md
+poetry run matlock run-all
+poetry run matlock run-all --skip-rollup
+poetry run matlock run-all --force-sync
 ```
 
-Each script prints the complete parser output to the CLI in formatted JSON.
+---
 
-Print front-matter metadata and body:
+### `matlock sync`
+
+**Stage I.** Walk the vault, hash all Markdown files, update the `file` table, and flag changed files for re-parsing.
 
 ```bash
-poetry run python scripts/parse_with_frontmatter.py
+poetry run matlock sync
+poetry run matlock sync --force
 ```
 
-Or for a specific file:
+### `matlock parse`
+
+**Stage II.** Extract tasks from all files flagged `needs_parsing = 1`.
 
 ```bash
-poetry run python scripts/parse_with_frontmatter.py test-data/document-1.md
+poetry run matlock parse
 ```
 
-## Usage
+### `matlock map-projects`
 
-Parse a Markdown string into tokens:
+**Stage III.** Rebuild the `project`, `super_project`, and `file_project` tables from `config.yaml`. Always a full rebuild.
 
-```python
-from markdown_stuff import parse_tokens
-
-tokens = parse_tokens("# Title\n\nA short paragraph.")
-
-for token in tokens:
-    print(token.type, token.tag)
+```bash
+poetry run matlock map-projects
 ```
 
-Parse a Markdown string into an AST-like dictionary:
+### `matlock rollup`
 
-```python
-from markdown_stuff import parse_ast
+**Stage IV.** Calculate and persist daily metrics for the previous day (or a given date). Designed for nightly use; idempotent.
 
-document = parse_ast("# Title\n\nA short paragraph.")
-print(document["children"][0]["element"])
+```bash
+poetry run matlock rollup
+poetry run matlock rollup --date 2026-04-20
 ```
 
-Parse one of the sample files in `test-data`:
+### `matlock report`
 
-```python
-from pathlib import Path
+**Stage V.** Render Jinja2 Markdown dashboards into `output_directory`.
 
-from markdown_stuff import parse_ast, parse_tokens
+```bash
+poetry run matlock report
+poetry run matlock report --target projects
+poetry run matlock report --project-id backend_api
+```
 
-markdown_text = Path("test-data/document-1.md").read_text(encoding="utf-8")
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--target` | `all` | One of: `all`, `dashboard`, `projects`, `history` |
+| `--project-id ID` | None | Regenerate a single project page |
 
-ast = parse_ast(markdown_text)
-tokens = parse_tokens(markdown_text)
+`--target projects` regenerates both project pages and super-project pages. There is no separate `super-projects` target in the current CLI.
 
-print(ast["element"])
-print(len(tokens))
+---
+
+### `matlock server`
+
+Run a persistent daemon that monitors the vault in real time and orchestrates the pipeline automatically.
+
+```
+matlock server [--debounce SECONDS] [--config PATH]
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--debounce SECONDS` | From config (`debounce_seconds`) | Idle window before triggering `report` after file changes |
+
+Three integrated triggers:
+
+1. **File Watcher** — on create/modify/delete under `base_directory`: runs `sync` + `parse`, marks affected project(s) dirty.
+2. **Debouncer** — after `debounce_seconds` of idle time, runs `report` for all dirty projects.
+3. **Scheduler** — at 00:01 each night: runs `rollup` then a full `report` rebuild.
+
+```bash
+poetry run matlock server
+poetry run matlock server --debounce 10
+```
+
+Press `Ctrl+C` for a clean shutdown.
+
+## Pipeline Overview
+
+```
+Vault (Markdown files)
+        │
+        ▼
+   Stage I: sync          ── file table (hash, needs_parsing)
+        │
+        ▼
+  Stage II: parse         ── task table (checkbox tasks)
+        │
+        ▼
+ Stage III: map-projects  ── project / super_project / file_project tables
+        │
+        ▼
+  Stage IV: rollup        ── daily_metric table
+        │
+        ▼
+   Stage V: report        ── Markdown dashboards written to output_directory
 ```
 
 ## Project Layout
 
 ```text
-markdown_stuff/
-    __init__.py
-    parser.py
-scripts/
-    parse_with_markdownit.py
-    parse_with_marko.py
-test-data/
-    document-1.md
+matlock/
+    cli.py              ← Typer CLI entrypoint
+    config.py           ← MatlockConfig (Pydantic v2)
+    db.py               ← SQLite connection, schema, CRUD helpers
+    server.py           ← Server daemon (watcher, debouncer, scheduler)
+    stages/
+        sync.py
+        parse.py
+        map_projects.py
+        rollup.py
+        report.py
+    templates/          ← Jinja2 Markdown templates (.md.j2)
+docs/
+    matlock-cli.md
+    matlock-pipeline-specification.md
+    roadmap/
+        index.md
+tests/
+pyproject.toml
+config.yaml             ← your local config (not committed)
 ```
 
-## Generating Parsed Documents
+## Development
 
-```shell
-poetry run python scripts/parse_with_markdownit.py test-data/document-1.md > test-data/parsed/markdownit-document-1.txt
-poetry run python scripts/parse_with_marko.py test-data/document-1.md > test-data/parsed/marko-document-1.txt
-poetry run python scripts/parse_with_markdownit.py test-data/document-2.md > test-data/parsed/markdownit-document-2.txt
-poetry run python scripts/parse_with_marko.py test-data/document-2.md > test-data/parsed/marko-document-2.txt
+```bash
+# Run all tests
+poetry run pytest
+
+# Run a specific test file
+poetry run pytest tests/test_cli_run_all.py -v
 ```
+
+430 tests, 0 failures as of Phase 9.

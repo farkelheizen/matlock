@@ -1,0 +1,32 @@
+{
+  "headers": {
+    "header_text_maxlen": 200
+  },
+  "tasks": {
+    "task_text_maxlen": 200,
+    "attributes": {
+      "due_date": {
+        "type": "date",
+        "alias": "📅"
+      },
+      "complete_date": {
+        "type": "date",
+        "alias": "✅"
+      },
+      "priority": {
+        "type": "domain",
+        "values": {
+          "low": { "alias": "🔽" },
+          "medium": { "alias": "🔼" },
+          "high": { "alias": "⏫" }
+        }
+      },
+      "estimate": {
+        "type": "time"
+      },
+      "actual": {
+        "type": "time"
+      }
+    }
+  }
+}
