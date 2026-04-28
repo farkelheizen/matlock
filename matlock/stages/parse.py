@@ -13,7 +13,9 @@ Public API:
 from __future__ import annotations
 
 import dataclasses
+import datetime
 import json
+import logging
 import sqlite3
 
 from matlock.config import MatlockConfig
@@ -26,6 +28,8 @@ from matlock.db import (
 from matlock.extractor import extract_tasks_from_markdown
 from matlock.models import ParsedMarkdownTask
 from matlock.parser import parse_front_matter
+
+log = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -41,6 +45,23 @@ class ParseResult:
     skipped: int = 0         # files that raised an exception (needs_parsing left as 1)
     tasks_inserted: int = 0  # total task rows inserted across all parsed files
     tasks_deleted: int = 0   # total task rows deleted (stale) across all parsed files
+
+
+# ---------------------------------------------------------------------------
+# JSON helpers
+# ---------------------------------------------------------------------------
+
+
+def _json_default(obj: object) -> str:
+    """Fallback serializer for types not handled by the stdlib JSON encoder.
+
+    Converts ``datetime.date`` and ``datetime.datetime`` to ISO-8601 strings so
+    that YAML front-matter values (which PyYAML natively parses as date objects)
+    can be stored as JSON text in the database.
+    """
+    if isinstance(obj, (datetime.date, datetime.datetime)):
+        return obj.isoformat()
+    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
 
 
 # ---------------------------------------------------------------------------
@@ -117,6 +138,7 @@ def run_parse(
     result = ParseResult()
     extractor_cfg = _build_extractor_config(config)
     files = get_files_needing_parsing(conn)
+    log.info("parse: %d file(s) flagged for parsing", len(files))
 
     for file_row in files:
         file_path: str = file_row["file_path"]
@@ -127,13 +149,14 @@ def run_parse(
             content = abs_path.read_text(encoding="utf-8")
             parsed_file = extract_tasks_from_markdown(content, extractor_cfg, file_path)
         except Exception:
+            log.warning("parse: skipped %s (extraction error)", file_path, exc_info=True)
             result.skipped += 1
             continue
 
         # --- DB writes (only reached on success) ---
         _, body = parse_front_matter(content)
         word_count = len(body.split())
-        meta_json = json.dumps(parsed_file.meta_data)
+        meta_json = json.dumps(parsed_file.meta_data, default=_json_default)
 
         old_tasks = get_tasks_for_file(conn, file_path)
         delete_tasks_for_file(conn, file_path)
@@ -148,7 +171,12 @@ def run_parse(
             " WHERE file_path = ?",
             (word_count, meta_json, file_path),
         )
+        log.debug("parse: parsed %s (%d tasks)", file_path, len(parsed_file.tasks))
         result.parsed += 1
 
     conn.commit()
+    log.info(
+        "parse complete: parsed=%d skipped=%d tasks_inserted=%d tasks_deleted=%d",
+        result.parsed, result.skipped, result.tasks_inserted, result.tasks_deleted,
+    )
     return result

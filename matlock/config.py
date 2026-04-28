@@ -106,6 +106,9 @@ class MatlockConfig(BaseModel):
     task_attributes: dict[str, TaskAttributeConfig] = Field(default_factory=dict)
     super_projects: list[SuperProjectConfig] = Field(default_factory=list)
     projects: list[ProjectConfig] = Field(default_factory=list)
+    log_path: Path | None = None
+    log_max_bytes: int = 10_000_000   # 10 MB per file
+    log_backup_count: int = 3
 
     @model_validator(mode="after")
     def _check_unique_ids_and_references(self) -> "MatlockConfig":
@@ -146,8 +149,10 @@ class MatlockConfig(BaseModel):
 def load_config(path: str | Path) -> MatlockConfig:
     """Load and validate a config.yaml file.
 
-    Relative ``db_path`` and ``output_directory`` are resolved against
-    ``base_directory`` before Pydantic validation.
+    Only ``output_directory`` is resolved relative to ``base_directory`` when
+    given as a relative path.  ``db_path`` and ``log_path`` are intentionally
+    **not** resolved against ``base_directory`` — use absolute paths for those
+    so the database and log file can live outside the vault.
 
     Raises:
         FileNotFoundError: if the YAML file does not exist.
@@ -157,13 +162,14 @@ def load_config(path: str | Path) -> MatlockConfig:
     with config_path.open(encoding="utf-8") as fh:
         data: dict = yaml.safe_load(fh) or {}
 
-    # Resolve relative paths against base_directory (D1)
+    # Resolve output_directory relative to base_directory when given as a
+    # relative path (D1).  db_path and log_path are left as-is so they can
+    # live outside the vault.
     base = Path(data.get("base_directory", ""))
-    for field_name in ("db_path", "output_directory"):
-        if field_name in data:
-            p = Path(data[field_name])
-            if not p.is_absolute():
-                data[field_name] = base / p
+    if "output_directory" in data:
+        p = Path(data["output_directory"])
+        if not p.is_absolute():
+            data["output_directory"] = base / p
 
     return MatlockConfig(**data)
 

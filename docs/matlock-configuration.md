@@ -23,8 +23,10 @@ By convention, `config.yaml` lives in the same directory where you run `matlock`
 base_directory: "/Users/me/SecondBrain"
 
 # Path to the SQLite database file.
-# Relative paths are resolved relative to base_directory.
-db_path: "matlock.db"
+# Must be an absolute path. The database is NOT resolved relative to
+# base_directory, so it can live anywhere on your filesystem (e.g. outside
+# the vault).
+db_path: "/Users/me/Matlock/matlock.db"
 
 # Output directory for generated dashboards.
 # Relative paths are resolved relative to base_directory.
@@ -47,6 +49,22 @@ ignore_dirs:
 
 # Seconds of file-change inactivity before triggering report.
 debounce_seconds: 5
+
+# ────────────────────────────────────────────────────
+# Logging
+# ────────────────────────────────────────────────────
+
+# Path to the rotating log file.
+# Must be an absolute path. The log file is NOT resolved relative to
+# base_directory, so it can live outside the vault.
+# Omit (or set to null) to disable file logging (warnings still appear on stderr).
+log_path: "/Users/me/Matlock/matlock.log"
+
+# Maximum size of a single log file before rotation, in bytes. Default: 10 MB.
+log_max_bytes: 10000000
+
+# Number of rotated backup files to keep (e.g. matlock.log.1, .log.2, …). Default: 3.
+log_backup_count: 3
 
 # ────────────────────────────────────────────────────
 # Parser: text limits
@@ -179,7 +197,7 @@ This matches only `Projects/Planning.md`.
 | Field | Type | Required | Description |
 |:------|:-----|:---------|:------------|
 | `base_directory` | string | Yes | Absolute path to the vault root |
-| `db_path` | string | Yes | SQLite file path (relative to `base_directory` or absolute) |
+| `db_path` | string | Yes | SQLite file path — **absolute path required**; not resolved relative to `base_directory` |
 | `output_directory` | string | Yes | Report output directory (relative to `base_directory` or absolute) |
 
 ### Sync Behaviour
@@ -193,6 +211,14 @@ This matches only `Projects/Planning.md`.
 | Field | Type | Default | Description |
 |:------|:-----|:--------|:------------|
 | `debounce_seconds` | int | `5` | Idle window before triggering report after file changes |
+
+### Logging
+
+| Field | Type | Default | Description |
+|:------|:-----|:--------|:------------|
+| `log_path` | string \| null | `null` | **Absolute path** to the rotating log file; not resolved relative to `base_directory`. Omit or set to `null` to disable file logging. |
+| `log_max_bytes` | int | `10000000` | Maximum size of a single log file before rotation (bytes). |
+| `log_backup_count` | int | `3` | Number of rotated backup files to keep (e.g. `matlock.log.1`, `.log.2`, …). |
 
 ### Parser Limits
 
@@ -231,7 +257,8 @@ Important details:
 
 - `base_directory` must exist and be readable at startup.
 - `output_directory` will be created if it does not exist.
-- `db_path` parent directory must be writable.
+- `db_path` must be an absolute path; its parent directory must exist and be writable.
+- `log_path`, when set, must be an absolute path; its parent directory is created automatically if it does not exist.
 - All `home_file` and resource `path` values are relative to `base_directory`.
 - `super_project_id` on a project must reference a defined `super_project.id` or be omitted.
 - Duplicate `id` values within `super_projects` or `projects` are a fatal config error.

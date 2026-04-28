@@ -204,28 +204,42 @@ def test_domain_attribute_missing_values(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_relative_db_path_resolved(tmp_path: Path) -> None:
+def test_relative_db_path_not_resolved_against_base(tmp_path: Path) -> None:
+    """db_path must NOT be resolved against base_directory."""
     data = {
         "base_directory": "/fake/vault",
-        "db_path": "matlock.db",          # relative
+        "db_path": "matlock.db",          # relative — stays relative
         "output_directory": "/fake/vault/_Matlock",
     }
     cfg_file = _write_config(tmp_path, data)
     config = load_config(cfg_file)
-    assert config.db_path == Path("/fake/vault/matlock.db")
-    assert config.db_path.is_absolute()
+    # Should remain relative, not prefixed with /fake/vault
+    assert config.db_path == Path("matlock.db")
 
 
 def test_relative_output_directory_resolved(tmp_path: Path) -> None:
     data = {
         "base_directory": "/fake/vault",
         "db_path": "/fake/vault/matlock.db",
-        "output_directory": "_Matlock",   # relative
+        "output_directory": "_Matlock",   # relative — resolved against base_directory
     }
     cfg_file = _write_config(tmp_path, data)
     config = load_config(cfg_file)
     assert config.output_directory == Path("/fake/vault/_Matlock")
     assert config.output_directory.is_absolute()
+
+
+def test_relative_log_path_not_resolved_against_base(tmp_path: Path) -> None:
+    """log_path must NOT be resolved against base_directory."""
+    data = {
+        "base_directory": "/fake/vault",
+        "db_path": "/fake/vault/matlock.db",
+        "output_directory": "/fake/vault/_Matlock",
+        "log_path": "matlock.log",         # relative — stays relative
+    }
+    cfg_file = _write_config(tmp_path, data)
+    config = load_config(cfg_file)
+    assert config.log_path == Path("matlock.log")
 
 
 # ---------------------------------------------------------------------------

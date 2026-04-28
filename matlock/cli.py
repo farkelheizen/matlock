@@ -20,6 +20,7 @@ import typer
 
 from matlock.config import load_config, validate_config_paths
 from matlock.db import get_connection, init_db
+from matlock.logging_setup import setup_logging
 from matlock.server import run_server
 from matlock.stages.map_projects import run_map_projects
 from matlock.stages.parse import run_parse
@@ -95,6 +96,7 @@ def _load_and_validate(config_path: Path):
         typer.echo(f"Error: {exc}", err=True)
         raise typer.Exit(code=1)
 
+    setup_logging(cfg)
     return cfg
 
 
