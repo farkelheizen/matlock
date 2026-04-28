@@ -29,11 +29,14 @@ poetry run matlock parse
 poetry run matlock map-projects
 poetry run matlock rollup
 poetry run matlock report
+
+# Or run the server daemon (watch vault continuously)
+poetry run matlock server
 ```
 
 ## Configuration
 
-Matlock is configured via a `config.yaml` file (default: `./config.yaml`). Pass a custom path with `--config PATH` on any command.
+Matlock is configured via a `config.yaml` file (default: `./config.yaml`). Pass a custom path with `--config PATH` (or `-c PATH`) on any command.
 
 ```yaml
 base_directory: /path/to/vault
@@ -56,7 +59,7 @@ task_attributes:
   due_date:
     type: date
     alias: "📅"
-  complete_date:
+  act_comp_date:
     type: date
     alias: "✅"
   priority:
@@ -69,8 +72,6 @@ task_attributes:
       high:
         alias: "⏫"
   estimate:
-    type: time
-  actual:
     type: time
 
 super_projects:
@@ -194,6 +195,33 @@ poetry run matlock report --project-id backend_api
 
 `--target projects` regenerates both project pages and super-project pages. There is no separate `super-projects` target in the current CLI.
 
+---
+
+### `matlock server`
+
+Run a persistent daemon that monitors the vault in real time and orchestrates the pipeline automatically.
+
+```
+matlock server [--debounce SECONDS] [--config PATH]
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--debounce SECONDS` | From config (`debounce_seconds`) | Idle window before triggering `report` after file changes |
+
+Three integrated triggers:
+
+1. **File Watcher** — on create/modify/delete under `base_directory`: runs `sync` + `parse`, marks affected project(s) dirty.
+2. **Debouncer** — after `debounce_seconds` of idle time, runs `report` for all dirty projects.
+3. **Scheduler** — at 00:01 each night: runs `rollup` then a full `report` rebuild.
+
+```bash
+poetry run matlock server
+poetry run matlock server --debounce 10
+```
+
+Press `Ctrl+C` for a clean shutdown.
+
 ## Pipeline Overview
 
 ```
@@ -222,6 +250,7 @@ matlock/
     cli.py              ← Typer CLI entrypoint
     config.py           ← MatlockConfig (Pydantic v2)
     db.py               ← SQLite connection, schema, CRUD helpers
+    server.py           ← Server daemon (watcher, debouncer, scheduler)
     stages/
         sync.py
         parse.py
@@ -249,4 +278,4 @@ poetry run pytest
 poetry run pytest tests/test_cli_run_all.py -v
 ```
 
-403 tests, 0 failures as of Phase 8.
+430 tests, 0 failures as of Phase 9.

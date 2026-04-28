@@ -14,8 +14,7 @@ matlock [OPTIONS] COMMAND [ARGS]...
 
 | Option | Description |
 |:-------|:------------|
-| `--config PATH` | Path to `config.yaml` (default: `./config.yaml`) |
-| `--version` | Show the installed Matlock version and exit |
+| `--config PATH`, `-c PATH` | Path to `config.yaml` (default: `./config.yaml`) |
 | `--help` | Show help and exit |
 
 ---
@@ -53,13 +52,11 @@ matlock parse [OPTIONS]
 
 | Option | Default | Description |
 |:-------|:--------|:------------|
-| `--file PATH` | None | Parse a single file by path (bypasses `needs_parsing` check) |
 | `--config PATH` | `./config.yaml` | Config file location |
 
 **Example:**
 ```bash
 poetry run matlock parse
-poetry run matlock parse --file "Projects/Work.md"
 ```
 
 ---
@@ -147,6 +144,7 @@ matlock run-all [OPTIONS]
 ```bash
 poetry run matlock run-all
 poetry run matlock run-all --skip-rollup
+poetry run matlock run-all --force-sync
 ```
 
 ---
