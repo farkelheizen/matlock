@@ -79,9 +79,34 @@ Because there is no hidden event loop or magic, diagnosing stale output is trivi
 1. Did the file save? → Check the filesystem.
 2. Did `sync` catch it? → `SELECT needs_parsing FROM file WHERE file_path = '...'`
 3. Did `parse` extract it? → `SELECT * FROM task WHERE file_path = '...'`
-4. Did `report` fail? → Check Jinja2 template errors in logs.
+4. Did `report` fail? → Check the log file (see `log_path` in `config.yaml`).
 
 Each stage can be re-run independently without side effects. All DB writes are upserts or atomic delete-then-insert operations.
+
+## 8. Logging
+
+Matlock uses Python's stdlib `logging` module. Logging is configured once at CLI startup via `matlock.logging_setup.setup_logging(config)`.
+
+- **Console (stderr):** WARNING and above — always active, regardless of config.
+- **File (rotating):** DEBUG and above — enabled when `log_path` is set in `config.yaml`. The file rotates when it reaches `log_max_bytes`; up to `log_backup_count` rotated files are kept.
+
+Typical log file entries:
+
+```
+2026-04-28T09:01:00 INFO     matlock.stages.sync: sync complete: inserted=12 updated=3 ...
+2026-04-28T09:01:01 INFO     matlock.stages.parse: parse: 15 file(s) flagged for parsing
+2026-04-28T09:01:02 WARNING  matlock.stages.parse: parse: skipped Notes/broken.md (extraction error)
+```
+
+Configure in `config.yaml`:
+
+```yaml
+log_path: "/Users/me/Matlock/matlock.log"   # absolute path required
+log_max_bytes: 10000000                       # 10 MB
+log_backup_count: 3
+```
+
+Omit `log_path` (or set to `null`) to suppress file logging while keeping stderr warnings.
 
 ## 8. Output & Rendering
 

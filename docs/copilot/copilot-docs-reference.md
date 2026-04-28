@@ -29,7 +29,7 @@ Use this file as the fast lookup index before implementation.
 | Architecture overview, 5-stage pipeline, execution modes, directory guardrail | `docs/matlock-high-level-design.md` | `docs/matlock-pipeline-specification.md` |
 | Pipeline stage logic: sync, parse, map-projects, rollup, report, server | `docs/matlock-pipeline-specification.md` | `docs/matlock-data-model.md`, `docs/matlock-high-level-design.md` |
 | SQLite schema, in-memory models, table columns, PRAGMA config | `docs/matlock-data-model.md` | `docs/matlock-pipeline-specification.md` |
-| config.yaml schema, task attributes, project definitions, path resolution | `docs/matlock-configuration.md` | `docs/matlock-data-model.md` |
+| config.yaml schema, task attributes, project definitions, path resolution, logging | `docs/matlock-configuration.md` | `docs/matlock-data-model.md` |
 | Jinja2 report templates, dashboard types, template variables, heatmap logic | `docs/matlock-generated-reports.md` | `docs/matlock-high-level-design.md` |
 | CLI commands, flags, `matlock server`, entrypoint registration | `docs/matlock-cli.md` | `docs/matlock-pipeline-specification.md` |
 | Implementation phases, roadmap overview | `docs/roadmap/index.md` | Phase plan docs in `docs/roadmap/` |
@@ -45,6 +45,7 @@ Use this file as the fast lookup index before implementation.
 - **report, Jinja2, _Matlock/, dashboard, is_generated** → `matlock-generated-reports.md`, `matlock-pipeline-specification.md`
 - **server, watchdog, debouncer, scheduler, daemon, midnight** → `matlock-cli.md`, `matlock-pipeline-specification.md`
 - **config.yaml, base_directory, output_directory, db_path, debounce_seconds** → `matlock-configuration.md`
+- **log_path, log_max_bytes, log_backup_count, logging, rotating log** → `matlock-configuration.md`, `matlock-high-level-design.md`
 - **task_attributes, due_date, priority, alias, domain, date, time** → `matlock-configuration.md`, `matlock-data-model.md`
 - **task_id, twin_index, overflow, headers, parent_task_id** → `matlock-data-model.md`
 - **SQLite, WAL, PRAGMA, foreign_keys, busy_timeout** → `matlock-data-model.md`
