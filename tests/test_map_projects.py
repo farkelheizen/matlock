@@ -70,12 +70,14 @@ def _proj(
     pid: str,
     resources: list[ResourceConfig] | None = None,
     super_project_id: str | None = None,
+    home_file: str | None = None,
 ) -> ProjectConfig:
     return ProjectConfig(
         id=pid,
         title=pid.title(),
         super_project_id=super_project_id,
         resources=resources or [],
+        home_file=home_file,
     )
 
 
@@ -304,7 +306,8 @@ class TestRunMapProjectsFileMatching:
         rows = conn.execute("SELECT project_id FROM file_project ORDER BY project_id").fetchall()
         assert [r["project_id"] for r in rows] == ["p1", "p2"]
 
-    def test_project_with_no_resources_produces_no_links(self):
+    def test_project_with_no_resources_and_no_home_file_produces_no_links(self):
+        """When both resources and home_file are absent, no file_project rows are created."""
         conn = _conn()
         _seed_file(conn, "Notes/diary.md")
         config = _make_config(
@@ -313,6 +316,46 @@ class TestRunMapProjectsFileMatching:
         result = run_map_projects(config, conn)
         assert result.file_project_rows == 0
         assert conn.execute("SELECT COUNT(*) FROM project").fetchone()[0] == 1
+
+    def test_no_resources_but_home_file_produces_implicit_link(self):
+        """home_file acts as an implicit FILE resource when no resources are defined."""
+        conn = _conn()
+        _seed_file(conn, "Projects/plan.md")
+        config = _make_config(
+            projects=[_proj("p1", home_file="Projects/plan.md")],
+        )
+        result = run_map_projects(config, conn)
+        assert result.file_project_rows == 1
+        row = conn.execute("SELECT * FROM file_project").fetchone()
+        assert row["file_path"] == "Projects/plan.md"
+        assert row["project_id"] == "p1"
+
+    def test_no_resources_home_file_not_in_db_produces_no_link(self):
+        """home_file fallback still requires the file to exist in the file table."""
+        conn = _conn()
+        # file row does NOT exist in DB
+        config = _make_config(
+            projects=[_proj("p1", home_file="Projects/missing.md")],
+        )
+        result = run_map_projects(config, conn)
+        assert result.file_project_rows == 0
+
+    def test_explicit_resources_override_home_file_fallback(self):
+        """When resources are defined, home_file is NOT added as an extra implicit link."""
+        conn = _conn()
+        _seed_file(conn, "Projects/plan.md")
+        _seed_file(conn, "Tech/api.md")
+        config = _make_config(
+            projects=[_proj("p1",
+                home_file="Projects/plan.md",
+                resources=[_file_res("Tech/api.md")],
+            )],
+        )
+        result = run_map_projects(config, conn)
+        # Only the explicit resource matches; home_file is NOT double-added
+        assert result.file_project_rows == 1
+        row = conn.execute("SELECT * FROM file_project").fetchone()
+        assert row["file_path"] == "Tech/api.md"
 
     def test_file_resource_not_in_db_produces_no_link(self):
         conn = _conn()
