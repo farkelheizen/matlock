@@ -50,6 +50,7 @@ def _heatmap_emoji(count: int) -> str:
 class ReportResult:
     files_written: int
     target: str
+    files_deleted: int = 0
 
 
 # ---------------------------------------------------------------------------
@@ -95,6 +96,8 @@ def run_report(
     today_str = datetime.date.today().isoformat()
     files_written = 0
 
+    files_deleted = 0
+
     if project_id is not None:
         # Targeted single-project regeneration
         files_written += _render_single_project(env, conn, out_dir, project_id, today_str)
@@ -104,11 +107,22 @@ def run_report(
         if target in ("all", "projects"):
             files_written += _render_all_projects(env, conn, out_dir, today_str)
             files_written += _render_all_super_projects(env, conn, out_dir, today_str)
+            # Remove report files for projects / super-projects no longer in the DB
+            current_proj_ids = {
+                r["project_id"]
+                for r in conn.execute("SELECT project_id FROM project").fetchall()
+            }
+            current_sp_ids = {
+                r["super_project_id"]
+                for r in conn.execute("SELECT super_project_id FROM super_project").fetchall()
+            }
+            files_deleted += _cleanup_stale_report_files(conn, out_dir / "Projects", current_proj_ids)
+            files_deleted += _cleanup_stale_report_files(conn, out_dir / "SuperProjects", current_sp_ids)
         if target in ("all", "history"):
             files_written += _render_history(env, conn, out_dir, today_str)
 
     conn.commit()
-    return ReportResult(files_written=files_written, target=target)
+    return ReportResult(files_written=files_written, target=target, files_deleted=files_deleted)
 
 
 # ---------------------------------------------------------------------------
@@ -301,13 +315,17 @@ def _get_due_tasks(conn: sqlite3.Connection) -> tuple[list[Any], list[Any]]:
     past_due = conn.execute(
         "SELECT t.task_text, t.due_date, t.file_path"
         " FROM task t"
-        " WHERE t.checked = 0 AND t.due_date IS NOT NULL AND t.due_date < ?",
+        " JOIN file f ON t.file_path = f.file_path"
+        " WHERE t.checked = 0 AND t.due_date IS NOT NULL AND t.due_date < ?"
+        " AND f.deleted = 0",
         (today,),
     ).fetchall()
     due_today = conn.execute(
         "SELECT t.task_text, t.due_date, t.file_path"
         " FROM task t"
-        " WHERE t.checked = 0 AND t.due_date = ?",
+        " JOIN file f ON t.file_path = f.file_path"
+        " WHERE t.checked = 0 AND t.due_date = ?"
+        " AND f.deleted = 0",
         (today,),
     ).fetchall()
     return past_due, due_today
@@ -497,6 +515,34 @@ def _render_all_projects(
     for row in rows:
         _render_project_page(env, conn, out_dir, row, today_str)
     return len(rows)
+
+
+# ---------------------------------------------------------------------------
+# Report cleanup helper
+# ---------------------------------------------------------------------------
+
+
+def _cleanup_stale_report_files(
+    conn: sqlite3.Connection,
+    report_subdir: Path,
+    current_ids: set[str],
+) -> int:
+    """Delete generated .md files in *report_subdir* whose stem is not in *current_ids*.
+
+    Also removes the corresponding row from the ``file`` table (generated files are
+    stored with their absolute path as ``file_path``).
+
+    Returns the number of files deleted.
+    """
+    if not report_subdir.exists():
+        return 0
+    removed = 0
+    for md_file in report_subdir.glob("*.md"):
+        if md_file.stem not in current_ids:
+            conn.execute("DELETE FROM file WHERE file_path = ?", (str(md_file),))
+            md_file.unlink()
+            removed += 1
+    return removed
 
 
 # ---------------------------------------------------------------------------

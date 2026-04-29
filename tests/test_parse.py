@@ -550,3 +550,31 @@ class TestSyncThenParse:
         assert result.parsed == 1
         tasks = get_tasks_for_file(conn, "tasks.md")
         assert len(tasks) == 2
+
+    def test_sync_detects_task_removal_and_parse_cleans_up(self, tmp_path: Path):
+        """Full cycle: sync+parse, remove a task, sync+parse again — stale task gone."""
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        md_file = vault / "tasks.md"
+        md_file.write_text(_MD_WITH_TASKS, encoding="utf-8")  # 2 tasks
+        config = _make_config(vault, tmp_path)
+        conn = get_connection(":memory:")
+        init_db(conn)
+
+        # First pass
+        run_sync(config, conn)
+        run_parse(config, conn)
+        assert len(get_tasks_for_file(conn, "tasks.md")) == 2
+
+        # User removes one task from the file
+        md_file.write_text("# Work\n\n- [ ] Buy milk\n", encoding="utf-8")
+
+        # Second pass
+        run_sync(config, conn)   # detects hash change → needs_parsing=1
+        result = run_parse(config, conn)
+
+        assert result.tasks_deleted == 2   # both old tasks deleted
+        assert result.tasks_inserted == 1  # only the remaining task re-inserted
+        tasks = get_tasks_for_file(conn, "tasks.md")
+        assert len(tasks) == 1
+        assert tasks[0]["task_text"] == "Buy milk"

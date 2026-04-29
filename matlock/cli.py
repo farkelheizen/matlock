@@ -206,7 +206,8 @@ def report(
         conn.close()
 
     typer.echo(
-        f"Report complete: {result.files_written} files written ({result.target})"
+        f"Report complete: {result.files_written} files written, "
+        f"{result.files_deleted} deleted ({result.target})"
     )
 
 
@@ -262,7 +263,8 @@ def run_all(
 
         report_result = run_report(cfg, conn, target="all", project_id=None)
         typer.echo(
-            f"Report: {report_result.files_written} files written ({report_result.target})"
+            f"Report: {report_result.files_written} files written, "
+            f"{report_result.files_deleted} deleted ({report_result.target})"
         )
     finally:
         conn.close()

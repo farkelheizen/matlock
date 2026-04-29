@@ -14,6 +14,7 @@ from matlock.stages.report import (
     _calc_streak,
     _calc_heatmap,
     _build_jinja_env,
+    _cleanup_stale_report_files,
     run_report,
 )
 
@@ -517,3 +518,135 @@ class TestDashboardContent:
         run_report(cfg, conn, target="dashboard")
         content = (cfg.output_directory / "000_Daily_Dashboard.md").read_text()
         assert "Activity Heatmap" in content
+
+
+# ---------------------------------------------------------------------------
+# Report cleanup — stale project / super-project page deletion
+# ---------------------------------------------------------------------------
+
+
+class TestReportCleanup:
+    def test_stale_project_file_deleted(self, tmp_path: Path):
+        """A project page for a removed project is deleted on the next full report."""
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        # First run: project "old" exists
+        _seed_project(conn, "old", "Old Project")
+        run_report(cfg, conn, target="projects")
+        stale = cfg.output_directory / "Projects" / "old.md"
+        assert stale.exists()
+
+        # Remove the project from the DB (simulates removing from config + map-projects)
+        conn.execute("DELETE FROM project WHERE project_id = 'old'")
+        conn.commit()
+
+        result = run_report(cfg, conn, target="projects")
+
+        assert not stale.exists()
+        assert result.files_deleted == 1
+
+    def test_stale_super_project_file_deleted(self, tmp_path: Path):
+        """A super-project page for a removed super-project is deleted on the next full report."""
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        _seed_super_project(conn, "old-sp", "Old SP")
+        run_report(cfg, conn, target="projects")
+        stale = cfg.output_directory / "SuperProjects" / "old-sp.md"
+        assert stale.exists()
+
+        conn.execute("DELETE FROM super_project WHERE super_project_id = 'old-sp'")
+        conn.commit()
+
+        result = run_report(cfg, conn, target="projects")
+
+        assert not stale.exists()
+        assert result.files_deleted == 1
+
+    def test_current_project_file_not_deleted(self, tmp_path: Path):
+        """Project pages for still-active projects must survive cleanup."""
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        _seed_project(conn, "keep", "Keep Me")
+        run_report(cfg, conn, target="projects")
+
+        result = run_report(cfg, conn, target="projects")
+
+        assert (cfg.output_directory / "Projects" / "keep.md").exists()
+        assert result.files_deleted == 0
+
+    def test_files_deleted_count_multiple(self, tmp_path: Path):
+        """files_deleted reflects the total number of stale files removed."""
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        _seed_project(conn, "p1", "P1")
+        _seed_project(conn, "p2", "P2")
+        _seed_project(conn, "keep", "Keep")
+        run_report(cfg, conn, target="projects")
+
+        conn.execute("DELETE FROM project WHERE project_id IN ('p1', 'p2')")
+        conn.commit()
+
+        result = run_report(cfg, conn, target="projects")
+
+        assert not (cfg.output_directory / "Projects" / "p1.md").exists()
+        assert not (cfg.output_directory / "Projects" / "p2.md").exists()
+        assert (cfg.output_directory / "Projects" / "keep.md").exists()
+        assert result.files_deleted == 2
+
+    def test_cleanup_removes_file_table_row(self, tmp_path: Path):
+        """The file table row for a deleted report file must also be removed."""
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        _seed_project(conn, "old", "Old")
+        run_report(cfg, conn, target="projects")
+        stale_path = str(cfg.output_directory / "Projects" / "old.md")
+        # Row should exist before cleanup
+        assert conn.execute(
+            "SELECT 1 FROM file WHERE file_path = ?", (stale_path,)
+        ).fetchone() is not None
+
+        conn.execute("DELETE FROM project WHERE project_id = 'old'")
+        conn.commit()
+        run_report(cfg, conn, target="projects")
+
+        assert conn.execute(
+            "SELECT 1 FROM file WHERE file_path = ?", (stale_path,)
+        ).fetchone() is None
+
+    def test_cleanup_not_triggered_for_targeted_project_id(self, tmp_path: Path):
+        """A single-project targeted render must NOT delete other project pages."""
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        _seed_project(conn, "keep", "Keep")
+        _seed_project(conn, "target", "Target")
+        run_report(cfg, conn, target="projects")
+
+        # Remove "keep" from DB — but then only render "target" via project_id
+        conn.execute("DELETE FROM project WHERE project_id = 'keep'")
+        conn.commit()
+        run_report(cfg, conn, project_id="target")
+
+        # "keep.md" should still exist — targeted render must not clean up
+        assert (cfg.output_directory / "Projects" / "keep.md").exists()
+
+    def test_cleanup_not_triggered_for_target_dashboard(self, tmp_path: Path):
+        """target='dashboard' must NOT delete stale project pages."""
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        _seed_project(conn, "old", "Old")
+        run_report(cfg, conn, target="projects")
+
+        conn.execute("DELETE FROM project WHERE project_id = 'old'")
+        conn.commit()
+        result = run_report(cfg, conn, target="dashboard")
+
+        assert (cfg.output_directory / "Projects" / "old.md").exists()
+        assert result.files_deleted == 0
+
+    def test_cleanup_no_error_when_subdir_missing(self, tmp_path: Path):
+        """Cleanup must be a no-op (not an error) when the report subdirectory doesn't exist."""
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        # Never ran a project render — Projects/ doesn't exist
+        result = run_report(cfg, conn, target="projects")
+        assert result.files_deleted == 0
