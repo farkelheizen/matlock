@@ -65,9 +65,9 @@ Implement a new `matlock scan-projects` CLI command that scans all Markdown file
 | Step ID | Status | Goal | Planned Changes | Test Coverage |
 |---|---|---|---|---|
 | SP-S1 | Completed | Define `ScannedFile` and `ProjectCandidate` Pydantic models | `matlock/scan_models.py` (new) | `tests/test_scan_models.py` (new) — model construction, field defaults, `project_id` priority logic |
-| SP-S2 | Not Started | Implement vault walker and frontmatter scanner | `matlock/stages/scan_projects.py` (new) — `scan_vault()`, `_scan_file()`, `_build_project_candidates()` | `tests/test_scan_projects.py` (new) — scanned file field population, project candidate aggregation |
-| SP-S3 | Not Started | Implement `--print-yaml` and `--diff` output formatters | `matlock/stages/scan_projects.py` — `format_as_yaml()`, `format_as_diff()` | `tests/test_scan_projects.py` — YAML output shape, diff add/change/remove sections |
-| SP-S4 | Not Started | Implement `--merge` config writer | `matlock/stages/scan_projects.py` — `merge_into_config()` | `tests/test_scan_projects.py` — merge adds new projects, merge preserves unrelated config keys, merge no-op when already in sync |
+| SP-S2 | Completed | Implement vault walker and frontmatter scanner | `matlock/stages/scan_projects.py` (new) — `scan_vault()`, `_scan_file()`, `_build_project_candidates()` | `tests/test_scan_projects.py` (new) — scanned file field population, project candidate aggregation |
+| SP-S3 | Completed | Implement `--print-yaml` and `--diff` output formatters | `matlock/stages/scan_projects.py` — `format_as_yaml()`, `format_as_diff()` | `tests/test_scan_projects.py` — YAML output shape, diff add/change/remove sections |
+| SP-S4 | Completed | Implement `--merge` config writer | `matlock/stages/scan_projects.py` — `merge_into_config()` | `tests/test_scan_projects.py` — merge adds new projects, merge preserves unrelated config keys, merge no-op when already in sync |
 | SP-S5 | Not Started | Wire up `scan-projects` CLI command | `matlock/cli.py` — new `scan_projects` command with mutually exclusive option group | `tests/test_cli_scan_projects.py` (new) — each mode flag, default-to-print-yaml, no-config error path |
 | SP-S6 | Not Started | Documentation, CHANGELOG, and version bump | `docs/matlock-scan-projects.md` (new), `docs/matlock-cli.md`, `docs/matlock-high-level-design.md`, `docs/copilot/copilot-docs-reference.md`, `docs/roadmap/index.md`, `CHANGELOG.md` (new), `pyproject.toml` | No additional tests — doc and version changes only |
 
@@ -353,13 +353,19 @@ _(Populated during implementation. One entry per completed step.)_
 - Validation: 12 tests pass
 
 ### SP-S2
-- Status: Not Started
+- Status: Completed
+- Changes: `matlock/stages/scan_projects.py` (new — scan_vault, _scan_file, _build_project_candidates)
+- Validation: 78 tests pass
 
 ### SP-S3
-- Status: Not Started
+- Status: Completed
+- Changes: `matlock/stages/scan_projects.py` — format_as_yaml, format_as_diff, _diff_project_fields
+- Validation: covered by test_scan_projects.py
 
 ### SP-S4
-- Status: Not Started
+- Status: Completed
+- Changes: `matlock/stages/scan_projects.py` — MergeResult, merge_into_config, _build_project_dict
+- Validation: 78 tests pass; full suite 566 pass
 
 ### SP-S5
 - Status: Not Started
