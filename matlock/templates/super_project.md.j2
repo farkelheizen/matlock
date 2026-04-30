@@ -2,8 +2,7 @@
 
 ## 📈 Child Project Status
 | Project | Priority | Open Tasks | Completed | Due Date | Status |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-{% for p in child_projects %}
+| :--- | :--- | :--- | :--- | :--- | :--- |{% for p in child_projects %}
 | **[[{{ p.id }}]]** | {{ p.priority | title }} | {{ p.stats.open_count }} | {{ p.stats.completed_count }} | {{ p.due_date or "—" }} | {{ p.status_emoji }} {{ p.status_label }} |
 {%- endfor %}
 

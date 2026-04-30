@@ -15,6 +15,8 @@ from matlock.stages.report import (
     _calc_heatmap,
     _build_jinja_env,
     _cleanup_stale_report_files,
+    _compute_expected_paths,
+    _purge_stale_generated,
     run_report,
 )
 
@@ -650,3 +652,138 @@ class TestReportCleanup:
         # Never ran a project render — Projects/ doesn't exist
         result = run_report(cfg, conn, target="projects")
         assert result.files_deleted == 0
+
+
+# ---------------------------------------------------------------------------
+# Force regeneration
+# ---------------------------------------------------------------------------
+
+
+class TestRunReportForce:
+    def test_force_runs_without_error(self, tmp_path: Path):
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        result = run_report(cfg, conn, target="all", force=True)
+        assert result.files_written >= 1
+
+    def test_force_no_stale_files_deletes_nothing(self, tmp_path: Path):
+        """force=True with a clean state should delete 0 files."""
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="all")
+        result = run_report(cfg, conn, target="all", force=True)
+        assert result.files_deleted == 0
+
+    def test_force_deletes_stale_db_tracked_project_file(self, tmp_path: Path):
+        """force=True removes a DB-tracked generated file for a removed project."""
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        _seed_project(conn, "gone", "Gone")
+        run_report(cfg, conn, target="all")
+        stale = cfg.output_directory / "Projects" / "gone.md"
+        assert stale.exists()
+
+        conn.execute("DELETE FROM project WHERE project_id = 'gone'")
+        conn.commit()
+
+        result = run_report(cfg, conn, target="all", force=True)
+
+        assert not stale.exists()
+        assert result.files_deleted >= 1
+
+    def test_force_deletes_stale_history_file(self, tmp_path: Path):
+        """force=True removes a History page for a date no longer in daily_metric."""
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        _seed_metric(conn, "2026-01-01", None, completed=1)
+        run_report(cfg, conn, target="all")
+        stale = cfg.output_directory / "History" / "2026-01-01.md"
+        assert stale.exists()
+
+        conn.execute("DELETE FROM daily_metric WHERE metric_date = '2026-01-01'")
+        conn.commit()
+
+        result = run_report(cfg, conn, target="all", force=True)
+
+        assert not stale.exists()
+        assert result.files_deleted >= 1
+
+    def test_force_deletes_orphaned_md_file(self, tmp_path: Path):
+        """force=True removes .md files in output_directory with no DB row."""
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="all")
+
+        # Plant an orphaned file (not registered in DB)
+        orphan = cfg.output_directory / "orphan.md"
+        orphan.write_text("stale")
+
+        result = run_report(cfg, conn, target="all", force=True)
+
+        assert not orphan.exists()
+        assert result.files_deleted >= 1
+
+    def test_force_keeps_current_files(self, tmp_path: Path):
+        """force=True must not delete files that belong to the current run."""
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        _seed_project(conn, "keep", "Keep")
+        result = run_report(cfg, conn, target="all", force=True)
+        assert (cfg.output_directory / "000_Daily_Dashboard.md").exists()
+        assert (cfg.output_directory / "Projects" / "keep.md").exists()
+
+    def test_force_removes_stale_file_table_row(self, tmp_path: Path):
+        """force=True removes the file table row for deleted generated files."""
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        _seed_project(conn, "old", "Old")
+        run_report(cfg, conn, target="all")
+        stale_path = str(cfg.output_directory / "Projects" / "old.md")
+        assert conn.execute(
+            "SELECT 1 FROM file WHERE file_path = ?", (stale_path,)
+        ).fetchone() is not None
+
+        conn.execute("DELETE FROM project WHERE project_id = 'old'")
+        conn.commit()
+        run_report(cfg, conn, target="all", force=True)
+
+        assert conn.execute(
+            "SELECT 1 FROM file WHERE file_path = ?", (stale_path,)
+        ).fetchone() is None
+
+
+# ---------------------------------------------------------------------------
+# _compute_expected_paths / _purge_stale_generated
+# ---------------------------------------------------------------------------
+
+
+class TestComputeExpectedPaths:
+    def test_all_target_includes_dashboard(self, tmp_path: Path):
+        conn = _conn()
+        out = tmp_path / "_Matlock"
+        paths = _compute_expected_paths(conn, out, "all")
+        assert out / "000_Daily_Dashboard.md" in paths
+
+    def test_dashboard_target_only_has_dashboard(self, tmp_path: Path):
+        conn = _conn()
+        _seed_project(conn, "p1", "P1")
+        out = tmp_path / "_Matlock"
+        paths = _compute_expected_paths(conn, out, "dashboard")
+        assert out / "000_Daily_Dashboard.md" in paths
+        assert out / "Projects" / "p1.md" not in paths
+
+    def test_projects_target_includes_project_paths(self, tmp_path: Path):
+        conn = _conn()
+        _seed_project(conn, "p1", "P1")
+        _seed_super_project(conn, "sp1", "SP1")
+        out = tmp_path / "_Matlock"
+        paths = _compute_expected_paths(conn, out, "projects")
+        assert out / "Projects" / "p1.md" in paths
+        assert out / "SuperProjects" / "sp1.md" in paths
+
+    def test_history_target_includes_metric_dates(self, tmp_path: Path):
+        conn = _conn()
+        _seed_metric(conn, "2026-04-20", None, completed=1)
+        out = tmp_path / "_Matlock"
+        paths = _compute_expected_paths(conn, out, "history")
+        assert out / "History" / "2026-04-20.md" in paths

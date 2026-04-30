@@ -200,3 +200,88 @@ class TestReportSubprocess:
             text=True,
         )
         assert "Traceback" not in proc.stderr
+
+
+# ---------------------------------------------------------------------------
+# --force flag
+# ---------------------------------------------------------------------------
+
+
+class TestReportForce:
+    def test_force_option_shown_in_help(self):
+        result = runner.invoke(app, ["report", "--help"])
+        assert "--force" in result.output
+
+    def test_force_exits_zero(self, tmp_path: Path):
+        result, *_ = _invoke(tmp_path, "--force")
+        assert result.exit_code == 0
+
+    def test_force_summary_format(self, tmp_path: Path):
+        result, *_ = _invoke(tmp_path, "--force")
+        assert "Report complete:" in result.output
+        assert "files written" in result.output
+
+    def test_force_deletes_orphaned_file(self, tmp_path: Path):
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        out_dir = tmp_path / "_Matlock"
+        cfg_path = tmp_path / "config.yaml"
+        db_path = tmp_path / "matlock.db"
+        _write_config(cfg_path, vault, db_path, out_dir)
+
+        # Run once to create the output directory
+        runner.invoke(app, ["--config", str(cfg_path), "report"])
+
+        # Plant an orphaned file
+        orphan = out_dir / "stale_orphan.md"
+        orphan.write_text("old content")
+
+        result = runner.invoke(app, ["--config", str(cfg_path), "report", "--force"])
+
+        assert result.exit_code == 0
+        assert not orphan.exists()
+
+
+# ---------------------------------------------------------------------------
+# --force-report flag on run-all
+# ---------------------------------------------------------------------------
+
+
+class TestRunAllForceReport:
+    def _invoke_run_all(self, tmp_path: Path, *extra_args):
+        vault = tmp_path / "vault"
+        vault.mkdir(exist_ok=True)
+        out_dir = tmp_path / "_Matlock"
+        cfg_path = tmp_path / "config.yaml"
+        db_path = tmp_path / "matlock.db"
+        _write_config(cfg_path, vault, db_path, out_dir)
+        args = ["--config", str(cfg_path), "run-all"] + list(extra_args)
+        return runner.invoke(app, args), out_dir
+
+    def test_force_report_option_shown_in_help(self):
+        result = runner.invoke(app, ["run-all", "--help"])
+        assert "--force-report" in result.output
+
+    def test_force_report_exits_zero(self, tmp_path: Path):
+        result, _ = self._invoke_run_all(tmp_path, "--force-report", "--skip-rollup")
+        assert result.exit_code == 0
+
+    def test_force_report_deletes_orphaned_file(self, tmp_path: Path):
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        out_dir = tmp_path / "_Matlock"
+        cfg_path = tmp_path / "config.yaml"
+        db_path = tmp_path / "matlock.db"
+        _write_config(cfg_path, vault, db_path, out_dir)
+
+        runner.invoke(app, ["--config", str(cfg_path), "run-all", "--skip-rollup"])
+        orphan = out_dir / "stale.md"
+        orphan.write_text("stale")
+
+        result = runner.invoke(
+            app,
+            ["--config", str(cfg_path), "run-all", "--skip-rollup", "--force-report"],
+        )
+
+        assert result.exit_code == 0
+        assert not orphan.exists()

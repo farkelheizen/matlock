@@ -113,6 +113,7 @@ matlock report [OPTIONS]
 |:-------|:--------|:------------|
 | `--target {all,dashboard,projects,history}` | `all` | Limit which report types to generate |
 | `--project-id ID` | None | Regenerate a single project page by its config ID |
+| `--force` | False | Regenerate all reports and delete any generated files that are no longer valid |
 | `--config PATH` | `./config.yaml` | Config file location |
 
 **Example:**
@@ -120,6 +121,7 @@ matlock report [OPTIONS]
 poetry run matlock report
 poetry run matlock report --target projects
 poetry run matlock report --project-id backend_api
+poetry run matlock report --force
 ```
 
 **Note:** `--target projects` regenerates both project pages and super-project pages. There is no separate `super-projects` target in the current CLI.
@@ -138,6 +140,7 @@ matlock run-all [OPTIONS]
 |:-------|:--------|:------------|
 | `--skip-rollup` | False | Skip Stage IV (for mid-day runs; rollup is designed for nightly use) |
 | `--force-sync` | False | Pass `--force` to the `sync` stage |
+| `--force-report` | False | Pass `--force` to the `report` stage (regenerate all, delete stale files) |
 | `--config PATH` | `./config.yaml` | Config file location |
 
 **Example:**
@@ -145,6 +148,7 @@ matlock run-all [OPTIONS]
 poetry run matlock run-all
 poetry run matlock run-all --skip-rollup
 poetry run matlock run-all --force-sync
+poetry run matlock run-all --force-report
 ```
 
 ---

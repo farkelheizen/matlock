@@ -186,6 +186,11 @@ def report(
         "--project-id",
         help="Regenerate a single project page (targeted; ignores --target).",
     ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help="Regenerate all reports and delete any generated files no longer valid.",
+    ),
 ) -> None:
     """Render Jinja2 Markdown dashboards into the output directory."""
     if target not in _VALID_REPORT_TARGETS:
@@ -201,7 +206,7 @@ def report(
     conn = get_connection(cfg.db_path)
     try:
         init_db(conn)
-        result = run_report(cfg, conn, target=target, project_id=project_id or None)
+        result = run_report(cfg, conn, target=target, project_id=project_id or None, force=force)
     finally:
         conn.close()
 
@@ -223,6 +228,11 @@ def run_all(
         False,
         "--force-sync",
         help="Pass --force to the sync stage (re-hash all files).",
+    ),
+    force_report: bool = typer.Option(
+        False,
+        "--force-report",
+        help="Pass --force to the report stage (regenerate all, delete stale files).",
     ),
 ) -> None:
     """Run all pipeline stages in sequence: sync → parse → map-projects → rollup → report."""
@@ -261,7 +271,7 @@ def run_all(
                 f"{rollup_result.rows_written} rows written"
             )
 
-        report_result = run_report(cfg, conn, target="all", project_id=None)
+        report_result = run_report(cfg, conn, target="all", project_id=None, force=force_report)
         typer.echo(
             f"Report: {report_result.files_written} files written, "
             f"{report_result.files_deleted} deleted ({report_result.target})"

@@ -63,6 +63,7 @@ def run_report(
     conn: sqlite3.Connection,
     target: str = "all",
     project_id: str | None = None,
+    force: bool = False,
 ) -> ReportResult:
     """Render Jinja2 Markdown dashboards and write them to ``output_directory``.
 
@@ -78,6 +79,9 @@ def run_report(
     project_id:
         When provided, write only ``_Matlock/Projects/<project_id>.md``
         (implies ``target="projects"`` for just that one file).
+    force:
+        When ``True``, regenerate all reports and delete any generated
+        files that are no longer valid (not produced by this run).
 
     Returns
     -------
@@ -107,19 +111,25 @@ def run_report(
         if target in ("all", "projects"):
             files_written += _render_all_projects(env, conn, out_dir, today_str)
             files_written += _render_all_super_projects(env, conn, out_dir, today_str)
-            # Remove report files for projects / super-projects no longer in the DB
-            current_proj_ids = {
-                r["project_id"]
-                for r in conn.execute("SELECT project_id FROM project").fetchall()
-            }
-            current_sp_ids = {
-                r["super_project_id"]
-                for r in conn.execute("SELECT super_project_id FROM super_project").fetchall()
-            }
-            files_deleted += _cleanup_stale_report_files(conn, out_dir / "Projects", current_proj_ids)
-            files_deleted += _cleanup_stale_report_files(conn, out_dir / "SuperProjects", current_sp_ids)
+            if not force:
+                # Incremental cleanup: remove stale project/super-project files
+                current_proj_ids = {
+                    r["project_id"]
+                    for r in conn.execute("SELECT project_id FROM project").fetchall()
+                }
+                current_sp_ids = {
+                    r["super_project_id"]
+                    for r in conn.execute("SELECT super_project_id FROM super_project").fetchall()
+                }
+                files_deleted += _cleanup_stale_report_files(conn, out_dir / "Projects", current_proj_ids)
+                files_deleted += _cleanup_stale_report_files(conn, out_dir / "SuperProjects", current_sp_ids)
         if target in ("all", "history"):
             files_written += _render_history(env, conn, out_dir, today_str)
+
+        if force:
+            # Full purge: delete every generated file not produced by this run
+            expected = _compute_expected_paths(conn, out_dir, target)
+            files_deleted += _purge_stale_generated(conn, out_dir, expected)
 
     conn.commit()
     return ReportResult(files_written=files_written, target=target, files_deleted=files_deleted)
@@ -542,6 +552,67 @@ def _cleanup_stale_report_files(
             conn.execute("DELETE FROM file WHERE file_path = ?", (str(md_file),))
             md_file.unlink()
             removed += 1
+    return removed
+
+
+def _compute_expected_paths(
+    conn: sqlite3.Connection,
+    out_dir: Path,
+    target: str,
+) -> set[Path]:
+    """Return the complete set of paths that should exist after a run with *target*."""
+    expected: set[Path] = set()
+    if target in ("all", "dashboard"):
+        expected.add(out_dir / "000_Daily_Dashboard.md")
+    if target in ("all", "projects"):
+        for r in conn.execute("SELECT project_id FROM project").fetchall():
+            expected.add(out_dir / "Projects" / f"{r['project_id']}.md")
+        for r in conn.execute("SELECT super_project_id FROM super_project").fetchall():
+            expected.add(out_dir / "SuperProjects" / f"{r['super_project_id']}.md")
+    if target in ("all", "history"):
+        for r in conn.execute("SELECT DISTINCT metric_date FROM daily_metric").fetchall():
+            expected.add(out_dir / "History" / f"{r['metric_date']}.md")
+    return expected
+
+
+def _purge_stale_generated(
+    conn: sqlite3.Connection,
+    out_dir: Path,
+    expected_paths: set[Path],
+) -> int:
+    """Delete all generated files under *out_dir* not in *expected_paths*.
+
+    Handles both DB-tracked files (``is_generated = 1``) and fully orphaned
+    ``.md`` files on disk that have no DB row.
+
+    Returns the number of files deleted.
+    """
+    removed = 0
+    out_prefix = str(out_dir)
+
+    # 1. DB-tracked generated files not in the expected set
+    rows = conn.execute(
+        "SELECT file_path FROM file WHERE is_generated = 1"
+    ).fetchall()
+    for row in rows:
+        fp = Path(row["file_path"])
+        if str(fp).startswith(out_prefix) and fp not in expected_paths:
+            conn.execute("DELETE FROM file WHERE file_path = ?", (str(fp),))
+            if fp.exists():
+                fp.unlink()
+            removed += 1
+
+    # 2. Orphaned .md files on disk not tracked in DB and not in expected set
+    if out_dir.exists():
+        for md_file in out_dir.rglob("*.md"):
+            if md_file not in expected_paths:
+                tracked = conn.execute(
+                    "SELECT 1 FROM file WHERE file_path = ?", (str(md_file),)
+                ).fetchone()
+                if tracked is None:
+                    md_file.unlink()
+                    removed += 1
+
     return removed
 
 
