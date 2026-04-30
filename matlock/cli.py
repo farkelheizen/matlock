@@ -282,6 +282,83 @@ def run_all(
     typer.echo("run-all complete.")
 
 
+@app.command(name="scan-projects")
+def scan_projects(
+    ctx: typer.Context,
+    print_yaml: bool = typer.Option(
+        False,
+        "--print-yaml",
+        "-p",
+        help="Print discovered projects/super-projects as YAML (default when no mode given).",
+    ),
+    diff: bool = typer.Option(
+        False,
+        "--diff",
+        "-d",
+        help="Print a human-readable diff against the current config.",
+    ),
+    merge: bool = typer.Option(
+        False,
+        "--merge",
+        "-m",
+        help="Merge scan results into the config file (full ins/upd/del). "
+             "Creates a timestamped backup first.",
+    ),
+) -> None:
+    """Scan the vault and reverse-engineer projects/super-projects from frontmatter."""
+    modes_given = sum([print_yaml, diff, merge])
+    if modes_given > 1:
+        typer.echo(
+            "Error: only one of --print-yaml, --diff, --merge may be given.", err=True
+        )
+        raise typer.Exit(code=1)
+    if modes_given == 0:
+        print_yaml = True  # default
+
+    cfg = _load_and_validate(ctx.obj[_CONFIG_KEY])
+
+    from matlock.stages.scan_projects import (  # noqa: PLC0415
+        format_as_diff,
+        format_as_yaml,
+        merge_into_config,
+        scan_vault,
+    )
+
+    scanned, candidates = scan_vault(cfg)
+
+    if print_yaml:
+        typer.echo(format_as_yaml(candidates, scanned))
+
+    elif diff:
+        typer.echo(format_as_diff(candidates, scanned, cfg))
+
+    elif merge:
+        config_path: Path = ctx.obj[_CONFIG_KEY]
+        typer.echo(
+            f"Warning: --merge will modify {config_path}. "
+            "A timestamped backup will be created alongside the config file.",
+            err=True,
+        )
+        result = merge_into_config(config_path, candidates, scanned)
+        typer.echo(
+            f"Merge complete: "
+            f"{result.super_projects_added} super_project(s) added, "
+            f"{result.super_projects_updated} updated, "
+            f"{result.super_projects_deleted} deleted; "
+            f"{result.projects_added} project(s) added, "
+            f"{result.projects_updated} updated, "
+            f"{result.projects_deleted} deleted. "
+            f"Backup: {result.backup_path}."
+        )
+
+    # Emit all accumulated warnings to stderr
+    all_warnings = [w for sf in scanned for w in sf.warnings]
+    if all_warnings:
+        typer.echo("Scan warnings:", err=True)
+        for w in all_warnings:
+            typer.echo(f"  {w}", err=True)
+
+
 @app.command()
 def server(
     ctx: typer.Context,

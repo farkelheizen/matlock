@@ -368,7 +368,9 @@ _(Populated during implementation. One entry per completed step.)_
 - Validation: 78 tests pass; full suite 566 pass
 
 ### SP-S5
-- Status: Not Started
+- Status: Completed
+- Changes: `matlock/cli.py` (new scan-projects command); `tests/test_cli_scan_projects.py` (new, 19 tests)
+- Validation: 585 tests pass
 
 ### SP-S6
 - Status: Not Started
