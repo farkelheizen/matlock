@@ -69,7 +69,7 @@ Implement a new `matlock scan-projects` CLI command that scans all Markdown file
 | SP-S3 | Completed | Implement `--print-yaml` and `--diff` output formatters | `matlock/stages/scan_projects.py` — `format_as_yaml()`, `format_as_diff()` | `tests/test_scan_projects.py` — YAML output shape, diff add/change/remove sections |
 | SP-S4 | Completed | Implement `--merge` config writer | `matlock/stages/scan_projects.py` — `merge_into_config()` | `tests/test_scan_projects.py` — merge adds new projects, merge preserves unrelated config keys, merge no-op when already in sync |
 | SP-S5 | Not Started | Wire up `scan-projects` CLI command | `matlock/cli.py` — new `scan_projects` command with mutually exclusive option group | `tests/test_cli_scan_projects.py` (new) — each mode flag, default-to-print-yaml, no-config error path |
-| SP-S6 | Not Started | Documentation, CHANGELOG, and version bump | `docs/matlock-scan-projects.md` (new), `docs/matlock-cli.md`, `docs/matlock-high-level-design.md`, `docs/copilot/copilot-docs-reference.md`, `docs/roadmap/index.md`, `CHANGELOG.md` (new), `pyproject.toml` | No additional tests — doc and version changes only |
+| SP-S6 | Completed | Documentation, CHANGELOG, and version bump | `docs/matlock-scan-projects.md` (new), `docs/matlock-cli.md`, `docs/matlock-high-level-design.md`, `docs/copilot/copilot-docs-reference.md`, `docs/roadmap/index.md`, `CHANGELOG.md` (new), `pyproject.toml` | No additional tests — doc and version changes only |
 
 Status values: `Not Started` | `In Progress` | `Completed` | `Blocked`
 
@@ -373,4 +373,6 @@ _(Populated during implementation. One entry per completed step.)_
 - Validation: 585 tests pass
 
 ### SP-S6
-- Status: Not Started
+- Status: Completed
+- Changes: `docs/matlock-scan-projects.md` (new); `docs/matlock-cli.md`, `docs/matlock-high-level-design.md`, `docs/copilot/copilot-docs-reference.md`, `docs/roadmap/index.md` (updated); `CHANGELOG.md` (new); `pyproject.toml` v0.2.0
+- Validation: full suite 585 tests pass

@@ -1,6 +1,6 @@
 # Matlock CLI Reference
 
-**Version:** 0.1.x
+**Version:** 0.2.x
 
 Matlock is invoked via the `matlock` command (registered as a Poetry script entrypoint). All commands accept `--config PATH` to specify a non-default `config.yaml` location.
 
@@ -150,6 +150,36 @@ poetry run matlock run-all --skip-rollup
 poetry run matlock run-all --force-sync
 poetry run matlock run-all --force-report
 ```
+
+---
+
+## Discovery Commands
+
+### `matlock scan-projects`
+
+Walk the vault and reverse-engineer the project/super-project hierarchy from frontmatter metadata. Does **not** require an initialised database.
+
+```
+matlock scan-projects [OPTIONS]
+```
+
+| Option | Short | Default | Description |
+|:-------|:------|:--------|:------------|
+| `--print-yaml` | `-p` | *(default)* | Print discovered projects as YAML |
+| `--diff` | `-d` | — | Show a human-readable diff against the current config |
+| `--merge` | `-m` | — | Apply changes into `config.yaml` (creates a timestamped backup first) |
+| `--config PATH` | `-c` | `./config.yaml` | Config file location |
+
+Only one mode flag may be given at a time. If none is given, `--print-yaml` is assumed.
+
+**Examples:**
+```bash
+poetry run matlock scan-projects
+poetry run matlock scan-projects --diff
+poetry run matlock scan-projects --merge
+```
+
+See `docs/matlock-scan-projects.md` for the full specification including scanning logic, data models, and output format details.
 
 ---
 

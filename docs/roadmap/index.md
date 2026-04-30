@@ -1,6 +1,6 @@
 # Matlock Implementation Roadmap
 
-**Version:** 0.1.x
+**Version:** 0.2.x
 
 This index lists all implementation phases. Each active phase links to its detailed plan document (using the `copilot-plan-template.md` format). Phases are executed sequentially; a phase must be marked `Completed` before the next begins.
 
@@ -20,6 +20,7 @@ This index lists all implementation phases. Each active phase links to its detai
 | 7 | Stage V — Report | Completed | `docs/copilot/plans/20260427-phase-7-stage-report.md` |
 | 8 | `run-all` Command | Completed | `docs/copilot/plans/20260427-phase-8-run-all.md` |
 | 9 | Server Daemon | Completed | `docs/copilot/plans/20260427-phase-9-server-daemon.md` |
+| 10 | `scan-projects` Command | Completed | `docs/copilot/plans/20260430-scan-projects.md` |
 
 ---
 
@@ -102,3 +103,11 @@ Implement the `matlock run-all` command that chains all five stages in order. Ho
 Implement `matlock/server.py` and the `matlock server` CLI command. `watchdog` watcher, dirty-project queue, debouncer, midnight scheduler. Tests mock `watchdog` events and verify correct stage triggers and debounce behaviour.
 
 **Key deliverables:** `matlock server` responds to file-system events, debounces report generation, and triggers nightly rollup at midnight.
+
+---
+
+### Phase 10 — `scan-projects` Command
+
+Implement `matlock/scan_models.py` (`ScannedFile`, `ProjectCandidate`), `matlock/stages/scan_projects.py` (vault scanner, `--print-yaml`/`--diff`/`--merge` formatters), and the `scan-projects` CLI command. The scanner walks the vault, infers the project/super-project hierarchy from frontmatter metadata, and can merge findings back into `config.yaml`.
+
+**Key deliverables:** `matlock scan-projects` (all three modes), 97 new tests, `docs/matlock-scan-projects.md`, version bumped to `0.2.0`.

@@ -1,6 +1,6 @@
 # Matlock: High-Level Design
 
-**Version:** 0.1.x
+**Version:** 0.2.x
 **Motto:** "I'm just looking at the evidence… and the evidence says you're procrastinating."
 
 ## 1. Core Philosophy
@@ -62,7 +62,17 @@ A persistent daemon with three integrated triggers:
 - **Debouncer** — Coalesces rapid file changes (configurable idle window, default 5 seconds) before triggering `report` for affected projects.
 - **Scheduler** — Midnight trigger runs `rollup` + `report` (Daily History page + refreshed Global Dashboard).
 
-## 6. Decoupled Stage Design (The "Why")
+## 6. Discovery Commands
+
+Alongside the pipeline, Matlock provides standalone **discovery commands** that read the vault directly and do not touch the SQLite database.
+
+| Command | Purpose |
+|:--------|:--------|
+| `matlock scan-projects` | Reverse-engineer the project/super-project hierarchy from frontmatter metadata |
+
+`scan-projects` is designed for **bootstrapping** (initial `config.yaml` population) and **drift auditing** (checking whether the vault has diverged from the config). See `docs/matlock-scan-projects.md` for full details.
+
+## 7. Decoupled Stage Design (The "Why")
 
 Each stage can be swapped or extended without touching any other stage:
 
@@ -72,7 +82,7 @@ Each stage can be swapped or extended without touching any other stage:
 - **Stage IV (Rollup)** — Runs computationally expensive historical queries once per day without slowing real-time editing.
 - **Stage V (Report)** — Today it outputs Markdown dashboards. A future module could generate a local web UI or send an email. The same reliable database is the data source.
 
-## 7. Debugging the Pipeline
+## 8. Debugging the Pipeline
 
 Because there is no hidden event loop or magic, diagnosing stale output is trivial:
 
@@ -83,7 +93,7 @@ Because there is no hidden event loop or magic, diagnosing stale output is trivi
 
 Each stage can be re-run independently without side effects. All DB writes are upserts or atomic delete-then-insert operations.
 
-## 8. Logging
+## 9. Logging
 
 Matlock uses Python's stdlib `logging` module. Logging is configured once at CLI startup via `matlock.logging_setup.setup_logging(config)`.
 
@@ -108,7 +118,7 @@ log_backup_count: 3
 
 Omit `log_path` (or set to `null`) to suppress file logging while keeping stderr warnings.
 
-## 8. Output & Rendering
+## 10. Output & Rendering
 
 All reports are standard Markdown (tables, checkboxes, emojis). They render natively in Obsidian, VS Code, and GitHub — no plugins required.
 
