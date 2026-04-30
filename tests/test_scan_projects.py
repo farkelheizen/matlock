@@ -509,6 +509,57 @@ class TestProjectsAttribute:
 
 
 # ---------------------------------------------------------------------------
+# _scan_file — parent super-project inference
+# ---------------------------------------------------------------------------
+
+
+class TestParentSuperProject:
+    def test_plain_link(self, tmp_path: Path):
+        vault = tmp_path / "vault"
+        _write_md(vault / "p.md", {"tag": "Project", "parent": "[[IT Learning, Super-Project]]"})
+        sf = _scan_file(vault, "p.md", set())
+        assert sf is not None
+        assert sf.super_project_id == "IT Learning"
+
+    def test_aliased_link(self, tmp_path: Path):
+        vault = tmp_path / "vault"
+        _write_md(vault / "p.md", {"tag": "Project", "parent": "[[IT Learning, Super-Project|IT Learning]]"})
+        sf = _scan_file(vault, "p.md", set())
+        assert sf is not None
+        assert sf.super_project_id == "IT Learning"
+
+    def test_explicit_super_project_id_wins(self, tmp_path: Path):
+        """Explicit super_project_id takes precedence over parent link."""
+        vault = tmp_path / "vault"
+        _write_md(vault / "p.md", {
+            "tag": "Project",
+            "super_project_id": "Explicit SP",
+            "parent": "[[Other, Super-Project]]",
+        })
+        sf = _scan_file(vault, "p.md", set())
+        assert sf is not None
+        assert sf.super_project_id == "Explicit SP"
+
+    def test_non_super_project_link_ignored(self, tmp_path: Path):
+        """parent link that doesn't end with ', Super-Project' is ignored."""
+        vault = tmp_path / "vault"
+        _write_md(vault / "p.md", {"tag": "Project", "parent": "[[Some Other Page]]"})
+        sf = _scan_file(vault, "p.md", set())
+        assert sf is not None
+        assert sf.super_project_id is None
+
+    def test_non_project_page_not_populated(self, tmp_path: Path):
+        """parent super-project extraction only applies to project candidates."""
+        vault = tmp_path / "vault"
+        # Has a valid parent link but is NOT a project candidate (no tag, no naming match)
+        _write_md(vault / "plain.md", {"parent": "[[IT Learning, Super-Project]]", "title": "Notes"})
+        sf = _scan_file(vault, "plain.md", set())
+        assert sf is not None
+        assert sf.project_id is None
+        assert sf.super_project_id is None
+
+
+# ---------------------------------------------------------------------------
 # _build_project_candidates
 # ---------------------------------------------------------------------------
 

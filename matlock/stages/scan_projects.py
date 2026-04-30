@@ -44,6 +44,12 @@ _VALID_STATUSES: frozenset[str] = frozenset(
 # The \1 backreference ensures the directory name equals the file stem.
 _PROJECTS_DIR_RE = re.compile(r"^[Pp]rojects/([^/]+)/\1\.md$")
 
+# Matches Obsidian wiki-links to super-project pages, e.g.:
+#   [[IT Learning, Super-Project]]
+#   [[IT Learning, Super-Project|IT Learning]]
+# Group 1 captures the page name prefix (the super-project id).
+_PARENT_SUPER_RE = re.compile(r"^\[\[(.+?), Super-Project(?:\|[^\]]+)?\]\]$")
+
 
 # ---------------------------------------------------------------------------
 # Result type for --merge
@@ -192,6 +198,15 @@ def _scan_file(
     # --- super_project_id ---
     spid = meta.get("super_project_id")
     super_project_id: str | None = spid if isinstance(spid, str) else None
+
+    # Fallback: infer from `parent: "[[Name, Super-Project]]"` when the file
+    # is a project candidate and super_project_id was not set explicitly.
+    if super_project_id is None and project_id is not None:
+        parent_val = meta.get("parent")
+        if isinstance(parent_val, str):
+            pm = _PARENT_SUPER_RE.match(parent_val.strip())
+            if pm:
+                super_project_id = pm.group(1)
 
     # --- title ---
     title_val = meta.get("title")
