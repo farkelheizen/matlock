@@ -24,7 +24,7 @@
 ### ⏰ Past Due
 {% if past_due_tasks %}
 {% for task in past_due_tasks %}
-- [ ] {{ task.task_text }} *(Due: {{ task.due_date }})* 🔗 [[{{ task.file_path | basename }}]]
+- ⬛ {{ task.task_text }} *(Due: {{ task.due_date }})* 🔗 [[{{ task.file_path | basename }}]]
 {%- endfor %}
 {% else %}
 *Nothing past due. Keep it up!*
@@ -33,7 +33,7 @@
 ### 📅 Due Today
 {% if due_today_tasks %}
 {% for task in due_today_tasks %}
-- [ ] {{ task.task_text }} 🔗 [[{{ task.file_path | basename }}]]
+- ⬜ {{ task.task_text }} 🔗 [[{{ task.file_path | basename }}]]
 {%- endfor %}
 {% else %}
 *No tasks due today.*

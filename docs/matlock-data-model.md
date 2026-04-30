@@ -97,7 +97,7 @@ Top-level project groupings defined in `config.yaml`.
 |:-------------------|:-----|:------------|:-------------------------|
 | `super_project_id` | TEXT | PRIMARY KEY | Unique string identifier |
 | `title`            | TEXT |             | Display name             |
-| `priority`         | TEXT |             | `low`, `medium`, `high`  |
+| `priority`         | TEXT |             | `Low`, `Medium`, `High`  |
 
 ### `project` table
 
@@ -109,7 +109,8 @@ Actionable project buckets, optionally grouped under a SuperProject.
 | `super_project_id` | TEXT | FOREIGN KEY → `super_project` (nullable) | Parent grouping       |
 | `title`            | TEXT |                                   | Display name                 |
 | `home_file`        | TEXT |                                   | Primary source file path     |
-| `priority`         | TEXT |                                   | `low`, `medium`, `high`      |
+| `priority`         | TEXT |                                   | `Low`, `Medium`, `High`      |
+| `status`           | TEXT |                                   | `Planned`, `In Progress`, `Complete`, `On Hold`, `Cancelled` |
 | `start_date`       | TEXT |                                   | YYYY-MM-DD                   |
 | `due_date`         | TEXT |                                   | YYYY-MM-DD                   |
 

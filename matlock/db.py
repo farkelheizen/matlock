@@ -92,6 +92,7 @@ CREATE TABLE IF NOT EXISTS project (
     title            TEXT,
     home_file        TEXT,
     priority         TEXT,
+    status           TEXT,
     start_date       TEXT,
     due_date         TEXT
 );
@@ -124,11 +125,26 @@ CREATE TABLE IF NOT EXISTS daily_metric (
 
 
 def init_db(conn: sqlite3.Connection) -> None:
-    """Create all six tables idempotently.
+    """Create all six tables idempotently and apply any pending migrations.
 
     Safe to call on a new or already-initialised database.
     """
     conn.executescript(_SCHEMA)
+    _migrate(conn)
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Apply additive schema migrations to existing databases.
+
+    Each migration is a no-op if the column/index already exists.
+    """
+    existing_project_cols = {
+        row[1]
+        for row in conn.execute("PRAGMA table_info(project)").fetchall()
+    }
+    if "status" not in existing_project_cols:
+        conn.execute("ALTER TABLE project ADD COLUMN status TEXT")
+    conn.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -276,9 +292,9 @@ def replace_projects(conn: sqlite3.Connection, rows: list[dict]) -> None:
     conn.execute("DELETE FROM project")
     conn.executemany(
         "INSERT INTO project"
-        " (project_id, super_project_id, title, home_file, priority, start_date, due_date)"
+        " (project_id, super_project_id, title, home_file, priority, status, start_date, due_date)"
         " VALUES"
-        " (:project_id, :super_project_id, :title, :home_file, :priority, :start_date, :due_date)",
+        " (:project_id, :super_project_id, :title, :home_file, :priority, :status, :start_date, :due_date)",
         rows,
     )
 

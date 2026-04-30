@@ -328,6 +328,7 @@ def _proj(id_: str, sp_id: str | None = None) -> dict:
         "title": f"Project {id_}",
         "home_file": None,
         "priority": None,
+        "status": None,
         "start_date": None,
         "due_date": None,
     }

@@ -121,6 +121,7 @@ def run_map_projects(
             "title": p.title,
             "home_file": p.home_file,
             "priority": p.priority,
+            "status": p.status,
             "start_date": p.start_date,
             "due_date": p.due_date,
         }

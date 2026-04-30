@@ -132,14 +132,15 @@ task_attributes:
 super_projects:
   - id: "website_overhaul"
     title: "Website Overhaul 2026"
-    priority: "high"
+    priority: "High"
 
 projects:
   - id: "backend_api"
     super_project_id: "website_overhaul"   # optional; omit for standalone projects
     title: "Backend API"
     home_file: "Projects/Backend_Notes.md" # relative to base_directory
-    priority: "high"
+    priority: "High"
+    status: "In Progress"                  # optional; Planned | In Progress | Complete | On Hold | Cancelled
     start_date: "2026-01-01"               # YYYY-MM-DD (optional)
     due_date: "2026-06-01"                 # YYYY-MM-DD (optional)
     resources:

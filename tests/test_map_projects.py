@@ -204,7 +204,7 @@ class TestRunMapProjectsTables:
         run_map_projects(config, conn)
         row = conn.execute("SELECT * FROM super_project WHERE super_project_id = 'sp1'").fetchone()
         assert row["title"] == "My SP"
-        assert row["priority"] == "high"
+        assert row["priority"] == "High"
 
     def test_project_columns(self):
         conn = _conn()
@@ -223,10 +223,28 @@ class TestRunMapProjectsTables:
         row = conn.execute("SELECT * FROM project WHERE project_id = 'p1'").fetchone()
         assert row["title"] == "Backend"
         assert row["home_file"] == "Projects/backend.md"
-        assert row["priority"] == "high"
+        assert row["priority"] == "High"
         assert row["start_date"] == "2026-01-01"
         assert row["due_date"] == "2026-06-01"
         assert row["super_project_id"] is None
+
+    def test_project_status_persisted(self):
+        conn = _conn()
+        config = _make_config(
+            projects=[ProjectConfig(id="p1", title="P1", status="In Progress")],
+        )
+        run_map_projects(config, conn)
+        row = conn.execute("SELECT status FROM project WHERE project_id = 'p1'").fetchone()
+        assert row["status"] == "In Progress"
+
+    def test_project_status_null_when_omitted(self):
+        conn = _conn()
+        config = _make_config(
+            projects=[ProjectConfig(id="p1", title="P1")],
+        )
+        run_map_projects(config, conn)
+        row = conn.execute("SELECT status FROM project WHERE project_id = 'p1'").fetchone()
+        assert row["status"] is None
 
     def test_empty_config_no_error(self):
         conn = _conn()
