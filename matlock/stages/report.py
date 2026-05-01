@@ -331,7 +331,8 @@ def _get_due_today_tasks(conn: sqlite3.Connection, today: str) -> list[SimpleNam
     result: list[SimpleNamespace] = []
     for row in rows:
         attrs: dict = json.loads(row["attributes"] or "{}")
-        task_priority: str | None = attrs.get("priority") or None
+        raw_priority = attrs.get("priority") or None
+        task_priority: str | None = raw_priority.title() if raw_priority else None
         estimate_secs = int(attrs.get("estimate", 0) or 0)
         estimate_mins = estimate_secs // 60 if estimate_secs > 0 else None
         estimate_display = f"{estimate_mins}m" if estimate_mins else "—"

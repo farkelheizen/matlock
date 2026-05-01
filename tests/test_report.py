@@ -910,6 +910,15 @@ class TestGetDueTodayTasks:
         priorities = [t.task_priority for t in result]
         assert priorities == ["High", "Low", None]
 
+    def test_lowercase_priority_normalised(self):
+        """Priorities stored as 'high'/'medium'/'low' (lowercase) must be treated the same as title-case."""
+        conn = _conn()
+        _seed_file(conn, "/vault/f.md")
+        _seed_task_full(conn, "t1", "/vault/f.md", due_date=self.TODAY, task_priority="high")
+        result = _get_due_today_tasks(conn, self.TODAY)
+        assert result[0].task_priority == "High"
+        assert result[0].task_priority_rank == 0
+
     def test_project_priority_used_as_tiebreaker(self):
         conn = _conn()
         _seed_file(conn, "/vault/a.md")
