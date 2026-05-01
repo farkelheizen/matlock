@@ -23,6 +23,9 @@ This registers the `matlock` command in the Poetry virtual environment.
 # Run the full pipeline (sync → parse → map-projects → rollup → report)
 poetry run matlock run-all
 
+# Run full pipeline and do an opt-in project scan/merge first
+poetry run matlock run-all --scan-projects
+
 # Or run each stage individually
 poetry run matlock sync
 poetry run matlock parse
@@ -125,21 +128,25 @@ All commands accept `--config PATH` to override the default config location.
 
 ### `matlock run-all`
 
-Run all five pipeline stages in sequence.
+Run all pipeline stages in sequence, with optional `scan-projects` pre-stage.
 
 ```
-matlock run-all [--skip-rollup] [--force-sync] [--config PATH]
+matlock run-all [--scan-projects] [--skip-rollup] [--force-sync] [--force-report] [--config PATH]
 ```
 
 | Flag | Default | Description |
 |------|---------|-------------|
+| `--scan-projects` | False | Run `scan-projects --merge` before `sync` (opt-in) |
 | `--skip-rollup` | False | Skip Stage IV rollup (useful for mid-day runs) |
 | `--force-sync` | False | Re-hash every file regardless of stored hash |
+| `--force-report` | False | Regenerate all reports and delete stale generated files |
 
 ```bash
 poetry run matlock run-all
+poetry run matlock run-all --scan-projects
 poetry run matlock run-all --skip-rollup
 poetry run matlock run-all --force-sync
+poetry run matlock run-all --force-report
 ```
 
 ---

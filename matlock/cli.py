@@ -7,7 +7,7 @@ Usage:
     matlock --config PATH map-projects
     matlock --config PATH rollup [--date YYYY-MM-DD]
     matlock --config PATH report [--target {all,dashboard,projects,history}] [--project-id ID]
-    matlock --config PATH run-all [--skip-rollup] [--force-sync]
+    matlock --config PATH run-all [--scan-projects] [--skip-rollup] [--force-sync]
     matlock --config PATH server [--debounce SECONDS]
 """
 
@@ -219,6 +219,11 @@ def report(
 @app.command(name="run-all")
 def run_all(
     ctx: typer.Context,
+    scan_projects_flag: bool = typer.Option(
+        False,
+        "--scan-projects",
+        help="Run scan-projects --merge before sync (opt-in).",
+    ),
     skip_rollup: bool = typer.Option(
         False,
         "--skip-rollup",
@@ -235,7 +240,7 @@ def run_all(
         help="Pass --force to the report stage (regenerate all, delete stale files).",
     ),
 ) -> None:
-    """Run all pipeline stages in sequence: sync → parse → map-projects → rollup → report."""
+    """Run all pipeline stages in sequence: [scan-projects →] sync → parse → map-projects → rollup → report."""
     cfg = _load_and_validate(ctx.obj[_CONFIG_KEY])
 
     rollup_date = datetime.date.today() - datetime.timedelta(days=1)
@@ -243,6 +248,36 @@ def run_all(
     conn = get_connection(cfg.db_path)
     try:
         init_db(conn)
+
+        if scan_projects_flag:
+            from matlock.stages.scan_projects import (  # noqa: PLC0415
+                merge_into_config,
+                scan_vault,
+            )
+
+            scanned, candidates = scan_vault(cfg)
+
+            warned = False
+            for sf in scanned:
+                for w in sf.warnings:
+                    if not warned:
+                        typer.echo("Scan-projects warnings:", err=True)
+                        warned = True
+                    typer.echo(f"  [{sf.file_path}] {w}", err=True)
+
+            merge_result = merge_into_config(ctx.obj[_CONFIG_KEY], candidates, scanned)
+            typer.echo(
+                f"Scan-projects: "
+                f"{merge_result.super_projects_added} super-projects added, "
+                f"{merge_result.super_projects_updated} updated, "
+                f"{merge_result.super_projects_deleted} deleted; "
+                f"{merge_result.projects_added} projects added, "
+                f"{merge_result.projects_updated} updated, "
+                f"{merge_result.projects_deleted} deleted"
+            )
+
+            # merge_into_config writes config.yaml; reload so map-projects uses merged data.
+            cfg = _load_and_validate(ctx.obj[_CONFIG_KEY])
 
         sync_result = run_sync(cfg, conn, force=force_sync)
         typer.echo(
@@ -351,12 +386,14 @@ def scan_projects(
             f"Backup: {result.backup_path}."
         )
 
-    # Emit all accumulated warnings to stderr
-    all_warnings = [w for sf in scanned for w in sf.warnings]
-    if all_warnings:
-        typer.echo("Scan warnings:", err=True)
-        for w in all_warnings:
-            typer.echo(f"  {w}", err=True)
+    # Emit all accumulated warnings to stderr, prefixed with the source file path
+    warned = False
+    for sf in scanned:
+        for w in sf.warnings:
+            if not warned:
+                typer.echo("Scan warnings:", err=True)
+                warned = True
+            typer.echo(f"  [{sf.file_path}] {w}", err=True)
 
 
 @app.command()

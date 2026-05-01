@@ -33,6 +33,7 @@ from matlock.scan_models import ProjectCandidate, ScannedFile
 # ---------------------------------------------------------------------------
 
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_DATE_MDY_RE = re.compile(r"^(\d{1,2})/(\d{1,2})/(\d{4})$")
 
 _PRIORITY_MAP: dict[str, str] = {"low": "Low", "medium": "Medium", "high": "High"}
 
@@ -272,19 +273,48 @@ def _scan_file(
         raw = meta.get(attr_key)
         if isinstance(raw, list):
             for entry in raw:
-                if not isinstance(entry, str):
+                path_value: str | None = None
+                declared_type: str | None = None
+
+                if isinstance(entry, str):
+                    path_value = entry
+                elif isinstance(entry, dict):
+                    path_raw = entry.get("path")
+                    if isinstance(path_raw, str):
+                        path_value = path_raw
+                    type_raw = entry.get("type")
+                    if isinstance(type_raw, str):
+                        declared_type = type_raw.upper()
+                        if declared_type not in {"FILE", "DIRECTORY"}:
+                            warnings.append(
+                                f"Resource {entry!r} has invalid type {type_raw!r}; expected FILE or DIRECTORY"
+                            )
+                            continue
+
+                if path_value is None:
                     continue
-                if entry in seen_resource_paths:
+                if path_value in seen_resource_paths:
                     continue
-                seen_resource_paths.add(entry)
-                target = base_dir / entry
+                seen_resource_paths.add(path_value)
+
+                target = base_dir / path_value
                 if target.is_file():
-                    resources.append(ResourceConfig(type="FILE", path=entry))
+                    if declared_type in (None, "FILE"):
+                        resources.append(ResourceConfig(type="FILE", path=path_value))
+                    else:
+                        warnings.append(
+                            f"Resource {path_value!r} is a file but declared as {declared_type}"
+                        )
                 elif target.is_dir():
-                    resources.append(ResourceConfig(type="DIRECTORY", path=entry))
+                    if declared_type in (None, "DIRECTORY"):
+                        resources.append(ResourceConfig(type="DIRECTORY", path=path_value))
+                    else:
+                        warnings.append(
+                            f"Resource {path_value!r} is a directory but declared as {declared_type}"
+                        )
                 else:
                     warnings.append(
-                        f"Resource {entry!r} is not a valid file or directory"
+                        f"Resource {path_value!r} is not a valid file or directory"
                     )
 
     # --- projects (combine 'projects' and 'Projects' keys before lowercasing) ---
@@ -398,8 +428,14 @@ def _parse_date_value(val: Any, attr: str, warnings: list[str]) -> str | None:
     if isinstance(val, str):
         if _DATE_RE.fullmatch(val):
             return val
+        m = _DATE_MDY_RE.fullmatch(val)
+        if m:
+            try:
+                return datetime.date(int(m.group(3)), int(m.group(1)), int(m.group(2))).isoformat()
+            except ValueError:
+                pass
         warnings.append(
-            f"Invalid date {val!r} for {attr!r} — expected YYYY-MM-DD"
+            f"Invalid date {val!r} for {attr!r} — expected YYYY-MM-DD or MM/DD/YYYY"
         )
         return None
     warnings.append(f"Non-string/date value for {attr!r}: {val!r}")

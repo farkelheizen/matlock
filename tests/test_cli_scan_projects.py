@@ -336,4 +336,4 @@ class TestWarnings:
 
         # Warnings go to stderr; CliRunner captures both by default
         assert result.exit_code == 0
-        assert "Ultra" in result.output or "warning" in result.output.lower()
+        assert "Ultra" in result.output and "[p.md]" in result.output

@@ -130,7 +130,7 @@ poetry run matlock report --force
 
 ### `matlock run-all`
 
-Run all five pipeline stages in sequence: `sync` → `parse` → `map-projects` → `rollup` → `report`.
+Run all pipeline stages in sequence: `[scan-projects →]` `sync` → `parse` → `map-projects` → `rollup` → `report`.
 
 ```
 matlock run-all [OPTIONS]
@@ -138,6 +138,7 @@ matlock run-all [OPTIONS]
 
 | Option | Default | Description |
 |:-------|:--------|:------------|
+| `--scan-projects` | False | Run `scan-projects --merge` before `sync` (opt-in) |
 | `--skip-rollup` | False | Skip Stage IV (for mid-day runs; rollup is designed for nightly use) |
 | `--force-sync` | False | Pass `--force` to the `sync` stage |
 | `--force-report` | False | Pass `--force` to the `report` stage (regenerate all, delete stale files) |
@@ -146,10 +147,13 @@ matlock run-all [OPTIONS]
 **Example:**
 ```bash
 poetry run matlock run-all
+poetry run matlock run-all --scan-projects
 poetry run matlock run-all --skip-rollup
 poetry run matlock run-all --force-sync
 poetry run matlock run-all --force-report
 ```
+
+When `--scan-projects` is enabled, Matlock runs vault scan + config merge first, then reloads config and continues the normal pipeline.
 
 ---
 

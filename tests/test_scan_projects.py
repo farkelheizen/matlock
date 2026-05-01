@@ -345,7 +345,35 @@ class TestDateFields:
     def test_invalid_due_date_appends_warning(self, tmp_path: Path):
         vault = tmp_path / "vault"
         p = vault / "Note.md"
+        _write_md(p, {"tag": "Project", "due_date": "not-a-date"})
+        sf = _scan_file(vault, "Note.md", set())
+        assert sf is not None
+        assert any("due_date" in w for w in sf.warnings)
+        assert sf.due_date is None
+
+    def test_due_date_mdy_format(self, tmp_path: Path):
+        vault = tmp_path / "vault"
+        p = vault / "Note.md"
         _write_md(p, {"tag": "Project", "due_date": "01/15/2025"})
+        sf = _scan_file(vault, "Note.md", set())
+        assert sf is not None
+        assert sf.due_date == "2025-01-15"
+        assert sf.warnings == []
+
+    def test_start_date_mdy_format(self, tmp_path: Path):
+        vault = tmp_path / "vault"
+        p = vault / "Note.md"
+        _write_md(p, {"tag": "Project", "start_date": "3/5/2025"})
+        sf = _scan_file(vault, "Note.md", set())
+        assert sf is not None
+        assert sf.start_date == "2025-03-05"
+        assert sf.warnings == []
+
+    def test_mdy_invalid_calendar_date_warns(self, tmp_path: Path):
+        """MM/DD/YYYY with an out-of-range day/month is still rejected."""
+        vault = tmp_path / "vault"
+        p = vault / "Note.md"
+        _write_md(p, {"tag": "Project", "due_date": "13/45/2025"})
         sf = _scan_file(vault, "Note.md", set())
         assert sf is not None
         assert any("due_date" in w for w in sf.warnings)
@@ -466,6 +494,53 @@ class TestResources:
         assert sf is not None
         assert len(sf.resources) == 0
         assert any("ghost.md" in w for w in sf.warnings)
+
+    def test_resources_object_style_file(self, tmp_path: Path):
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        ref = vault / "obj.md"
+        ref.write_text("# obj", encoding="utf-8")
+        _write_md(
+            vault / "p.md",
+            {"tag": "Project", "resources": [{"type": "FILE", "path": "obj.md"}]},
+        )
+        sf = _scan_file(vault, "p.md", set())
+        assert sf is not None
+        assert len(sf.resources) == 1
+        assert sf.resources[0].type == "FILE"
+        assert sf.resources[0].path == "obj.md"
+
+    def test_resources_object_style_directory(self, tmp_path: Path):
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        d = vault / "Divorce"
+        d.mkdir()
+        _write_md(
+            vault / "p.md",
+            {
+                "tag": "Project",
+                "resources": [{"type": "DIRECTORY", "path": "Divorce"}],
+            },
+        )
+        sf = _scan_file(vault, "p.md", set())
+        assert sf is not None
+        assert len(sf.resources) == 1
+        assert sf.resources[0].type == "DIRECTORY"
+        assert sf.resources[0].path == "Divorce"
+
+    def test_resources_object_style_type_mismatch_warns(self, tmp_path: Path):
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        d = vault / "Divorce"
+        d.mkdir()
+        _write_md(
+            vault / "p.md",
+            {"tag": "Project", "resources": [{"type": "FILE", "path": "Divorce"}]},
+        )
+        sf = _scan_file(vault, "p.md", set())
+        assert sf is not None
+        assert len(sf.resources) == 0
+        assert any("declared as FILE" in w for w in sf.warnings)
 
 
 # ---------------------------------------------------------------------------

@@ -40,6 +40,19 @@ def _invoke(tmp_path: Path, *extra_args):
     return runner.invoke(app, args), cfg_path, out_dir, db_path
 
 
+def _write_project_note(vault: Path, project_id: str = "proj_one") -> None:
+    p = vault / "Projects" / project_id / f"{project_id}.md"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(
+        "---\n"
+        "tag: Project\n"
+        f"project_id: {project_id}\n"
+        "title: Project One\n"
+        "---\n",
+        encoding="utf-8",
+    )
+
+
 # ---------------------------------------------------------------------------
 # --help
 # ---------------------------------------------------------------------------
@@ -63,6 +76,10 @@ class TestRunAllHelp:
     def test_force_sync_option_shown_in_help(self):
         result = runner.invoke(app, ["run-all", "--help"])
         assert "--force-sync" in result.output
+
+    def test_scan_projects_option_shown_in_help(self):
+        result = runner.invoke(app, ["run-all", "--help"])
+        assert "--scan-projects" in result.output
 
 
 # ---------------------------------------------------------------------------
@@ -179,6 +196,64 @@ class TestRunAllForceSync:
         result = runner.invoke(app, ["--config", str(cfg_path), "run-all", "--force-sync"])
         assert result.exit_code == 0
         assert "Sync:" in result.output
+
+
+# ---------------------------------------------------------------------------
+# --scan-projects flag
+# ---------------------------------------------------------------------------
+
+
+class TestRunAllScanProjects:
+    def test_without_flag_no_scan_line(self, tmp_path: Path):
+        result, *_ = _invoke(tmp_path)
+        assert "Scan-projects:" not in result.output
+
+    def test_with_flag_prints_scan_line(self, tmp_path: Path):
+        vault = tmp_path / "vault"
+        vault.mkdir(exist_ok=True)
+        _write_project_note(vault)
+
+        out_dir = tmp_path / "_Matlock"
+        cfg_path = tmp_path / "config.yaml"
+        db_path = tmp_path / "matlock.db"
+        _write_config(cfg_path, vault, db_path, out_dir)
+
+        result = runner.invoke(app, ["--config", str(cfg_path), "run-all", "--scan-projects"])
+        assert result.exit_code == 0
+        assert "Scan-projects:" in result.output
+
+    def test_with_flag_scan_runs_before_sync(self, tmp_path: Path):
+        vault = tmp_path / "vault"
+        vault.mkdir(exist_ok=True)
+        _write_project_note(vault)
+
+        out_dir = tmp_path / "_Matlock"
+        cfg_path = tmp_path / "config.yaml"
+        db_path = tmp_path / "matlock.db"
+        _write_config(cfg_path, vault, db_path, out_dir)
+
+        result = runner.invoke(app, ["--config", str(cfg_path), "run-all", "--scan-projects"])
+        assert result.exit_code == 0
+        assert "Scan-projects:" in result.output
+        assert "Sync:" in result.output
+        assert result.output.index("Scan-projects:") < result.output.index("Sync:")
+
+    def test_with_flag_pipeline_still_runs(self, tmp_path: Path):
+        vault = tmp_path / "vault"
+        vault.mkdir(exist_ok=True)
+        _write_project_note(vault)
+
+        out_dir = tmp_path / "_Matlock"
+        cfg_path = tmp_path / "config.yaml"
+        db_path = tmp_path / "matlock.db"
+        _write_config(cfg_path, vault, db_path, out_dir)
+
+        result = runner.invoke(app, ["--config", str(cfg_path), "run-all", "--scan-projects"])
+        assert result.exit_code == 0
+        assert "Sync:" in result.output
+        assert "Parse:" in result.output
+        assert "Map-projects:" in result.output
+        assert "Report:" in result.output
 
 
 # ---------------------------------------------------------------------------
