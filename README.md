@@ -209,12 +209,16 @@ poetry run matlock report --project-id backend_api
 Run a persistent daemon that monitors the vault in real time and orchestrates the pipeline automatically.
 
 ```
-matlock server [--debounce SECONDS] [--config PATH]
+matlock server [--debounce SECONDS] [--scan-projects] [--force-sync] [--force-report] [--skip-rollup] [--config PATH]
 ```
 
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--debounce SECONDS` | From config (`debounce_seconds`) | Idle window before triggering `report` after file changes |
+| `--scan-projects` | `False` | Run `scan-projects --merge` once at startup before the watcher starts |
+| `--force-sync` | `False` | Run a full forced sync+parse once at startup before the watcher starts |
+| `--force-report` | `False` | Run a full forced report once at startup (after any startup sync) |
+| `--skip-rollup` | `False` | Skip rollup in the nightly scheduled job |
 
 Three integrated triggers:
 
@@ -225,6 +229,8 @@ Three integrated triggers:
 ```bash
 poetry run matlock server
 poetry run matlock server --debounce 10
+poetry run matlock server --force-sync --force-report
+poetry run matlock server --skip-rollup
 ```
 
 Press `Ctrl+C` for a clean shutdown.

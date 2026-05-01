@@ -22,6 +22,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Changed
 
 - `matlock run-all`: added opt-in `--scan-projects` to run `scan-projects --merge` before sync.
+- `matlock server`: added `--scan-projects`, `--force-sync`, `--force-report` (startup-only) and `--skip-rollup` (nightly scheduler) options for parity with `run-all`.
 - `docs/matlock-cli.md`: Added `scan-projects` section under new "Discovery Commands" heading.
 - `docs/matlock-high-level-design.md`: Added Section 6 "Discovery Commands"; renumbered subsequent sections.
 - `docs/copilot/copilot-docs-reference.md`: Added `scan-projects` routing rule, topic row, and keyword entries. Updated baseline to `0.2.x`.

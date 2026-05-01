@@ -206,15 +206,23 @@ Three integrated triggers:
 | Option | Default | Description |
 |:-------|:--------|:------------|
 | `--debounce SECONDS` | From config (`5`) | Idle window before triggering `report` after file changes |
+| `--scan-projects` | `False` | Run `scan-projects --merge` once at startup before the watcher starts |
+| `--force-sync` | `False` | Run a full forced sync+parse once at startup before the watcher starts |
+| `--force-report` | `False` | Run a full forced report once at startup (after any startup sync) |
+| `--skip-rollup` | `False` | Skip rollup in the nightly scheduled job |
 | `--config PATH` | `./config.yaml` | Config file location |
 
 **Example:**
 ```bash
 poetry run matlock server
 poetry run matlock server --debounce 10
+poetry run matlock server --force-sync --force-report
+poetry run matlock server --skip-rollup
 ```
 
 **Notes:**
+- `--scan-projects`, `--force-sync`, `--force-report` are **startup-only** — they run once before the watcher starts.
+- `--skip-rollup` affects only the nightly scheduler job; the watcher and debouncer paths are unaffected.
 - Run as a background process or managed via `launchd` / `systemd` for continuous operation.
 - The server logs to stdout by default. Redirect to a file for daemon use: `matlock server >> matlock.log 2>&1 &`
 - Sending `SIGINT` (Ctrl+C) triggers a clean shutdown.

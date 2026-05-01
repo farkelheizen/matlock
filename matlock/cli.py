@@ -405,7 +405,62 @@ def server(
         help="Idle seconds before triggering report after file changes. "
              "Overrides config debounce_seconds.",
     ),
+    scan_projects_flag: bool = typer.Option(
+        False,
+        "--scan-projects",
+        help="Run scan-projects --merge once at startup before the watcher starts.",
+    ),
+    skip_rollup: bool = typer.Option(
+        False,
+        "--skip-rollup",
+        help="Skip rollup in the nightly scheduled job.",
+    ),
+    force_sync: bool = typer.Option(
+        False,
+        "--force-sync",
+        help="Run a full forced sync+parse once at startup before the watcher starts.",
+    ),
+    force_report: bool = typer.Option(
+        False,
+        "--force-report",
+        help="Run a full forced report once at startup (after any startup sync).",
+    ),
 ) -> None:
     """Watch the vault and run pipeline stages automatically."""
     cfg = _load_and_validate(ctx.obj[_CONFIG_KEY])
-    run_server(cfg, debounce_seconds=debounce)
+
+    if scan_projects_flag:
+        from matlock.stages.scan_projects import (  # noqa: PLC0415
+            merge_into_config,
+            scan_vault,
+        )
+
+        scanned, candidates = scan_vault(cfg)
+
+        warned = False
+        for sf in scanned:
+            for w in sf.warnings:
+                if not warned:
+                    typer.echo("Scan-projects warnings:", err=True)
+                    warned = True
+                typer.echo(f"  [{sf.file_path}] {w}", err=True)
+
+        merge_result = merge_into_config(ctx.obj[_CONFIG_KEY], candidates, scanned)
+        typer.echo(
+            f"Scan-projects: "
+            f"{merge_result.super_projects_added} super-projects added, "
+            f"{merge_result.super_projects_updated} updated, "
+            f"{merge_result.super_projects_deleted} deleted; "
+            f"{merge_result.projects_added} projects added, "
+            f"{merge_result.projects_updated} updated, "
+            f"{merge_result.projects_deleted} deleted"
+        )
+        cfg = _load_and_validate(ctx.obj[_CONFIG_KEY])
+
+    run_server(
+        cfg,
+        debounce_seconds=debounce,
+        skip_rollup=skip_rollup,
+        force_sync=force_sync,
+        force_report=force_report,
+    )

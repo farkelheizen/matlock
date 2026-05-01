@@ -400,3 +400,204 @@ class TestRunServer:
 
         # The debounce value 42 should appear in the debouncer thread args
         assert any(str(42) in str(item) for item in captured_debounce)
+
+
+# ---------------------------------------------------------------------------
+# _scheduler_thread — skip_rollup
+# ---------------------------------------------------------------------------
+
+
+class TestSchedulerThreadSkipRollup:
+    def test_skip_rollup_suppresses_rollup(self, tmp_path: Path):
+        """When skip_rollup=True the scheduler skips run_rollup but still runs report."""
+        config, vault, db_path, out_dir = _make_config(tmp_path)
+        conn = get_connection(db_path)
+        init_db(conn)
+        conn.close()
+
+        stop_event = threading.Event()
+        rollup_calls: list = []
+        report_calls: list = []
+
+        from matlock.stages.rollup import RollupResult
+        from matlock.stages.report import ReportResult
+
+        def fake_rollup(cfg, conn, rollup_date):
+            rollup_calls.append(rollup_date)
+            return RollupResult(rollup_date=rollup_date, rows_written=0)
+
+        def fake_report(cfg, conn, **kwargs):
+            report_calls.append(kwargs)
+            return ReportResult(files_written=0, target="all")
+
+        with patch("matlock.server._seconds_until_midnight", return_value=0.05):
+            with patch("matlock.server.run_rollup", side_effect=fake_rollup):
+                with patch("matlock.server.run_report", side_effect=fake_report):
+                    t = threading.Thread(
+                        target=_scheduler_thread,
+                        args=(config, stop_event, True),  # skip_rollup=True
+                        daemon=True,
+                    )
+                    t.start()
+                    time.sleep(0.5)
+                    stop_event.set()
+                    t.join(timeout=3)
+
+        assert len(rollup_calls) == 0
+        assert len(report_calls) >= 1
+
+    def test_skip_rollup_false_still_runs_rollup(self, tmp_path: Path):
+        """When skip_rollup=False (default) the scheduler runs rollup as normal."""
+        config, vault, db_path, out_dir = _make_config(tmp_path)
+        conn = get_connection(db_path)
+        init_db(conn)
+        conn.close()
+
+        stop_event = threading.Event()
+        rollup_calls: list = []
+
+        from matlock.stages.rollup import RollupResult
+        from matlock.stages.report import ReportResult
+
+        with patch("matlock.server._seconds_until_midnight", return_value=0.05):
+            with patch("matlock.server.run_rollup", return_value=RollupResult(
+                rollup_date=datetime.date.today(), rows_written=0
+            )) as mock_rollup:
+                with patch("matlock.server.run_report", return_value=ReportResult(
+                    files_written=0, target="all"
+                )):
+                    t = threading.Thread(
+                        target=_scheduler_thread,
+                        args=(config, stop_event, False),  # skip_rollup=False
+                        daemon=True,
+                    )
+                    t.start()
+                    time.sleep(0.5)
+                    stop_event.set()
+                    t.join(timeout=3)
+
+        assert mock_rollup.call_count >= 1
+
+
+# ---------------------------------------------------------------------------
+# run_server — startup flags
+# ---------------------------------------------------------------------------
+
+
+class TestRunServerStartupFlags:
+    def _make_fake_observer(self):
+        class FakeObserver:
+            def schedule(self, *a, **kw): pass
+            def start(self): pass
+            def stop(self): pass
+            def join(self, *a, **kw): pass
+        return FakeObserver()
+
+    def _patched_sleep(self, call_limit: int, original_sleep=time.sleep):
+        call_count = [0]
+
+        def _sleep(n):
+            call_count[0] += 1
+            if call_count[0] >= call_limit:
+                raise KeyboardInterrupt
+            original_sleep(min(n, 0.05))
+        return _sleep
+
+    def test_force_sync_runs_sync_and_parse_at_startup(self, tmp_path: Path):
+        config, vault, db_path, out_dir = _make_config(tmp_path)
+        conn = get_connection(db_path)
+        init_db(conn)
+        conn.close()
+
+        sync_calls: list = []
+        parse_calls: list = []
+
+        from matlock.stages.sync import SyncResult
+        from matlock.stages.parse import ParseResult
+        from matlock.stages.report import ReportResult
+
+        with patch("matlock.server.Observer", return_value=self._make_fake_observer()):
+            with patch("matlock.server.time.sleep", side_effect=self._patched_sleep(2)):
+                with patch("matlock.server.run_sync",
+                           return_value=SyncResult(inserted=0, updated=0, unchanged=0, deleted=0)) as mock_sync:
+                    with patch("matlock.server.run_parse",
+                               return_value=ParseResult(parsed=0, skipped=0, tasks_inserted=0, tasks_deleted=0)) as mock_parse:
+                        with patch("matlock.server.run_report",
+                                   return_value=ReportResult(files_written=0, target="all")):
+                            try:
+                                run_server(config, debounce_seconds=1, force_sync=True)
+                            except KeyboardInterrupt:
+                                pass
+
+        assert mock_sync.call_count >= 1
+        assert mock_parse.call_count >= 1
+        # Verify force=True was passed to run_sync
+        _, kwargs = mock_sync.call_args_list[0]
+        assert kwargs.get("force") is True or mock_sync.call_args_list[0].args[2] is True
+
+    def test_force_report_runs_report_at_startup(self, tmp_path: Path):
+        config, vault, db_path, out_dir = _make_config(tmp_path)
+        conn = get_connection(db_path)
+        init_db(conn)
+        conn.close()
+
+        from matlock.stages.report import ReportResult
+
+        with patch("matlock.server.Observer", return_value=self._make_fake_observer()):
+            with patch("matlock.server.time.sleep", side_effect=self._patched_sleep(2)):
+                with patch("matlock.server.run_report",
+                           return_value=ReportResult(files_written=0, target="all")) as mock_report:
+                    try:
+                        run_server(config, debounce_seconds=1, force_report=True)
+                    except KeyboardInterrupt:
+                        pass
+
+        assert mock_report.call_count >= 1
+        # Verify force=True was passed
+        call_kwargs = mock_report.call_args_list[0][1]
+        assert call_kwargs.get("force") is True
+
+    def test_no_startup_sync_when_flags_not_set(self, tmp_path: Path):
+        """Without flags, run_sync and run_parse are NOT called at startup."""
+        config, vault, db_path, out_dir = _make_config(tmp_path)
+        conn = get_connection(db_path)
+        init_db(conn)
+        conn.close()
+
+        with patch("matlock.server.Observer", return_value=self._make_fake_observer()):
+            with patch("matlock.server.time.sleep", side_effect=self._patched_sleep(2)):
+                with patch("matlock.server.run_sync") as mock_sync:
+                    with patch("matlock.server.run_parse") as mock_parse:
+                        try:
+                            run_server(config, debounce_seconds=1)
+                        except KeyboardInterrupt:
+                            pass
+
+        assert mock_sync.call_count == 0
+        assert mock_parse.call_count == 0
+
+    def test_skip_rollup_passed_to_scheduler_thread(self, tmp_path: Path):
+        """skip_rollup=True is threaded through to _scheduler_thread args."""
+        config, vault, db_path, out_dir = _make_config(tmp_path)
+        conn = get_connection(db_path)
+        init_db(conn)
+        conn.close()
+
+        captured_scheduler_args: list = []
+        original_thread = threading.Thread
+
+        def patched_thread(*args, **kwargs):
+            if kwargs.get("name") == "matlock-scheduler":
+                captured_scheduler_args.append(kwargs.get("args", ()))
+            return original_thread(*args, **kwargs)
+
+        with patch("matlock.server.Observer", return_value=self._make_fake_observer()):
+            with patch("matlock.server.time.sleep", side_effect=self._patched_sleep(2)):
+                with patch("matlock.server.threading.Thread", side_effect=patched_thread):
+                    try:
+                        run_server(config, debounce_seconds=1, skip_rollup=True)
+                    except (KeyboardInterrupt, Exception):
+                        pass
+
+        # The scheduler args tuple should contain True (skip_rollup)
+        assert any(True in args for args in captured_scheduler_args)

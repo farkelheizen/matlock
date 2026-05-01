@@ -2,7 +2,7 @@
 
 Use this file to identify the active implementation plan before starting work.
 
-- Active plan: `docs/copilot/plans/20260430-run-all-scan-projects.md` ✅ Completed
+- Active plan: `docs/copilot/plans/20260430-server-run-all-parity.md` ✅ Completed
 - Current step: complete
 - Next plan: none
 - Last updated: 2026-04-30
