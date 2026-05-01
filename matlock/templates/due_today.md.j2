@@ -1,0 +1,22 @@
+# 📅 Due Today — {{ today }}
+**Generated:** {{ generated_at }}
+
+---
+
+{% set ns = namespace(any_tasks=false) %}
+{% for tier in tiers %}{% if tier.tasks %}{% set ns.any_tasks = true %}{% endif %}{% endfor %}
+{% if not ns.any_tasks %}
+*No tasks due today. 🎉*
+{% else %}
+{% for tier in tiers %}
+{% if tier.tasks %}
+## {{ tier.heading }}
+
+| Task | Project | Est |
+|:-----|:--------|:---:|
+{% for t in tier.tasks -%}
+| {{ t.task_text }} — [[{{ t.file_stem }}]] | {{ t.project_title or '—' }}{% if t.project_priority_emoji %} {{ t.project_priority_emoji }}{% endif %} | {{ t.estimate_display }} |
+{% endfor %}
+{% endif %}
+{% endfor %}
+{% endif %}

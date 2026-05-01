@@ -35,6 +35,8 @@
 {% for task in due_today_tasks %}
 - ⬜ {{ task.task_text }} 🔗 [[{{ task.file_path | basename }}]]
 {%- endfor %}
+
+*→ Full due-today list with priorities: [[001_Due_Today]]*
 {% else %}
 *No tasks due today.*
 {% endif %}

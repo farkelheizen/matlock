@@ -12,6 +12,7 @@ run_report(config, conn, target="all", project_id=None) -> ReportResult
 from __future__ import annotations
 
 import datetime
+import json
 import os
 import sqlite3
 from dataclasses import dataclass
@@ -29,6 +30,15 @@ from matlock.db import upsert_file
 # ---------------------------------------------------------------------------
 
 _VALID_TARGETS = {"all", "dashboard", "projects", "history"}
+
+_PRIORITY_RANK: dict[str | None, int] = {"High": 0, "Medium": 1, "Low": 2, None: 3}
+
+_PRIORITY_EMOJI: dict[str | None, str] = {
+    "High": "⏫",
+    "Medium": "🔼",
+    "Low": "🔽",
+    None: "",
+}
 
 _HEATMAP_EMOJI = {0: "⬜", 1: "🟩", 2: "🟩", 3: "🟩", 4: "🟦", 5: "🟦", 6: "🟦", 7: "🟦"}
 
@@ -108,6 +118,7 @@ def run_report(
     else:
         if target in ("all", "dashboard"):
             files_written += _render_dashboard(env, conn, out_dir, today_str)
+            files_written += _render_due_today(env, conn, out_dir, today_str)
         if target in ("all", "projects"):
             files_written += _render_all_projects(env, conn, out_dir, today_str)
             files_written += _render_all_super_projects(env, conn, out_dir, today_str)
@@ -148,6 +159,7 @@ def _build_jinja_env() -> jinja2.Environment:
         keep_trailing_newline=True,
     )
     env.filters["basename"] = os.path.basename
+    env.filters["stem"] = lambda p: Path(p).stem
     return env
 
 
@@ -293,6 +305,109 @@ def _calc_heatmap(conn: sqlite3.Connection) -> dict[str, list[str]]:
         matrix.append(week_emojis)
 
     return {name: matrix[i] for i, name in enumerate(_DAY_NAMES)}
+
+
+# ---------------------------------------------------------------------------
+# Due-today helpers
+# ---------------------------------------------------------------------------
+
+
+def _get_due_today_tasks(conn: sqlite3.Connection, today: str) -> list[SimpleNamespace]:
+    """Return tasks due today, sorted by task priority then project priority.
+
+    Each item is a SimpleNamespace with:
+        task_text, file_path, file_stem, task_priority, task_priority_rank,
+        project_id, project_title, project_priority, project_priority_rank,
+        project_priority_emoji, estimate_display
+    """
+    rows = conn.execute(
+        "SELECT t.task_id, t.task_text, t.file_path, t.attributes"
+        " FROM task t"
+        " JOIN file f ON t.file_path = f.file_path"
+        " WHERE t.checked = 0 AND t.due_date = ? AND f.deleted = 0",
+        (today,),
+    ).fetchall()
+
+    result: list[SimpleNamespace] = []
+    for row in rows:
+        attrs: dict = json.loads(row["attributes"] or "{}")
+        task_priority: str | None = attrs.get("priority") or None
+        estimate_secs = int(attrs.get("estimate", 0) or 0)
+        estimate_mins = estimate_secs // 60 if estimate_secs > 0 else None
+        estimate_display = f"{estimate_mins}m" if estimate_mins else "—"
+
+        # Find the highest-priority project this file belongs to
+        proj_rows = conn.execute(
+            "SELECT p.project_id, p.title, p.priority"
+            " FROM file_project fp"
+            " JOIN project p ON fp.project_id = p.project_id"
+            " WHERE fp.file_path = ?"
+            " ORDER BY p.project_id",
+            (row["file_path"],),
+        ).fetchall()
+
+        best_proj_id: str | None = None
+        best_proj_title: str | None = None
+        best_proj_priority: str | None = None
+        best_proj_rank = 4
+        for pr in proj_rows:
+            rank = _PRIORITY_RANK.get(pr["priority"], 3)
+            if rank < best_proj_rank:
+                best_proj_rank = rank
+                best_proj_id = pr["project_id"]
+                best_proj_title = pr["title"]
+                best_proj_priority = pr["priority"]
+
+        result.append(
+            SimpleNamespace(
+                task_text=row["task_text"],
+                file_path=row["file_path"],
+                file_stem=Path(row["file_path"]).stem,
+                task_priority=task_priority,
+                task_priority_rank=_PRIORITY_RANK.get(task_priority, 3),
+                project_id=best_proj_id,
+                project_title=best_proj_title or best_proj_id,
+                project_priority=best_proj_priority,
+                project_priority_rank=best_proj_rank,
+                project_priority_emoji=_PRIORITY_EMOJI.get(best_proj_priority, ""),
+                estimate_display=estimate_display,
+            )
+        )
+
+    result.sort(key=lambda x: (x.task_priority_rank, x.project_priority_rank))
+    return result
+
+
+_DUE_TODAY_TIERS: list[tuple[str | None, str]] = [
+    ("High",   "⏫ High Priority"),
+    ("Medium", "🔼 Medium Priority"),
+    ("Low",    "🔽 Low Priority"),
+    (None,     "— No Priority"),
+]
+
+
+def _render_due_today(
+    env: jinja2.Environment,
+    conn: sqlite3.Connection,
+    out_dir: Path,
+    today_str: str,
+) -> int:
+    tasks = _get_due_today_tasks(conn, today_str)
+
+    # Group into priority tiers
+    tiers: list[dict] = []
+    for priority_key, heading in _DUE_TODAY_TIERS:
+        tier_tasks = [t for t in tasks if t.task_priority == priority_key]
+        tiers.append({"heading": heading, "tasks": tier_tasks})
+
+    generated_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    content = env.get_template("due_today.md.j2").render(
+        today=today_str,
+        generated_at=generated_at,
+        tiers=tiers,
+    )
+    _write_file(conn, out_dir / "001_Due_Today.md", content, today_str)
+    return 1
 
 
 # ---------------------------------------------------------------------------
@@ -564,6 +679,7 @@ def _compute_expected_paths(
     expected: set[Path] = set()
     if target in ("all", "dashboard"):
         expected.add(out_dir / "000_Daily_Dashboard.md")
+        expected.add(out_dir / "001_Due_Today.md")
     if target in ("all", "projects"):
         for r in conn.execute("SELECT project_id FROM project").fetchall():
             expected.add(out_dir / "Projects" / f"{r['project_id']}.md")
