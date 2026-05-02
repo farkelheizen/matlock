@@ -1,9 +1,9 @@
-# 📅 Due Today — {{ today }}
+# 📝 Not Due — {{ today }}
 **Generated:** {{ generated_at }}
 
 ---
 {% if not any_tasks %}
-*No tasks due today. 🎉*
+*No undated open tasks.*
 {% else %}
 {% for tier in tiers %}
 {% if tier.tasks %}

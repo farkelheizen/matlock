@@ -146,6 +146,10 @@ def run_report(
         if target in ("all", "dashboard"):
             files_written += _render_dashboard(env, conn, out_dir, base_dir, today_str)
             files_written += _render_due_today(env, conn, out_dir, base_dir, today_str)
+            files_written += _render_past_due(env, conn, out_dir, base_dir, today_str)
+            files_written += _render_due_soon(env, conn, out_dir, base_dir, today_str)
+            files_written += _render_future_due(env, conn, out_dir, base_dir, today_str)
+            files_written += _render_not_due(env, conn, out_dir, base_dir, today_str)
         if target in ("all", "projects"):
             files_written += _render_all_projects(env, conn, out_dir, base_dir, today_str)
             files_written += _render_all_super_projects(env, conn, out_dir, base_dir, today_str)
@@ -184,6 +188,8 @@ def _build_jinja_env() -> jinja2.Environment:
         loader=jinja2.FileSystemLoader(str(templates_dir)),
         autoescape=False,
         keep_trailing_newline=True,
+        trim_blocks=True,
+        lstrip_blocks=True,
     )
     env.filters["basename"] = os.path.basename
     env.filters["stem"] = lambda p: Path(p).stem
@@ -335,24 +341,32 @@ def _calc_heatmap(conn: sqlite3.Connection) -> dict[str, list[str]]:
 
 
 # ---------------------------------------------------------------------------
-# Due-today helpers
+# Task query helpers
 # ---------------------------------------------------------------------------
 
 
-def _get_due_today_tasks(conn: sqlite3.Connection, today: str) -> list[SimpleNamespace]:
-    """Return tasks due today, sorted by task priority then project priority.
+def _query_open_tasks(
+    conn: sqlite3.Connection,
+    where_extra: str,
+    params: list,
+) -> list[SimpleNamespace]:
+    """Query open, non-deleted tasks with an extra WHERE clause fragment.
 
-    Each item is a SimpleNamespace with:
-        task_text, file_path, file_stem, task_priority, task_priority_rank,
+    Returns SimpleNamespace objects enriched with project info, sorted by
+    ``(task_priority_rank, due_date or "", project_priority_rank)``.
+
+    Fields on each item:
+        task_text, file_path, file_stem, due_date,
+        task_priority, task_priority_rank,
         project_id, project_title, project_priority, project_priority_rank,
-        project_priority_emoji, estimate_display
+        project_priority_emoji, estimate_secs, estimate_display
     """
     rows = conn.execute(
-        "SELECT t.task_id, t.task_text, t.file_path, t.attributes"
+        "SELECT t.task_id, t.task_text, t.file_path, t.due_date, t.attributes"
         " FROM task t"
         " JOIN file f ON t.file_path = f.file_path"
-        " WHERE t.checked = 0 AND t.due_date = ? AND f.deleted = 0",
-        (today,),
+        f" WHERE t.checked = 0 AND f.deleted = 0 {where_extra}",
+        params,
     ).fetchall()
 
     result: list[SimpleNamespace] = []
@@ -391,6 +405,7 @@ def _get_due_today_tasks(conn: sqlite3.Connection, today: str) -> list[SimpleNam
                 task_text=row["task_text"],
                 file_path=row["file_path"],
                 file_stem=Path(row["file_path"]).stem,
+                due_date=row["due_date"],
                 task_priority=task_priority,
                 task_priority_rank=_PRIORITY_RANK.get(task_priority, 3),
                 project_id=best_proj_id,
@@ -398,20 +413,80 @@ def _get_due_today_tasks(conn: sqlite3.Connection, today: str) -> list[SimpleNam
                 project_priority=best_proj_priority,
                 project_priority_rank=best_proj_rank,
                 project_priority_emoji=_PRIORITY_EMOJI.get(best_proj_priority, ""),
+                estimate_secs=estimate_secs,
                 estimate_display=estimate_display,
             )
         )
 
-    result.sort(key=lambda x: (x.task_priority_rank, x.project_priority_rank))
+    result.sort(key=lambda x: (x.task_priority_rank, x.due_date or "", x.project_priority_rank))
     return result
 
 
-_DUE_TODAY_TIERS: list[tuple[str | None, str]] = [
+def _get_due_today_tasks(conn: sqlite3.Connection, today: str) -> list[SimpleNamespace]:
+    return _query_open_tasks(conn, "AND t.due_date = ?", [today])
+
+
+def _get_past_due_tasks(conn: sqlite3.Connection, today: str) -> list[SimpleNamespace]:
+    return _query_open_tasks(conn, "AND t.due_date < ?", [today])
+
+
+def _get_due_soon_tasks(conn: sqlite3.Connection, today: str) -> list[SimpleNamespace]:
+    """Tasks due in the next 1–7 days (not today, not 8+ days out)."""
+    soon = (datetime.date.fromisoformat(today) + datetime.timedelta(days=7)).isoformat()
+    return _query_open_tasks(conn, "AND t.due_date > ? AND t.due_date <= ?", [today, soon])
+
+
+def _get_future_due_tasks(conn: sqlite3.Connection, today: str) -> list[SimpleNamespace]:
+    """Tasks due more than 7 days from today."""
+    future = (datetime.date.fromisoformat(today) + datetime.timedelta(days=7)).isoformat()
+    return _query_open_tasks(conn, "AND t.due_date > ?", [future])
+
+
+def _get_not_due_tasks(conn: sqlite3.Connection) -> list[SimpleNamespace]:
+    """Tasks with no due date."""
+    return _query_open_tasks(conn, "AND t.due_date IS NULL", [])
+
+
+_TASK_TIERS: list[tuple[str | None, str]] = [
     ("High",   "⏫ High Priority"),
     ("Medium", "🔼 Medium Priority"),
     ("Low",    "🔽 Low Priority"),
     (None,     "— No Priority"),
 ]
+
+# Keep old name as alias for backwards compatibility with tests
+_DUE_TODAY_TIERS = _TASK_TIERS
+
+
+def _build_tiers(tasks: list[SimpleNamespace]) -> list[dict]:
+    """Group tasks into priority tiers with per-tier estimate totals."""
+    tiers: list[dict] = []
+    for priority_key, heading in _TASK_TIERS:
+        tier_tasks = [t for t in tasks if t.task_priority == priority_key]
+        total_secs = sum(t.estimate_secs for t in tier_tasks)
+        total_mins = total_secs // 60 if total_secs > 0 else None
+        tiers.append({
+            "heading": heading,
+            "tasks": tier_tasks,
+            "total_est": f"{total_mins}m" if total_mins else None,
+        })
+    return tiers
+
+
+def _attach_task_links(
+    tasks: list[SimpleNamespace],
+    this_file: Path,
+    base_dir: Path,
+    out_dir: Path,
+) -> None:
+    """Stamp source_link and project_link onto each task in-place."""
+    for t in tasks:
+        t.source_link = _rel(this_file, base_dir / t.file_path)
+        t.project_link = (
+            _rel(this_file, out_dir / "Projects" / f"{t.project_id}.md")
+            if t.project_id
+            else None
+        )
 
 
 def _render_due_today(
@@ -422,28 +497,110 @@ def _render_due_today(
     today_str: str,
 ) -> int:
     tasks = _get_due_today_tasks(conn, today_str)
-
     this_file = out_dir / "001_Due_Today.md"
-
-    # Attach pre-computed markdown link strings to each task
-    for t in tasks:
-        t.source_link = _rel(this_file, base_dir / t.file_path)
-        if t.project_id:
-            t.project_link = _rel(this_file, out_dir / "Projects" / f"{t.project_id}.md")
-        else:
-            t.project_link = None
-
-    # Group into priority tiers
-    tiers: list[dict] = []
-    for priority_key, heading in _DUE_TODAY_TIERS:
-        tier_tasks = [t for t in tasks if t.task_priority == priority_key]
-        tiers.append({"heading": heading, "tasks": tier_tasks})
-
+    _attach_task_links(tasks, this_file, base_dir, out_dir)
+    tiers = _build_tiers(tasks)
+    any_tasks = any(tier["tasks"] for tier in tiers)
     generated_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
     content = env.get_template("due_today.md.j2").render(
         today=today_str,
         generated_at=generated_at,
         tiers=tiers,
+        any_tasks=any_tasks,
+    )
+    _write_file(conn, this_file, content, today_str)
+    return 1
+
+
+def _render_past_due(
+    env: jinja2.Environment,
+    conn: sqlite3.Connection,
+    out_dir: Path,
+    base_dir: Path,
+    today_str: str,
+) -> int:
+    tasks = _get_past_due_tasks(conn, today_str)
+    this_file = out_dir / "002_Past_Due.md"
+    _attach_task_links(tasks, this_file, base_dir, out_dir)
+    tiers = _build_tiers(tasks)
+    any_tasks = any(tier["tasks"] for tier in tiers)
+    generated_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    content = env.get_template("past_due.md.j2").render(
+        today=today_str,
+        generated_at=generated_at,
+        tiers=tiers,
+        any_tasks=any_tasks,
+    )
+    _write_file(conn, this_file, content, today_str)
+    return 1
+
+
+def _render_due_soon(
+    env: jinja2.Environment,
+    conn: sqlite3.Connection,
+    out_dir: Path,
+    base_dir: Path,
+    today_str: str,
+) -> int:
+    tasks = _get_due_soon_tasks(conn, today_str)
+    this_file = out_dir / "003_Due_Soon.md"
+    _attach_task_links(tasks, this_file, base_dir, out_dir)
+    tiers = _build_tiers(tasks)
+    any_tasks = any(tier["tasks"] for tier in tiers)
+    soon_date = (datetime.date.fromisoformat(today_str) + datetime.timedelta(days=7)).isoformat()
+    generated_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    content = env.get_template("due_soon.md.j2").render(
+        today=today_str,
+        soon_date=soon_date,
+        generated_at=generated_at,
+        tiers=tiers,
+        any_tasks=any_tasks,
+    )
+    _write_file(conn, this_file, content, today_str)
+    return 1
+
+
+def _render_future_due(
+    env: jinja2.Environment,
+    conn: sqlite3.Connection,
+    out_dir: Path,
+    base_dir: Path,
+    today_str: str,
+) -> int:
+    tasks = _get_future_due_tasks(conn, today_str)
+    this_file = out_dir / "004_Future_Due.md"
+    _attach_task_links(tasks, this_file, base_dir, out_dir)
+    tiers = _build_tiers(tasks)
+    any_tasks = any(tier["tasks"] for tier in tiers)
+    generated_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    content = env.get_template("future_due.md.j2").render(
+        today=today_str,
+        generated_at=generated_at,
+        tiers=tiers,
+        any_tasks=any_tasks,
+    )
+    _write_file(conn, this_file, content, today_str)
+    return 1
+
+
+def _render_not_due(
+    env: jinja2.Environment,
+    conn: sqlite3.Connection,
+    out_dir: Path,
+    base_dir: Path,
+    today_str: str,
+) -> int:
+    tasks = _get_not_due_tasks(conn)
+    this_file = out_dir / "005_Not_Due.md"
+    _attach_task_links(tasks, this_file, base_dir, out_dir)
+    tiers = _build_tiers(tasks)
+    any_tasks = any(tier["tasks"] for tier in tiers)
+    generated_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    content = env.get_template("not_due.md.j2").render(
+        today=today_str,
+        generated_at=generated_at,
+        tiers=tiers,
+        any_tasks=any_tasks,
     )
     _write_file(conn, this_file, content, today_str)
     return 1
@@ -543,6 +700,10 @@ def _render_dashboard(
         project_link=project_link,
         history_link=history_link,
         due_today_link=_rel(this_file, out_dir / "001_Due_Today.md"),
+        past_due_link=_rel(this_file, out_dir / "002_Past_Due.md"),
+        due_soon_link=_rel(this_file, out_dir / "003_Due_Soon.md"),
+        future_due_link=_rel(this_file, out_dir / "004_Future_Due.md"),
+        not_due_link=_rel(this_file, out_dir / "005_Not_Due.md"),
     )
     _write_file(conn, this_file, content, today_str)
     return 1
@@ -747,6 +908,10 @@ def _compute_expected_paths(
     if target in ("all", "dashboard"):
         expected.add(out_dir / "000_Daily_Dashboard.md")
         expected.add(out_dir / "001_Due_Today.md")
+        expected.add(out_dir / "002_Past_Due.md")
+        expected.add(out_dir / "003_Due_Soon.md")
+        expected.add(out_dir / "004_Future_Due.md")
+        expected.add(out_dir / "005_Not_Due.md")
     if target in ("all", "projects"):
         for r in conn.execute("SELECT project_id FROM project").fetchall():
             expected.add(out_dir / "Projects" / f"{r['project_id']}.md")

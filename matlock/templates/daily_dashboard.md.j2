@@ -25,7 +25,8 @@
 {% if past_due_tasks %}
 {% for task in past_due_tasks %}
 - ⬛ {{ task.task_text }} *(Due: {{ task.due_date }})* [↗]({{ source_link(task.file_path) }})
-{%- endfor %}
+{% endfor %}
+*→ All past-due tasks: [Past Due]({{ past_due_link }})*
 {% else %}
 *Nothing past due. Keep it up!*
 {% endif %}
@@ -34,16 +35,18 @@
 {% if due_today_tasks %}
 {% for task in due_today_tasks %}
 - ⬜ {{ task.task_text }} [↗]({{ source_link(task.file_path) }})
-{%- endfor %}
-
+{% endfor %}
 *→ Full due-today list with priorities: [Due Today]({{ due_today_link }})*
 {% else %}
 *No tasks due today.*
 {% endif %}
 
+### 📋 Task Views
+[⚠️ Past Due]({{ past_due_link }}) · [📅 Due Today]({{ due_today_link }}) · [⏰ Due Soon]({{ due_soon_link }}) · [📆 Future Due]({{ future_due_link }}) · [📝 Not Due]({{ not_due_link }})
+
 ## 🧭 Active Projects Hub
 {% for sp in super_projects %}
-- 🌍 [{{ sp.title }}]({{ project_link(sp.id) }}) 
+- 🌍 [{{ sp.title }}]({{ project_link(sp.id) }})
 {% endfor %}
 {% for p in projects %}
 - 🚀 [{{ p.title }}]({{ project_link(p.id) }})

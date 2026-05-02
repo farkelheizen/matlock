@@ -1,0 +1,20 @@
+# 📆 Future Due — after {{ today }}
+**Generated:** {{ generated_at }}
+
+---
+{% if not any_tasks %}
+*No tasks due beyond 7 days from now.*
+{% else %}
+{% for tier in tiers %}
+{% if tier.tasks %}
+
+## {{ tier.heading }}{% if tier.total_est %} ({{ tier.total_est }}){% endif %}
+
+| Task | Due | Project | Est |
+|:-----|:----|:--------|:---:|
+{% for t in tier.tasks %}
+| [{{ t.task_text }}]({{ t.source_link }}) | {{ t.due_date }} | {% if t.project_link %}[{{ t.project_title }}]({{ t.project_link }}){% if t.project_priority_emoji %} {{ t.project_priority_emoji }}{% endif %}{% else %}—{% endif %} | {{ t.estimate_display }} |
+{% endfor %}
+{% endif %}
+{% endfor %}
+{% endif %}
