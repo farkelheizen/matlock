@@ -10,10 +10,10 @@
 
 ## 📊 Breakdown by Project
 {% for row in project_rows %}
-### {% if row.project %}[[{{ row.project.id }}]]{% else %}Unassigned{% endif %}
+### {% if row.project %}[{{ row.project.title }}]({{ project_link(row.project.id) }}){% else %}Unassigned{% endif %}
 - Tasks Completed: {{ row.tasks_completed_count }} ({{ row.tasks_completed_minutes }} mins)
 - End-of-Day Overdue: {{ row.tasks_past_due_count }}
 {% endfor %}
 
 ## ⬅️ Navigation
-* **Previous Day:** [[{{ prev_date }}]] | **Back to Dashboard:** [[000_Daily_Dashboard]]
+* **Previous Day:** [{{ prev_date }}]({{ history_link(prev_date) }}) | **Back to Dashboard:** [Dashboard]({{ dashboard_link }})

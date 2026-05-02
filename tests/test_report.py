@@ -17,6 +17,7 @@ from matlock.stages.report import (
     _cleanup_stale_report_files,
     _compute_expected_paths,
     _get_due_today_tasks,
+    _history_subpath,
     _purge_stale_generated,
     run_report,
 )
@@ -310,7 +311,7 @@ class TestRunReportTargetFilter:
     def test_target_history_writes_history_page(self, tmp_path: Path):
         conn, cfg = self._setup(tmp_path)
         result = run_report(cfg, conn, target="history")
-        assert (cfg.output_directory / "History" / "2026-04-20.md").exists()
+        assert (cfg.output_directory / _history_subpath("2026-04-20")).exists()
         assert not (cfg.output_directory / "000_Daily_Dashboard.md").exists()
         assert result.files_written == 1
 
@@ -319,7 +320,7 @@ class TestRunReportTargetFilter:
         result = run_report(cfg, conn, target="all")
         assert (cfg.output_directory / "000_Daily_Dashboard.md").exists()
         assert (cfg.output_directory / "Projects" / "p1.md").exists()
-        assert (cfg.output_directory / "History" / "2026-04-20.md").exists()
+        assert (cfg.output_directory / _history_subpath("2026-04-20")).exists()
 
 
 # ---------------------------------------------------------------------------
@@ -428,15 +429,15 @@ class TestRunReportHistoryPage:
         _seed_metric(conn, "2026-04-21", None, completed=1)
         cfg = _make_config(tmp_path)
         run_report(cfg, conn, target="history")
-        assert (cfg.output_directory / "History" / "2026-04-20.md").exists()
-        assert (cfg.output_directory / "History" / "2026-04-21.md").exists()
+        assert (cfg.output_directory / _history_subpath("2026-04-20")).exists()
+        assert (cfg.output_directory / _history_subpath("2026-04-21")).exists()
 
     def test_history_page_content_contains_date(self, tmp_path: Path):
         conn = _conn()
         _seed_metric(conn, "2026-04-20", None, completed=1)
         cfg = _make_config(tmp_path)
         run_report(cfg, conn, target="history")
-        content = (cfg.output_directory / "History" / "2026-04-20.md").read_text()
+        content = (cfg.output_directory / _history_subpath("2026-04-20")).read_text()
         assert "2026-04-20" in content
 
     def test_history_page_day_of_week(self, tmp_path: Path):
@@ -444,7 +445,7 @@ class TestRunReportHistoryPage:
         _seed_metric(conn, "2026-04-20", None, completed=1)  # Monday
         cfg = _make_config(tmp_path)
         run_report(cfg, conn, target="history")
-        content = (cfg.output_directory / "History" / "2026-04-20.md").read_text()
+        content = (cfg.output_directory / _history_subpath("2026-04-20")).read_text()
         assert "Monday" in content
 
     def test_history_page_registered_as_generated(self, tmp_path: Path):
@@ -452,7 +453,7 @@ class TestRunReportHistoryPage:
         _seed_metric(conn, "2026-04-20", None, completed=1)
         cfg = _make_config(tmp_path)
         run_report(cfg, conn, target="history")
-        path = str(cfg.output_directory / "History" / "2026-04-20.md")
+        path = str(cfg.output_directory / _history_subpath("2026-04-20"))
         row = conn.execute(
             "SELECT is_generated FROM file WHERE file_path = ?", (path,)
         ).fetchone()
@@ -471,7 +472,7 @@ class TestRunReportHistoryPage:
         _seed_metric(conn, "2026-04-20", None, completed=3)
         cfg = _make_config(tmp_path)
         run_report(cfg, conn, target="history")
-        content = (cfg.output_directory / "History" / "2026-04-20.md").read_text()
+        content = (cfg.output_directory / _history_subpath("2026-04-20")).read_text()
         assert "Unassigned" in content
 
     def test_history_breakdown_shows_project(self, tmp_path: Path):
@@ -480,7 +481,7 @@ class TestRunReportHistoryPage:
         _seed_metric(conn, "2026-04-20", "p1", completed=2)
         cfg = _make_config(tmp_path)
         run_report(cfg, conn, target="history")
-        content = (cfg.output_directory / "History" / "2026-04-20.md").read_text()
+        content = (cfg.output_directory / _history_subpath("2026-04-20")).read_text()
         assert "p1" in content
 
 
@@ -699,7 +700,7 @@ class TestRunReportForce:
         cfg = _make_config(tmp_path)
         _seed_metric(conn, "2026-01-01", None, completed=1)
         run_report(cfg, conn, target="all")
-        stale = cfg.output_directory / "History" / "2026-01-01.md"
+        stale = cfg.output_directory / _history_subpath("2026-01-01")
         assert stale.exists()
 
         conn.execute("DELETE FROM daily_metric WHERE metric_date = '2026-01-01'")
@@ -800,7 +801,7 @@ class TestComputeExpectedPaths:
         _seed_metric(conn, "2026-04-20", None, completed=1)
         out = tmp_path / "_Matlock"
         paths = _compute_expected_paths(conn, out, "history")
-        assert out / "History" / "2026-04-20.md" in paths
+        assert out / _history_subpath("2026-04-20") in paths
 
 
 # ---------------------------------------------------------------------------

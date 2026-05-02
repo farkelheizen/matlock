@@ -15,7 +15,7 @@
 | Task | Project | Est |
 |:-----|:--------|:---:|
 {% for t in tier.tasks -%}
-| {{ t.task_text }} — [[{{ t.file_stem }}]] | {{ t.project_title or '—' }}{% if t.project_priority_emoji %} {{ t.project_priority_emoji }}{% endif %} | {{ t.estimate_display }} |
+| [{{ t.task_text }}]({{ t.source_link }}) | {% if t.project_link %}[{{ t.project_title or t.project_id }}]({{ t.project_link }}){% if t.project_priority_emoji %} {{ t.project_priority_emoji }}{% endif %}{% else %}—{% endif %} | {{ t.estimate_display }} |
 {% endfor %}
 {% endif %}
 {% endfor %}

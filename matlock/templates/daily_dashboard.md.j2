@@ -14,9 +14,9 @@
 | **{{ day }}** | {{ heatmap[day][-5] }} | {{ heatmap[day][-4] }} | {{ heatmap[day][-3] }} | {{ heatmap[day][-2] }} | {{ heatmap[day][-1] }} |
 {% endfor %}
 ## 🏆 Yesterday's Wins
-*You completed **{{ yesterday_completed_count }} tasks**. View full details: [[{{ yesterday_date }}]]*
+*You completed **{{ yesterday_completed_count }} tasks**. View full details: [{{ yesterday_date }}]({{ history_link(yesterday_date) }})*
 {% for project_id, count in yesterday_by_project.items() %}
-- **[[{{ project_id }}]]**: {{ count }} tasks completed
+- **[{{ project_id }}]({{ project_link(project_id) }})**: {{ count }} tasks completed
 {%- endfor %}
 
 ## 🎯 Today's Focus
@@ -24,7 +24,7 @@
 ### ⏰ Past Due
 {% if past_due_tasks %}
 {% for task in past_due_tasks %}
-- ⬛ {{ task.task_text }} *(Due: {{ task.due_date }})* 🔗 [[{{ task.file_path | basename }}]]
+- ⬛ {{ task.task_text }} *(Due: {{ task.due_date }})* [↗]({{ source_link(task.file_path) }})
 {%- endfor %}
 {% else %}
 *Nothing past due. Keep it up!*
@@ -33,18 +33,18 @@
 ### 📅 Due Today
 {% if due_today_tasks %}
 {% for task in due_today_tasks %}
-- ⬜ {{ task.task_text }} 🔗 [[{{ task.file_path | basename }}]]
+- ⬜ {{ task.task_text }} [↗]({{ source_link(task.file_path) }})
 {%- endfor %}
 
-*→ Full due-today list with priorities: [[001_Due_Today]]*
+*→ Full due-today list with priorities: [Due Today]({{ due_today_link }})*
 {% else %}
 *No tasks due today.*
 {% endif %}
 
 ## 🧭 Active Projects Hub
 {% for sp in super_projects %}
-- 🌍 [[{{ sp.id }}]] — {{ sp.title }}
+- 🌍 [{{ sp.title }}]({{ project_link(sp.id) }}) 
 {% endfor %}
 {% for p in projects %}
-- 🚀 [[{{ p.id }}]] — {{ p.title }}
+- 🚀 [{{ p.title }}]({{ project_link(p.id) }})
 {% endfor %}

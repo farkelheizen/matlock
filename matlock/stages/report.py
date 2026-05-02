@@ -64,6 +64,32 @@ class ReportResult:
 
 
 # ---------------------------------------------------------------------------
+# Link helpers
+# ---------------------------------------------------------------------------
+
+
+def _history_subpath(metric_date: str) -> Path:
+    """Return the relative path under out_dir for a history page.
+
+    e.g. "2026-05-01" → Path("History/2026/2026-05/2026-05-01.md")
+    """
+    yyyy = metric_date[:4]
+    yyyy_mm = metric_date[:7]
+    return Path("History") / yyyy / yyyy_mm / f"{metric_date}.md"
+
+
+def _rel(from_file: Path, to_file: Path) -> str:
+    """Return the relative path from *from_file*'s directory to *to_file*.
+
+    Both paths must be absolute.  The result is URL-encoded (spaces → %20)
+    for use in Markdown links.
+    """
+    rel = os.path.relpath(to_file, from_file.parent)
+    # Encode spaces for markdown link compatibility
+    return rel.replace(" ", "%20")
+
+
+# ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
 
@@ -105,6 +131,7 @@ def run_report(
 
     out_dir = config.output_directory
     out_dir.mkdir(parents=True, exist_ok=True)
+    base_dir = config.base_directory
 
     env = _build_jinja_env()
     today_str = datetime.date.today().isoformat()
@@ -114,14 +141,14 @@ def run_report(
 
     if project_id is not None:
         # Targeted single-project regeneration
-        files_written += _render_single_project(env, conn, out_dir, project_id, today_str)
+        files_written += _render_single_project(env, conn, out_dir, base_dir, project_id, today_str)
     else:
         if target in ("all", "dashboard"):
-            files_written += _render_dashboard(env, conn, out_dir, today_str)
-            files_written += _render_due_today(env, conn, out_dir, today_str)
+            files_written += _render_dashboard(env, conn, out_dir, base_dir, today_str)
+            files_written += _render_due_today(env, conn, out_dir, base_dir, today_str)
         if target in ("all", "projects"):
-            files_written += _render_all_projects(env, conn, out_dir, today_str)
-            files_written += _render_all_super_projects(env, conn, out_dir, today_str)
+            files_written += _render_all_projects(env, conn, out_dir, base_dir, today_str)
+            files_written += _render_all_super_projects(env, conn, out_dir, base_dir, today_str)
             if not force:
                 # Incremental cleanup: remove stale project/super-project files
                 current_proj_ids = {
@@ -135,7 +162,7 @@ def run_report(
                 files_deleted += _cleanup_stale_report_files(conn, out_dir / "Projects", current_proj_ids)
                 files_deleted += _cleanup_stale_report_files(conn, out_dir / "SuperProjects", current_sp_ids)
         if target in ("all", "history"):
-            files_written += _render_history(env, conn, out_dir, today_str)
+            files_written += _render_history(env, conn, out_dir, base_dir, today_str)
 
         if force:
             # Full purge: delete every generated file not produced by this run
@@ -391,9 +418,20 @@ def _render_due_today(
     env: jinja2.Environment,
     conn: sqlite3.Connection,
     out_dir: Path,
+    base_dir: Path,
     today_str: str,
 ) -> int:
     tasks = _get_due_today_tasks(conn, today_str)
+
+    this_file = out_dir / "001_Due_Today.md"
+
+    # Attach pre-computed markdown link strings to each task
+    for t in tasks:
+        t.source_link = _rel(this_file, base_dir / t.file_path)
+        if t.project_id:
+            t.project_link = _rel(this_file, out_dir / "Projects" / f"{t.project_id}.md")
+        else:
+            t.project_link = None
 
     # Group into priority tiers
     tiers: list[dict] = []
@@ -407,7 +445,7 @@ def _render_due_today(
         generated_at=generated_at,
         tiers=tiers,
     )
-    _write_file(conn, out_dir / "001_Due_Today.md", content, today_str)
+    _write_file(conn, this_file, content, today_str)
     return 1
 
 
@@ -461,6 +499,7 @@ def _render_dashboard(
     env: jinja2.Environment,
     conn: sqlite3.Connection,
     out_dir: Path,
+    base_dir: Path,
     today_str: str,
 ) -> int:
     current_streak, longest_streak, longest_streak_end = _calc_streak(conn)
@@ -474,6 +513,17 @@ def _render_dashboard(
     projects = conn.execute(
         "SELECT project_id AS id, title FROM project ORDER BY project_id"
     ).fetchall()
+
+    this_file = out_dir / "000_Daily_Dashboard.md"
+
+    def source_link(file_path: str) -> str:
+        return _rel(this_file, base_dir / file_path)
+
+    def project_link(project_id: str) -> str:
+        return _rel(this_file, out_dir / "Projects" / f"{project_id}.md")
+
+    def history_link(metric_date: str) -> str:
+        return _rel(this_file, out_dir / _history_subpath(metric_date))
 
     generated_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
     content = env.get_template("daily_dashboard.md.j2").render(
@@ -489,8 +539,12 @@ def _render_dashboard(
         due_today_tasks=due_today,
         super_projects=super_projects,
         projects=projects,
+        source_link=source_link,
+        project_link=project_link,
+        history_link=history_link,
+        due_today_link=_rel(this_file, out_dir / "001_Due_Today.md"),
     )
-    _write_file(conn, out_dir / "000_Daily_Dashboard.md", content, today_str)
+    _write_file(conn, this_file, content, today_str)
     return 1
 
 
@@ -559,6 +613,7 @@ def _render_project_page(
     env: jinja2.Environment,
     conn: sqlite3.Connection,
     out_dir: Path,
+    base_dir: Path,
     project_row: sqlite3.Row,
     today_str: str,
 ) -> None:
@@ -603,6 +658,14 @@ def _render_project_page(
     for t in open_tasks:
         open_by_file.setdefault(t["file_path"], []).append(t)
 
+    this_file = out_dir / "Projects" / f"{proj_id}.md"
+
+    def source_link(file_path: str) -> str:
+        return _rel(this_file, base_dir / file_path)
+
+    def super_project_link(sp_id: str) -> str:
+        return _rel(this_file, out_dir / "SuperProjects" / f"{sp_id}.md")
+
     content = env.get_template("project.md.j2").render(
         project=project_row,
         stats=stats,
@@ -610,15 +673,17 @@ def _render_project_page(
         open_by_file=open_by_file,
         recently_completed=recently_completed,
         source_files=file_paths,
+        source_link=source_link,
+        super_project_link=super_project_link,
     )
-    out_path = out_dir / "Projects" / f"{proj_id}.md"
-    _write_file(conn, out_path, content, today_str)
+    _write_file(conn, this_file, content, today_str)
 
 
 def _render_single_project(
     env: jinja2.Environment,
     conn: sqlite3.Connection,
     out_dir: Path,
+    base_dir: Path,
     project_id: str,
     today_str: str,
 ) -> int:
@@ -627,7 +692,7 @@ def _render_single_project(
     ).fetchone()
     if row is None:
         return 0
-    _render_project_page(env, conn, out_dir, row, today_str)
+    _render_project_page(env, conn, out_dir, base_dir, row, today_str)
     return 1
 
 
@@ -635,11 +700,12 @@ def _render_all_projects(
     env: jinja2.Environment,
     conn: sqlite3.Connection,
     out_dir: Path,
+    base_dir: Path,
     today_str: str,
 ) -> int:
     rows = conn.execute("SELECT * FROM project ORDER BY project_id").fetchall()
     for row in rows:
-        _render_project_page(env, conn, out_dir, row, today_str)
+        _render_project_page(env, conn, out_dir, base_dir, row, today_str)
     return len(rows)
 
 
@@ -688,7 +754,7 @@ def _compute_expected_paths(
             expected.add(out_dir / "SuperProjects" / f"{r['super_project_id']}.md")
     if target in ("all", "history"):
         for r in conn.execute("SELECT DISTINCT metric_date FROM daily_metric").fetchall():
-            expected.add(out_dir / "History" / f"{r['metric_date']}.md")
+            expected.add(out_dir / _history_subpath(r["metric_date"]))
     return expected
 
 
@@ -750,6 +816,7 @@ def _render_all_super_projects(
     env: jinja2.Environment,
     conn: sqlite3.Connection,
     out_dir: Path,
+    base_dir: Path,
     today_str: str,
 ) -> int:
     sp_rows = conn.execute(
@@ -805,13 +872,22 @@ def _render_all_super_projects(
                         )
                     )
 
+        this_file = out_dir / "SuperProjects" / f"{sp_id}.md"
+
+        def source_link(file_path: str, _tf: Path = this_file) -> str:
+            return _rel(_tf, base_dir / file_path)
+
+        def project_link(pid: str, _tf: Path = this_file) -> str:
+            return _rel(_tf, out_dir / "Projects" / f"{pid}.md")
+
         content = env.get_template("super_project.md.j2").render(
             super_project=sp,
             child_projects=child_projects,
             critical_tasks=critical_tasks,
+            source_link=source_link,
+            project_link=project_link,
         )
-        out_path = out_dir / "SuperProjects" / f"{sp_id}.md"
-        _write_file(conn, out_path, content, today_str)
+        _write_file(conn, this_file, content, today_str)
         count += 1
     return count
 
@@ -825,6 +901,7 @@ def _render_history(
     env: jinja2.Environment,
     conn: sqlite3.Connection,
     out_dir: Path,
+    base_dir: Path,
     today_str: str,
 ) -> int:
     dates = conn.execute(
@@ -833,7 +910,7 @@ def _render_history(
     count = 0
     for date_row in dates:
         metric_date = date_row["metric_date"]
-        _render_history_page(env, conn, out_dir, metric_date, today_str)
+        _render_history_page(env, conn, out_dir, base_dir, metric_date, today_str)
         count += 1
     return count
 
@@ -842,6 +919,7 @@ def _render_history_page(
     env: jinja2.Environment,
     conn: sqlite3.Connection,
     out_dir: Path,
+    base_dir: Path,
     metric_date: str,
     today_str: str,
 ) -> None:
@@ -886,12 +964,24 @@ def _render_history_page(
             )
         )
 
+    out_path = out_dir / _history_subpath(metric_date)
+
+    def project_link(pid: str) -> str:
+        return _rel(out_path, out_dir / "Projects" / f"{pid}.md")
+
+    def history_link(date_str: str) -> str:
+        return _rel(out_path, out_dir / _history_subpath(date_str))
+
+    dashboard_link = _rel(out_path, out_dir / "000_Daily_Dashboard.md")
+
     content = env.get_template("daily_history.md.j2").render(
         metric_date=metric_date,
         day_of_week=day_of_week,
         totals=totals,
         project_rows=project_rows,
         prev_date=prev_date,
+        project_link=project_link,
+        history_link=history_link,
+        dashboard_link=dashboard_link,
     )
-    out_path = out_dir / "History" / f"{metric_date}.md"
     _write_file(conn, out_path, content, today_str)

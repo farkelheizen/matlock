@@ -3,12 +3,12 @@
 ## 📈 Child Project Status
 | Project | Priority | Open Tasks | Completed | Due Date | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- |{% for p in child_projects %}
-| **[[{{ p.id }}]]** | {{ p.priority | title }} | {{ p.stats.open_count }} | {{ p.stats.completed_count }} | {{ p.due_date or "—" }} | {{ p.status_emoji }} {{ p.status_label }} |
+| **[{{ p.title }}]({{ project_link(p.id) }})** | {{ p.priority | title }} | {{ p.stats.open_count }} | {{ p.stats.completed_count }} | {{ p.due_date or "—" }} | {{ p.status_emoji }} {{ p.status_label }} |
 {%- endfor %}
 
 ## 🚨 Critical Aggregated Tasks
 {% for task in critical_tasks %}
-- [ ] [{{ task.project_title }}] {{ task.task_text }} 🔗 [[{{ task.file_path | basename }}]]
+- [ ] [{{ task.project_title }}] {{ task.task_text }} [↗]({{ source_link(task.file_path) }})
 {%- endfor %}
 {% if not critical_tasks %}
 *No past-due tasks across child projects.*
