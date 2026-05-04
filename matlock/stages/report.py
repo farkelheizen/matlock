@@ -766,6 +766,232 @@ def _build_dashboard_task_view_table(
     return rows
 
 
+def _estimate_minutes_from_attributes(attributes: str | None) -> int:
+    """Parse task estimate minutes from JSON attributes payload."""
+    try:
+        attrs = json.loads(attributes or "{}")
+        return int(attrs.get("estimate", 0) or 0) // 60
+    except Exception:
+        return 0
+
+
+def _calc_current_streak_for_projects(
+    conn: sqlite3.Connection,
+    project_ids: list[str],
+) -> int:
+    """Return consecutive active-day streak for a project-id set."""
+    if not project_ids:
+        return 0
+
+    placeholders = ",".join("?" * len(project_ids))
+    rows = conn.execute(
+        "SELECT metric_date, SUM(tasks_completed_count) AS total"
+        " FROM daily_metric"
+        f" WHERE project_id IN ({placeholders})"
+        " GROUP BY metric_date"
+        " ORDER BY metric_date ASC",
+        project_ids,
+    ).fetchall()
+
+    if not rows:
+        return 0
+
+    dated: list[tuple[datetime.date, bool]] = []
+    for row in rows:
+        dated.append((datetime.date.fromisoformat(row["metric_date"]), (row["total"] or 0) > 0))
+
+    current = 0
+    prev_d: datetime.date | None = None
+    for d, active in reversed(dated):
+        if not active:
+            break
+        if prev_d is not None and (prev_d - d).days > 1:
+            break
+        current += 1
+        prev_d = d
+
+    return current
+
+
+def _calc_super_project_health(
+    current_streak: int,
+    past_due_count: int,
+    past_due_minutes: int,
+    total_open_count: int,
+    due_today_count: int,
+    due_soon_count: int,
+) -> SimpleNamespace:
+    """Blend streak momentum with overdue burden into a compact health signal."""
+    overdue_count_penalty = past_due_count * 12
+    overdue_time_penalty = (past_due_minutes // 30) * 2
+    overdue_ratio_penalty = (
+        int((past_due_count / total_open_count) * 25) if total_open_count > 0 else 0
+    )
+    due_today_penalty = due_today_count * 3
+    due_soon_penalty = due_soon_count
+    backlog_penalty = min(15, total_open_count // 25)
+    streak_bonus = min(24, current_streak * 3)
+    on_time_bonus = 4 if past_due_count == 0 and current_streak >= 1 else 0
+
+    score = max(
+        0,
+        min(
+            100,
+            (
+                78
+                + streak_bonus
+                + on_time_bonus
+                - overdue_count_penalty
+                - overdue_time_penalty
+                - overdue_ratio_penalty
+                - due_today_penalty
+                - due_soon_penalty
+                - backlog_penalty
+            ),
+        ),
+    )
+
+    if score >= 80:
+        emoji, label = "🟢", "Strong"
+    elif score >= 60:
+        emoji, label = "🟡", "Steady"
+    elif score >= 40:
+        emoji, label = "🟠", "Watch"
+    else:
+        emoji, label = "🔴", "At Risk"
+
+    return SimpleNamespace(score=score, label=label, emoji=emoji, display=f"{emoji} {label} ({score})")
+
+
+def _build_active_super_projects_table(
+    conn: sqlite3.Connection,
+    out_dir: Path,
+    this_file: Path,
+    today_str: str,
+) -> list[SimpleNamespace]:
+    """Build dashboard rows for super projects with at least one In Progress child project."""
+    soon_date = (datetime.date.fromisoformat(today_str) + datetime.timedelta(days=7)).isoformat()
+
+    sp_rows = conn.execute(
+        "SELECT super_project_id, title FROM super_project ORDER BY super_project_id"
+    ).fetchall()
+
+    rows: list[SimpleNamespace] = []
+    for sp in sp_rows:
+        sp_id = sp["super_project_id"]
+        active_project_rows = conn.execute(
+            "SELECT project_id FROM project"
+            " WHERE super_project_id = ? AND status = 'In Progress'"
+            " ORDER BY project_id",
+            (sp_id,),
+        ).fetchall()
+        active_project_ids = [r["project_id"] for r in active_project_rows]
+
+        if not active_project_ids:
+            continue
+
+        sp_title_raw = (sp["title"] or "").strip()
+        sp_display_title = sp_title_raw or sp_id
+
+        placeholders = ",".join("?" * len(active_project_ids))
+        task_rows = conn.execute(
+            "SELECT t.due_date, t.attributes"
+            " FROM task t"
+            " JOIN file f ON t.file_path = f.file_path"
+            " WHERE t.checked = 0 AND f.deleted = 0"
+            " AND EXISTS ("
+            "   SELECT 1 FROM file_project fp"
+            "   WHERE fp.file_path = t.file_path"
+            f"     AND fp.project_id IN ({placeholders})"
+            " )",
+            active_project_ids,
+        ).fetchall()
+
+        buckets: dict[str, dict[str, int]] = {
+            "due_today": {"count": 0, "minutes": 0},
+            "past_due": {"count": 0, "minutes": 0},
+            "due_soon": {"count": 0, "minutes": 0},
+            "future_due": {"count": 0, "minutes": 0},
+            "not_due": {"count": 0, "minutes": 0},
+        }
+
+        for task in task_rows:
+            due_date = task["due_date"]
+            estimate_minutes = _estimate_minutes_from_attributes(task["attributes"])
+
+            if due_date is None:
+                bucket = "not_due"
+            elif due_date < today_str:
+                bucket = "past_due"
+            elif due_date == today_str:
+                bucket = "due_today"
+            elif due_date <= soon_date:
+                bucket = "due_soon"
+            else:
+                bucket = "future_due"
+
+            buckets[bucket]["count"] += 1
+            buckets[bucket]["minutes"] += estimate_minutes
+
+        last_updated_row = conn.execute(
+            "SELECT f.modified, f.modified_date"
+            " FROM file f"
+            " WHERE f.deleted = 0 AND f.is_generated = 0"
+            " AND EXISTS ("
+            "   SELECT 1 FROM file_project fp"
+            "   WHERE fp.file_path = f.file_path"
+            f"     AND fp.project_id IN ({placeholders})"
+            " )"
+            " ORDER BY"
+            " CASE WHEN f.modified IS NULL OR f.modified <= 0 THEN 0 ELSE 1 END DESC,"
+            " f.modified DESC,"
+            " f.modified_date DESC,"
+            " f.file_path ASC"
+            " LIMIT 1",
+            active_project_ids,
+        ).fetchone()
+
+        if last_updated_row is None:
+            last_updated_text = "Unknown"
+        elif isinstance(last_updated_row["modified"], int) and last_updated_row["modified"] > 0:
+            changed_at = datetime.datetime.fromtimestamp(last_updated_row["modified"] / 1000)
+            last_updated_text = changed_at.strftime("%Y-%m-%d %H:%M")
+        elif last_updated_row["modified_date"]:
+            last_updated_text = f"{last_updated_row['modified_date']} 00:00"
+        else:
+            last_updated_text = "Unknown"
+
+        current_streak = _calc_current_streak_for_projects(conn, active_project_ids)
+        total_open_count = sum(v["count"] for v in buckets.values())
+        health = _calc_super_project_health(
+            current_streak=current_streak,
+            past_due_count=buckets["past_due"]["count"],
+            past_due_minutes=buckets["past_due"]["minutes"],
+            total_open_count=total_open_count,
+            due_today_count=buckets["due_today"]["count"],
+            due_soon_count=buckets["due_soon"]["count"],
+        )
+
+        rows.append(
+            SimpleNamespace(
+                super_project_label=f"{sp_display_title} ({len(active_project_ids)})",
+                super_project_link=_rel(this_file, out_dir / _SUPER_PROJECTS_DIR / f"{sp_id}.md"),
+                current_streak=current_streak,
+                health=health.display,
+                last_updated=last_updated_text,
+                due_today_display=(
+                    f"{buckets['due_today']['count']:,} ({buckets['due_today']['minutes']}m)"
+                ),
+                past_due_display=f"{buckets['past_due']['count']:,}",
+                due_soon_display=f"{buckets['due_soon']['count']:,}",
+                future_due_display=f"{buckets['future_due']['count']:,}",
+                not_due_display=f"{buckets['not_due']['count']:,}",
+            )
+        )
+
+    return rows
+
+
 def _render_dashboard(
     env: jinja2.Environment,
     conn: sqlite3.Connection,
@@ -789,12 +1015,16 @@ def _render_dashboard(
 
     this_file = out_dir / _HOME_PAGE
     task_view_table_rows = _build_dashboard_task_view_table(conn, out_dir, this_file, today_str)
+    active_super_project_rows = _build_active_super_projects_table(conn, out_dir, this_file, today_str)
 
     def source_link(file_path: str) -> str:
         return _rel(this_file, base_dir / file_path)
 
     def project_link(project_id: str) -> str:
         return _rel(this_file, out_dir / "Projects" / f"{project_id}.md")
+
+    def super_project_link(sp_id: str) -> str:
+        return _rel(this_file, out_dir / _SUPER_PROJECTS_DIR / f"{sp_id}.md")
 
     def history_link(metric_date: str) -> str:
         return _rel(this_file, out_dir / _history_subpath(metric_date))
@@ -815,8 +1045,10 @@ def _render_dashboard(
         projects=projects,
         source_link=source_link,
         project_link=project_link,
+        super_project_link=super_project_link,
         history_link=history_link,
         task_view_table_rows=task_view_table_rows,
+        active_super_project_rows=active_super_project_rows,
         recently_changed_files=recently_changed_files,
         due_today_link=_rel(this_file, out_dir / _DUE_TODAY_PAGE),
         past_due_link=_rel(this_file, out_dir / _PAST_DUE_PAGE),

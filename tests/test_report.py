@@ -119,11 +119,17 @@ def _seed_metric(conn, metric_date: str, project_id: str | None, *, completed: i
     conn.commit()
 
 
-def _seed_project(conn, project_id: str, title: str, super_project_id: str | None = None) -> None:
+def _seed_project(
+    conn,
+    project_id: str,
+    title: str,
+    super_project_id: str | None = None,
+    status: str | None = None,
+) -> None:
     conn.execute(
-        "INSERT OR REPLACE INTO project (project_id, super_project_id, title, priority)"
-        " VALUES (?, ?, ?, ?)",
-        (project_id, super_project_id, title, "medium"),
+        "INSERT OR REPLACE INTO project (project_id, super_project_id, title, priority, status)"
+        " VALUES (?, ?, ?, ?, ?)",
+        (project_id, super_project_id, title, "medium", status),
     )
     conn.commit()
 
@@ -568,6 +574,55 @@ class TestDashboardContent:
         assert "2026-04-27 00:00" in content
         assert "[beta.md](../vault/notes/beta.md)" in content
         assert "[alpha.md](../vault/notes/alpha.md)" in content
+
+    def test_dashboard_shows_active_super_projects_table(self, tmp_path: Path):
+        conn = _conn()
+        _seed_super_project(conn, "sp1", "Platform")
+        _seed_super_project(conn, "sp2", "Backlog")
+        _seed_project(conn, "p_active", "API", super_project_id="sp1", status="In Progress")
+        _seed_project(conn, "p_planned", "Docs", super_project_id="sp2", status="Planned")
+
+        _seed_file(conn, "/vault/api.md", modified_date="2026-04-27")
+        _seed_file(conn, "/vault/docs.md", modified_date="2026-04-27")
+        _link(conn, "/vault/api.md", "p_active")
+        _link(conn, "/vault/docs.md", "p_planned")
+
+        today = datetime.date.today().isoformat()
+        yesterday = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
+        _seed_task_full(conn, "sp_due_today", "/vault/api.md", due_date=today, estimate_secs=1800)
+        _seed_task_full(conn, "sp_past_due", "/vault/api.md", due_date=yesterday, estimate_secs=600)
+        _seed_metric(conn, yesterday, "p_active", completed=1)
+        _seed_metric(conn, today, "p_active", completed=1)
+
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="dashboard")
+
+        content = (cfg.output_directory / "Home.md").read_text()
+
+        assert "Active Super Projects" in content
+        assert "| [Platform (1)](Super%20Projects/sp1.md) | 2 |" in content
+        assert "| [Platform (1)](Super%20Projects/sp1.md)" in content
+        assert "| 1 (30m) | 1 |" in content
+        assert "[Backlog (1)](Super%20Projects/sp2.md)" not in content
+
+    def test_dashboard_super_project_health_reflects_overdue_burden(self, tmp_path: Path):
+        conn = _conn()
+        _seed_super_project(conn, "sp1", "Platform")
+        _seed_project(conn, "p_active", "API", super_project_id="sp1", status="In Progress")
+        _seed_file(conn, "/vault/api.md", modified_date="2026-04-27")
+        _link(conn, "/vault/api.md", "p_active")
+
+        yesterday = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
+        _seed_task_full(conn, "pd1", "/vault/api.md", due_date=yesterday, estimate_secs=3600)
+        _seed_task_full(conn, "pd2", "/vault/api.md", due_date=yesterday, estimate_secs=3600)
+        _seed_task_full(conn, "pd3", "/vault/api.md", due_date=yesterday, estimate_secs=3600)
+
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="dashboard")
+
+        content = (cfg.output_directory / "Home.md").read_text()
+
+        assert "🔴 At Risk" in content
 
     def test_dashboard_recently_changed_files_limit_from_config(self, tmp_path: Path):
         conn = _conn()

@@ -26,6 +26,17 @@
 | [{{ row.label }}]({{ row.view_link }}) | {% if row.cells[0].link %}[{{ row.cells[0].display }}]({{ row.cells[0].link }}){% else %}-{% endif %} | {% if row.cells[1].link %}[{{ row.cells[1].display }}]({{ row.cells[1].link }}){% else %}-{% endif %} | {% if row.cells[2].link %}[{{ row.cells[2].display }}]({{ row.cells[2].link }}){% else %}-{% endif %} | {% if row.cells[3].link %}[{{ row.cells[3].display }}]({{ row.cells[3].link }}){% else %}-{% endif %} |
 {% endfor %}
 
+## 🌍 Active Super Projects
+{% if active_super_project_rows %}
+| Super Project | Current Streak | Health | Last Updated | Due Today (count + est) | Past Due | Due Soon | Future Due | Not Due |
+|:--------------|:--------------:|:------:|:------------:|:-----------------------:|:--------:|:--------:|:----------:|:-------:|
+{% for row in active_super_project_rows %}
+| [{{ row.super_project_label }}]({{ row.super_project_link }}) | {{ row.current_streak }} | {{ row.health }} | {{ row.last_updated }} | {{ row.due_today_display }} | {{ row.past_due_display }} | {{ row.due_soon_display }} | {{ row.future_due_display }} | {{ row.not_due_display }} |
+{% endfor %}
+{% else %}
+*No active super projects with In Progress child projects.*
+{% endif %}
+
 ## 🕒 Recently Changed Files
 {% if recently_changed_files %}
 {% for file in recently_changed_files %}
@@ -37,7 +48,7 @@
 
 ## 🧭 Active Projects Hub
 {% for sp in super_projects %}
-- 🌍 [{{ sp.title }}]({{ project_link(sp.id) }})
+- 🌍 [{{ sp.title or sp.id }}]({{ super_project_link(sp.id) }})
 {% endfor %}
 {% for p in projects %}
 - 🚀 [{{ p.title }}]({{ project_link(p.id) }})
