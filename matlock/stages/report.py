@@ -152,7 +152,14 @@ def run_report(
         files_written += _render_single_project(env, conn, out_dir, base_dir, project_id, today_str)
     else:
         if target in ("all", "dashboard"):
-            files_written += _render_dashboard(env, conn, out_dir, base_dir, today_str)
+            files_written += _render_dashboard(
+                env,
+                conn,
+                out_dir,
+                base_dir,
+                today_str,
+                config.dashboard_recent_changes_limit,
+            )
             files_written += _render_due_today(env, conn, out_dir, base_dir, today_str)
             files_written += _render_past_due(env, conn, out_dir, base_dir, today_str)
             files_written += _render_due_soon(env, conn, out_dir, base_dir, today_str)
@@ -464,6 +471,13 @@ _TASK_TIERS: list[tuple[str | None, str]] = [
     (None,     "— No Priority"),
 ]
 
+_TASK_TIER_ANCHORS: dict[str | None, str] = {
+    "High": "priority-high",
+    "Medium": "priority-medium",
+    "Low": "priority-low",
+    None: "priority-none",
+}
+
 # Keep old name as alias for backwards compatibility with tests
 _DUE_TODAY_TIERS = _TASK_TIERS
 
@@ -476,7 +490,9 @@ def _build_tiers(tasks: list[SimpleNamespace]) -> list[dict]:
         total_secs = sum(t.estimate_secs for t in tier_tasks)
         total_mins = total_secs // 60 if total_secs > 0 else None
         tiers.append({
+            "priority_key": priority_key,
             "heading": heading,
+            "anchor": _TASK_TIER_ANCHORS[priority_key],
             "tasks": tier_tasks,
             "total_est": f"{total_mins}m" if total_mins else None,
         })
@@ -667,17 +683,102 @@ def _get_due_tasks(conn: sqlite3.Connection) -> tuple[list[Any], list[Any]]:
     return past_due, due_today
 
 
+def _get_recently_changed_tracked_files(
+    conn: sqlite3.Connection,
+    limit: int,
+) -> list[SimpleNamespace]:
+    """Return recent non-generated tracked files ordered by last change."""
+    rows = conn.execute(
+        "SELECT file_path, modified, modified_date"
+        " FROM file"
+        " WHERE deleted = 0 AND is_generated = 0"
+        " ORDER BY"
+        " CASE WHEN modified IS NULL OR modified <= 0 THEN 0 ELSE 1 END DESC,"
+        " modified DESC,"
+        " modified_date DESC,"
+        " file_path ASC"
+        " LIMIT ?",
+        (limit,),
+    ).fetchall()
+
+    files: list[SimpleNamespace] = []
+    for row in rows:
+        modified_ms = row["modified"]
+        if isinstance(modified_ms, int) and modified_ms > 0:
+            changed_at = datetime.datetime.fromtimestamp(modified_ms / 1000)
+            changed_at_text = changed_at.strftime("%Y-%m-%d %H:%M")
+        elif row["modified_date"]:
+            changed_at_text = f"{row['modified_date']} 00:00"
+        else:
+            changed_at_text = "Unknown"
+
+        files.append(
+            SimpleNamespace(
+                file_path=row["file_path"],
+                changed_at_text=changed_at_text,
+            )
+        )
+
+    return files
+
+
+def _build_dashboard_task_view_table(
+    conn: sqlite3.Connection,
+    out_dir: Path,
+    this_file: Path,
+    today_str: str,
+) -> list[SimpleNamespace]:
+    """Build a dashboard matrix of due-view counts by priority tier."""
+    view_specs: list[tuple[str, Path, list[SimpleNamespace]]] = [
+        ("📅 Due Today", out_dir / _DUE_TODAY_PAGE, _get_due_today_tasks(conn, today_str)),
+        ("⚠️ Past Due", out_dir / _PAST_DUE_PAGE, _get_past_due_tasks(conn, today_str)),
+        ("⏰ Due Soon", out_dir / _DUE_SOON_PAGE, _get_due_soon_tasks(conn, today_str)),
+        ("📆 Future Due", out_dir / _FUTURE_DUE_PAGE, _get_future_due_tasks(conn, today_str)),
+        ("📝 Not Due", out_dir / _NOT_DUE_PAGE, _get_not_due_tasks(conn)),
+    ]
+
+    rows: list[SimpleNamespace] = []
+    for label, page_path, tasks in view_specs:
+        tiers = _build_tiers(tasks)
+        cells: list[SimpleNamespace] = []
+        for tier in tiers:
+            task_count = len(tier["tasks"])
+            if task_count == 0:
+                cells.append(SimpleNamespace(display="-", link=None))
+                continue
+
+            total_mins = sum(t.estimate_secs for t in tier["tasks"]) // 60
+            cells.append(
+                SimpleNamespace(
+                    display=f"{task_count:,} ({total_mins}m)",
+                    link=f"{_rel(this_file, page_path)}#{tier['anchor']}",
+                )
+            )
+
+        rows.append(
+            SimpleNamespace(
+                label=label,
+                view_link=_rel(this_file, page_path),
+                cells=cells,
+            )
+        )
+
+    return rows
+
+
 def _render_dashboard(
     env: jinja2.Environment,
     conn: sqlite3.Connection,
     out_dir: Path,
     base_dir: Path,
     today_str: str,
+    recent_changes_limit: int,
 ) -> int:
     current_streak, longest_streak, longest_streak_end = _calc_streak(conn)
     heatmap = _calc_heatmap(conn)
     yesterday_count, yesterday_date, yesterday_by_project = _calc_yesterday_stats(conn)
     past_due, due_today = _get_due_tasks(conn)
+    recently_changed_files = _get_recently_changed_tracked_files(conn, recent_changes_limit)
 
     super_projects = conn.execute(
         "SELECT super_project_id AS id, title FROM super_project ORDER BY super_project_id"
@@ -687,6 +788,7 @@ def _render_dashboard(
     ).fetchall()
 
     this_file = out_dir / _HOME_PAGE
+    task_view_table_rows = _build_dashboard_task_view_table(conn, out_dir, this_file, today_str)
 
     def source_link(file_path: str) -> str:
         return _rel(this_file, base_dir / file_path)
@@ -714,6 +816,8 @@ def _render_dashboard(
         source_link=source_link,
         project_link=project_link,
         history_link=history_link,
+        task_view_table_rows=task_view_table_rows,
+        recently_changed_files=recently_changed_files,
         due_today_link=_rel(this_file, out_dir / _DUE_TODAY_PAGE),
         past_due_link=_rel(this_file, out_dir / _PAST_DUE_PAGE),
         due_soon_link=_rel(this_file, out_dir / _DUE_SOON_PAGE),

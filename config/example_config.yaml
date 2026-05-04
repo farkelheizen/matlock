@@ -31,6 +31,9 @@ ignore_dirs:
 # Seconds of file-change inactivity before triggering report.
 debounce_seconds: 5
 
+# Number of recently changed tracked files shown on _Matlock/Home.md.
+dashboard_recent_changes_limit: 10
+
 # ── Parser: text limits ─────────────────────────────
 
 headers:

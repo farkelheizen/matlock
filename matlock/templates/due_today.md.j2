@@ -8,6 +8,7 @@
 {% for tier in tiers %}
 {% if tier.tasks %}
 
+<a id="{{ tier.anchor }}"></a>
 ## {{ tier.heading }}{% if tier.total_est %} ({{ tier.total_est }}){% endif %}
 
 | Task | Project | Est |

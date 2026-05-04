@@ -44,6 +44,22 @@
 ### 📋 Task Views
 [⚠️ Past Due]({{ past_due_link }}) · [📅 Due Today]({{ due_today_link }}) · [⏰ Due Soon]({{ due_soon_link }}) · [📆 Future Due]({{ future_due_link }}) · [📝 Not Due]({{ not_due_link }})
 
+### 📊 Task Matrix By Priority
+| View | ⏫ High | 🔼 Medium | 🔽 Low | None |
+|:-----|:-------:|:---------:|:------:|:----:|
+{% for row in task_view_table_rows %}
+| [{{ row.label }}]({{ row.view_link }}) | {% if row.cells[0].link %}[{{ row.cells[0].display }}]({{ row.cells[0].link }}){% else %}-{% endif %} | {% if row.cells[1].link %}[{{ row.cells[1].display }}]({{ row.cells[1].link }}){% else %}-{% endif %} | {% if row.cells[2].link %}[{{ row.cells[2].display }}]({{ row.cells[2].link }}){% else %}-{% endif %} | {% if row.cells[3].link %}[{{ row.cells[3].display }}]({{ row.cells[3].link }}){% else %}-{% endif %} |
+{% endfor %}
+
+## 🕒 Recently Changed Files
+{% if recently_changed_files %}
+{% for file in recently_changed_files %}
+- **{{ file.changed_at_text }}** - [{{ file.file_path | basename }}]({{ source_link(file.file_path) }})
+{% endfor %}
+{% else %}
+*No tracked files found.*
+{% endif %}
+
 ## 🧭 Active Projects Hub
 {% for sp in super_projects %}
 - 🌍 [{{ sp.title }}]({{ project_link(sp.id) }})

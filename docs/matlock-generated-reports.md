@@ -58,6 +58,22 @@ Template files live at `matlock/templates/`.
 *No tasks due today.*
 {% endif %}
 
+### 📊 Task Matrix By Priority
+| View | ⏫ High | 🔼 Medium | 🔽 Low | None |
+|:-----|:-------:|:---------:|:------:|:----:|
+{% for row in task_view_table_rows %}
+| [{{ row.label }}]({{ row.view_link }}) | {% if row.cells[0].link %}[{{ row.cells[0].display }}]({{ row.cells[0].link }}){% else %}-{% endif %} | {% if row.cells[1].link %}[{{ row.cells[1].display }}]({{ row.cells[1].link }}){% else %}-{% endif %} | {% if row.cells[2].link %}[{{ row.cells[2].display }}]({{ row.cells[2].link }}){% else %}-{% endif %} | {% if row.cells[3].link %}[{{ row.cells[3].display }}]({{ row.cells[3].link }}){% else %}-{% endif %} |
+{% endfor %}
+
+## 🕒 Recently Changed Files
+{% if recently_changed_files %}
+{% for file in recently_changed_files %}
+- **{{ file.changed_at_text }}** - [{{ file.file_path | basename }}]({{ source_link(file.file_path) }})
+{% endfor %}
+{% else %}
+*No tracked files found.*
+{% endif %}
+
 ## 🧭 Active Projects Hub
 {% for sp in super_projects %}
 - 🌍 [[{{ sp.id }}]] — {{ sp.title }}
@@ -81,6 +97,8 @@ Template files live at `matlock/templates/`.
 | `yesterday_by_project` | dict[str, int] | `daily_metric` |
 | `past_due_tasks` | list[Task] | `task` table query |
 | `due_today_tasks` | list[Task] | `task` table query |
+| `task_view_table_rows` | list[object] | Dashboard matrix rows grouped by due view and priority tier; populated cells link to page anchors (`#priority-high`, `#priority-medium`, `#priority-low`, `#priority-none`) |
+| `recently_changed_files` | list[object] | Top changed non-generated files from `file` table (limited by `dashboard_recent_changes_limit`) |
 | `super_projects` | list[SuperProject] | `super_project` table |
 | `projects` | list[Project] | `project` table |
 

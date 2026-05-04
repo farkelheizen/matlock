@@ -50,6 +50,9 @@ ignore_dirs:
 # Seconds of file-change inactivity before triggering report.
 debounce_seconds: 5
 
+# Number of recently changed tracked files shown on _Matlock/Home.md.
+dashboard_recent_changes_limit: 10
+
 # ────────────────────────────────────────────────────
 # Logging
 # ────────────────────────────────────────────────────
@@ -212,6 +215,7 @@ This matches only `Projects/Planning.md`.
 | Field | Type | Default | Description |
 |:------|:-----|:--------|:------------|
 | `debounce_seconds` | int | `5` | Idle window before triggering report after file changes |
+| `dashboard_recent_changes_limit` | int | `10` | Max number of recently changed tracked files shown in `_Matlock/Home.md` |
 
 ### Logging
 

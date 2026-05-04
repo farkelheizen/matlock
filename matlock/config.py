@@ -154,6 +154,7 @@ class MatlockConfig(BaseModel):
     output_directory: Path
     ignore_dirs: list[str] = Field(default_factory=list)
     debounce_seconds: int = 5
+    dashboard_recent_changes_limit: int = Field(default=10, ge=1)
     headers: HeadersConfig = Field(default_factory=HeadersConfig)
     tasks: TasksConfig = Field(default_factory=TasksConfig)
     task_attributes: dict[str, TaskAttributeConfig] = Field(default_factory=dict)

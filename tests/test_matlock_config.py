@@ -99,6 +99,18 @@ def test_default_debounce_seconds(tmp_path: Path) -> None:
     assert load_config(cfg_file).debounce_seconds == 5
 
 
+def test_default_dashboard_recent_changes_limit(tmp_path: Path) -> None:
+    cfg_file = _write_config(tmp_path, _minimal_data())
+    assert load_config(cfg_file).dashboard_recent_changes_limit == 10
+
+
+def test_custom_dashboard_recent_changes_limit(tmp_path: Path) -> None:
+    data = _minimal_data()
+    data["dashboard_recent_changes_limit"] = 25
+    cfg_file = _write_config(tmp_path, data)
+    assert load_config(cfg_file).dashboard_recent_changes_limit == 25
+
+
 def test_default_ignore_dirs(tmp_path: Path) -> None:
     cfg_file = _write_config(tmp_path, _minimal_data())
     assert load_config(cfg_file).ignore_dirs == []

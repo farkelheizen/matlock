@@ -47,13 +47,19 @@ def _make_config(out_dir: Path) -> MatlockConfig:
     )
 
 
-def _seed_file(conn, file_path: str, *, modified_date: str = "2026-04-26") -> None:
+def _seed_file(
+    conn,
+    file_path: str,
+    *,
+    modified_date: str = "2026-04-26",
+    modified: int = 0,
+) -> None:
     upsert_file(conn, {
         "file_path": file_path,
         "sha256": "abc",
         "file_ext": ".md",
         "created": 0,
-        "modified": 0,
+        "modified": modified,
         "modified_date": modified_date,
         "deleted": 0,
         "length": 0,
@@ -543,6 +549,35 @@ class TestDashboardContent:
         run_report(cfg, conn, target="dashboard")
         content = (cfg.output_directory / "Home.md").read_text()
         assert "Activity Heatmap" in content
+
+    def test_dashboard_shows_recently_changed_files_section(self, tmp_path: Path):
+        conn = _conn()
+        _seed_file(conn, "notes/alpha.md", modified_date="2026-04-26")
+        _seed_file(conn, "notes/beta.md", modified_date="2026-04-27")
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="dashboard")
+
+        content = (cfg.output_directory / "Home.md").read_text()
+
+        assert "Recently Changed Files" in content
+        assert "2026-04-27 00:00" in content
+        assert "[beta.md](../vault/notes/beta.md)" in content
+        assert "[alpha.md](../vault/notes/alpha.md)" in content
+
+    def test_dashboard_recently_changed_files_limit_from_config(self, tmp_path: Path):
+        conn = _conn()
+        _seed_file(conn, "notes/one.md", modified_date="2026-04-25")
+        _seed_file(conn, "notes/two.md", modified_date="2026-04-26")
+        _seed_file(conn, "notes/three.md", modified_date="2026-04-27")
+
+        cfg = _make_config(tmp_path).model_copy(update={"dashboard_recent_changes_limit": 2})
+        run_report(cfg, conn, target="dashboard")
+
+        content = (cfg.output_directory / "Home.md").read_text()
+
+        assert "[three.md](../vault/notes/three.md)" in content
+        assert "[two.md](../vault/notes/two.md)" in content
+        assert "[one.md](../vault/notes/one.md)" not in content
 
 
 # ---------------------------------------------------------------------------
@@ -1442,3 +1477,57 @@ class TestTaskViewPages:
         assert "Due%20Soon.md" in content
         assert "Future%20Due.md" in content
         assert "Not%20Due.md" in content
+
+    def test_dashboard_task_matrix_links_populated_cells_to_page_anchors(self, tmp_path: Path):
+        cfg = self._cfg(tmp_path)
+        conn = get_connection(cfg.db_path)
+        init_db(conn)
+
+        fp = str(cfg.base_directory / "note.md")
+        upsert_file(conn, {"file_path": fp, "sha256": "x", "file_ext": ".md",
+                           "created": 0, "modified": 0, "modified_date": self.TODAY,
+                           "deleted": 0, "length": 0, "word_count": 0,
+                           "meta_data": None, "is_generated": 0, "needs_parsing": 0})
+
+        yesterday = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
+        in_3_days = (datetime.date.today() + datetime.timedelta(days=3)).isoformat()
+
+        upsert_task(conn, {"task_id": "t_due_today", "file_path": fp, "parent_task_id": None,
+                           "created_date": self.TODAY, "due_date": self.TODAY,
+                           "est_comp_date": None, "act_comp_date": None, "checked": 0,
+                           "task_text": "Due today high", "overflow": 0, "headers": None,
+                           "attributes": json.dumps({"priority": "High", "estimate": 120}),
+                           "errors": None, "twin_index": 0})
+
+        upsert_task(conn, {"task_id": "t_past_due", "file_path": fp, "parent_task_id": None,
+                           "created_date": self.TODAY, "due_date": yesterday,
+                           "est_comp_date": None, "act_comp_date": None, "checked": 0,
+                           "task_text": "Past due low", "overflow": 0, "headers": None,
+                           "attributes": json.dumps({"priority": "Low"}),
+                           "errors": None, "twin_index": 0})
+
+        upsert_task(conn, {"task_id": "t_due_soon", "file_path": fp, "parent_task_id": None,
+                           "created_date": self.TODAY, "due_date": in_3_days,
+                           "est_comp_date": None, "act_comp_date": None, "checked": 0,
+                           "task_text": "Due soon none", "overflow": 0, "headers": None,
+                           "attributes": None,
+                           "errors": None, "twin_index": 0})
+
+        conn.commit()
+        run_report(cfg, conn, target="dashboard")
+        conn.close()
+
+        dashboard = (tmp_path / "_Matlock" / "Home.md").read_text()
+        assert "Task Matrix By Priority" in dashboard
+        assert "[1 (2m)](Due%20Today.md#priority-high)" in dashboard
+        assert "[1 (0m)](Past%20Due.md#priority-low)" in dashboard
+        assert "[1 (0m)](Due%20Soon.md#priority-none)" in dashboard
+        assert "Future%20Due.md#priority-high" not in dashboard
+
+        due_today_page = (tmp_path / "_Matlock" / "Due Today.md").read_text()
+        past_due_page = (tmp_path / "_Matlock" / "Past Due.md").read_text()
+        due_soon_page = (tmp_path / "_Matlock" / "Due Soon.md").read_text()
+
+        assert '<a id="priority-high"></a>' in due_today_page
+        assert '<a id="priority-low"></a>' in past_due_page
+        assert '<a id="priority-none"></a>' in due_soon_page
