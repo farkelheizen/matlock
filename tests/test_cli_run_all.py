@@ -127,13 +127,13 @@ class TestRunAllCommand:
     def test_dashboard_file_written(self, tmp_path: Path):
         result, _, out_dir, _ = _invoke(tmp_path)
         assert result.exit_code == 0
-        assert (out_dir / "000_Daily_Dashboard.md").exists()
+        assert (out_dir / "Home.md").exists()
 
     def test_idempotent_second_run(self, tmp_path: Path):
         _invoke(tmp_path)
         result, _, out_dir, _ = _invoke(tmp_path)
         assert result.exit_code == 0
-        assert (out_dir / "000_Daily_Dashboard.md").exists()
+        assert (out_dir / "Home.md").exists()
 
 
 # ---------------------------------------------------------------------------
@@ -161,7 +161,7 @@ class TestRunAllSkipRollup:
     def test_dashboard_written_when_rollup_skipped(self, tmp_path: Path):
         result, _, out_dir, _ = _invoke(tmp_path, "--skip-rollup")
         assert result.exit_code == 0
-        assert (out_dir / "000_Daily_Dashboard.md").exists()
+        assert (out_dir / "Home.md").exists()
 
 
 # ---------------------------------------------------------------------------

@@ -256,13 +256,13 @@ class TestRunReportBasic:
         conn = _conn()
         cfg = _make_config(tmp_path)
         run_report(cfg, conn)
-        assert (cfg.output_directory / "000_Daily_Dashboard.md").exists()
+        assert (cfg.output_directory / "Home.md").exists()
 
     def test_dashboard_registered_in_file_table(self, tmp_path: Path):
         conn = _conn()
         cfg = _make_config(tmp_path)
         run_report(cfg, conn)
-        path = str(cfg.output_directory / "000_Daily_Dashboard.md")
+        path = str(cfg.output_directory / "Home.md")
         row = conn.execute(
             "SELECT is_generated FROM file WHERE file_path = ?", (path,)
         ).fetchone()
@@ -282,7 +282,7 @@ class TestRunReportBasic:
         run_report(cfg, conn)
         result2 = run_report(cfg, conn)
         assert result2.files_written == 6
-        assert (cfg.output_directory / "000_Daily_Dashboard.md").exists()
+        assert (cfg.output_directory / "Home.md").exists()
 
 
 # ---------------------------------------------------------------------------
@@ -301,12 +301,12 @@ class TestRunReportTargetFilter:
     def test_target_dashboard_only_writes_dashboard(self, tmp_path: Path):
         conn, cfg = self._setup(tmp_path)
         result = run_report(cfg, conn, target="dashboard")
-        assert (cfg.output_directory / "000_Daily_Dashboard.md").exists()
-        assert (cfg.output_directory / "001_Due_Today.md").exists()
-        assert (cfg.output_directory / "002_Past_Due.md").exists()
-        assert (cfg.output_directory / "003_Due_Soon.md").exists()
-        assert (cfg.output_directory / "004_Future_Due.md").exists()
-        assert (cfg.output_directory / "005_Not_Due.md").exists()
+        assert (cfg.output_directory / "Home.md").exists()
+        assert (cfg.output_directory / "Due Today.md").exists()
+        assert (cfg.output_directory / "Past Due.md").exists()
+        assert (cfg.output_directory / "Due Soon.md").exists()
+        assert (cfg.output_directory / "Future Due.md").exists()
+        assert (cfg.output_directory / "Not Due.md").exists()
         assert not (cfg.output_directory / "Projects").exists()
         assert not (cfg.output_directory / "History").exists()
         assert result.files_written == 6
@@ -315,19 +315,19 @@ class TestRunReportTargetFilter:
         conn, cfg = self._setup(tmp_path)
         result = run_report(cfg, conn, target="projects")
         assert (cfg.output_directory / "Projects" / "p1.md").exists()
-        assert not (cfg.output_directory / "000_Daily_Dashboard.md").exists()
+        assert not (cfg.output_directory / "Home.md").exists()
 
     def test_target_history_writes_history_page(self, tmp_path: Path):
         conn, cfg = self._setup(tmp_path)
         result = run_report(cfg, conn, target="history")
         assert (cfg.output_directory / _history_subpath("2026-04-20")).exists()
-        assert not (cfg.output_directory / "000_Daily_Dashboard.md").exists()
+        assert not (cfg.output_directory / "Home.md").exists()
         assert result.files_written == 1
 
     def test_target_all_writes_all(self, tmp_path: Path):
         conn, cfg = self._setup(tmp_path)
         result = run_report(cfg, conn, target="all")
-        assert (cfg.output_directory / "000_Daily_Dashboard.md").exists()
+        assert (cfg.output_directory / "Home.md").exists()
         assert (cfg.output_directory / "Projects" / "p1.md").exists()
         assert (cfg.output_directory / _history_subpath("2026-04-20")).exists()
 
@@ -415,15 +415,26 @@ class TestRunReportSuperProjectPage:
         _seed_project(conn, "p1", "Sub Project", super_project_id="sp1")
         cfg = _make_config(tmp_path)
         run_report(cfg, conn, target="projects")
-        assert (cfg.output_directory / "SuperProjects" / "sp1.md").exists()
+        assert (cfg.output_directory / "Super Projects" / "sp1.md").exists()
 
     def test_super_project_title_in_content(self, tmp_path: Path):
         conn = _conn()
         _seed_super_project(conn, "sp1", "Big Initiative")
         cfg = _make_config(tmp_path)
         run_report(cfg, conn, target="projects")
-        content = (cfg.output_directory / "SuperProjects" / "sp1.md").read_text()
+        content = (cfg.output_directory / "Super Projects" / "sp1.md").read_text()
         assert "Big Initiative" in content
+
+    def test_super_project_table_rows_render_with_line_breaks(self, tmp_path: Path):
+        conn = _conn()
+        _seed_super_project(conn, "sp1", "Big Initiative")
+        _seed_project(conn, "p1", "First Child", super_project_id="sp1")
+        _seed_project(conn, "p2", "Second Child", super_project_id="sp1")
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="projects")
+        content = (cfg.output_directory / "Super Projects" / "sp1.md").read_text()
+        assert "| :--- | :--- | :--- | :--- | :--- | :--- |\n| **[First Child]" in content
+        assert "| **[First Child]" in content and "| **[Second Child]" in content
 
 
 # ---------------------------------------------------------------------------
@@ -506,7 +517,7 @@ class TestDashboardContent:
         _seed_metric(conn, "2026-04-20", None, completed=1)
         cfg = _make_config(tmp_path)
         run_report(cfg, conn, target="dashboard")
-        content = (cfg.output_directory / "000_Daily_Dashboard.md").read_text()
+        content = (cfg.output_directory / "Home.md").read_text()
         assert "Current Streak" in content
 
     def test_dashboard_shows_project_hub(self, tmp_path: Path):
@@ -514,7 +525,7 @@ class TestDashboardContent:
         _seed_project(conn, "alpha", "Alpha Project")
         cfg = _make_config(tmp_path)
         run_report(cfg, conn, target="dashboard")
-        content = (cfg.output_directory / "000_Daily_Dashboard.md").read_text()
+        content = (cfg.output_directory / "Home.md").read_text()
         assert "alpha" in content
 
     def test_dashboard_shows_past_due_task(self, tmp_path: Path):
@@ -523,14 +534,14 @@ class TestDashboardContent:
         _seed_task(conn, "td1", "work.md", checked=0, due_date="2020-01-01")
         cfg = _make_config(tmp_path)
         run_report(cfg, conn, target="dashboard")
-        content = (cfg.output_directory / "000_Daily_Dashboard.md").read_text()
+        content = (cfg.output_directory / "Home.md").read_text()
         assert "Task td1" in content
 
     def test_dashboard_heatmap_section_present(self, tmp_path: Path):
         conn = _conn()
         cfg = _make_config(tmp_path)
         run_report(cfg, conn, target="dashboard")
-        content = (cfg.output_directory / "000_Daily_Dashboard.md").read_text()
+        content = (cfg.output_directory / "Home.md").read_text()
         assert "Activity Heatmap" in content
 
 
@@ -565,7 +576,7 @@ class TestReportCleanup:
         cfg = _make_config(tmp_path)
         _seed_super_project(conn, "old-sp", "Old SP")
         run_report(cfg, conn, target="projects")
-        stale = cfg.output_directory / "SuperProjects" / "old-sp.md"
+        stale = cfg.output_directory / "Super Projects" / "old-sp.md"
         assert stale.exists()
 
         conn.execute("DELETE FROM super_project WHERE super_project_id = 'old-sp'")
@@ -741,7 +752,7 @@ class TestRunReportForce:
         cfg = _make_config(tmp_path)
         _seed_project(conn, "keep", "Keep")
         result = run_report(cfg, conn, target="all", force=True)
-        assert (cfg.output_directory / "000_Daily_Dashboard.md").exists()
+        assert (cfg.output_directory / "Home.md").exists()
         assert (cfg.output_directory / "Projects" / "keep.md").exists()
 
     def test_force_removes_stale_file_table_row(self, tmp_path: Path):
@@ -774,32 +785,32 @@ class TestComputeExpectedPaths:
         conn = _conn()
         out = tmp_path / "_Matlock"
         paths = _compute_expected_paths(conn, out, "all")
-        assert out / "000_Daily_Dashboard.md" in paths
+        assert out / "Home.md" in paths
 
     def test_all_target_includes_due_today(self, tmp_path: Path):
         conn = _conn()
         out = tmp_path / "_Matlock"
         paths = _compute_expected_paths(conn, out, "all")
-        assert out / "001_Due_Today.md" in paths
+        assert out / "Due Today.md" in paths
 
     def test_all_target_includes_all_task_views(self, tmp_path: Path):
         conn = _conn()
         out = tmp_path / "_Matlock"
         paths = _compute_expected_paths(conn, out, "all")
-        for name in ("002_Past_Due.md", "003_Due_Soon.md", "004_Future_Due.md", "005_Not_Due.md"):
+        for name in ("Past Due.md", "Due Soon.md", "Future Due.md", "Not Due.md"):
             assert out / name in paths
 
     def test_dashboard_target_includes_due_today(self, tmp_path: Path):
         conn = _conn()
         out = tmp_path / "_Matlock"
         paths = _compute_expected_paths(conn, out, "dashboard")
-        assert out / "001_Due_Today.md" in paths
+        assert out / "Due Today.md" in paths
 
     def test_dashboard_target_includes_all_task_views(self, tmp_path: Path):
         conn = _conn()
         out = tmp_path / "_Matlock"
         paths = _compute_expected_paths(conn, out, "dashboard")
-        for name in ("002_Past_Due.md", "003_Due_Soon.md", "004_Future_Due.md", "005_Not_Due.md"):
+        for name in ("Past Due.md", "Due Soon.md", "Future Due.md", "Not Due.md"):
             assert out / name in paths
 
     def test_dashboard_target_only_has_dashboard(self, tmp_path: Path):
@@ -807,7 +818,7 @@ class TestComputeExpectedPaths:
         _seed_project(conn, "p1", "P1")
         out = tmp_path / "_Matlock"
         paths = _compute_expected_paths(conn, out, "dashboard")
-        assert out / "000_Daily_Dashboard.md" in paths
+        assert out / "Home.md" in paths
         assert out / "Projects" / "p1.md" not in paths
 
     def test_projects_target_includes_project_paths(self, tmp_path: Path):
@@ -817,7 +828,7 @@ class TestComputeExpectedPaths:
         out = tmp_path / "_Matlock"
         paths = _compute_expected_paths(conn, out, "projects")
         assert out / "Projects" / "p1.md" in paths
-        assert out / "SuperProjects" / "sp1.md" in paths
+        assert out / "Super Projects" / "sp1.md" in paths
 
     def test_history_target_includes_metric_dates(self, tmp_path: Path):
         conn = _conn()
@@ -1017,7 +1028,7 @@ class TestDueTodayPage:
         init_db(conn)
         run_report(cfg, conn)
         conn.close()
-        assert (tmp_path / "_Matlock" / "001_Due_Today.md").exists()
+        assert (tmp_path / "_Matlock" / "Due Today.md").exists()
 
     def test_due_today_created_by_dashboard_target(self, tmp_path: Path):
         cfg = self._cfg(tmp_path)
@@ -1025,7 +1036,7 @@ class TestDueTodayPage:
         init_db(conn)
         run_report(cfg, conn, target="dashboard")
         conn.close()
-        assert (tmp_path / "_Matlock" / "001_Due_Today.md").exists()
+        assert (tmp_path / "_Matlock" / "Due Today.md").exists()
 
     def test_due_today_not_created_by_projects_target(self, tmp_path: Path):
         cfg = self._cfg(tmp_path)
@@ -1033,7 +1044,7 @@ class TestDueTodayPage:
         init_db(conn)
         run_report(cfg, conn, target="projects")
         conn.close()
-        assert not (tmp_path / "_Matlock" / "001_Due_Today.md").exists()
+        assert not (tmp_path / "_Matlock" / "Due Today.md").exists()
 
     def test_empty_page_shows_no_tasks_message(self, tmp_path: Path):
         cfg = self._cfg(tmp_path)
@@ -1041,7 +1052,7 @@ class TestDueTodayPage:
         init_db(conn)
         run_report(cfg, conn, target="dashboard")
         conn.close()
-        content = (tmp_path / "_Matlock" / "001_Due_Today.md").read_text()
+        content = (tmp_path / "_Matlock" / "Due Today.md").read_text()
         assert "No tasks due today" in content
 
     def test_page_contains_task_text(self, tmp_path: Path):
@@ -1074,7 +1085,7 @@ class TestDueTodayPage:
         conn.commit()
         run_report(cfg, conn, target="dashboard")
         conn.close()
-        content = (tmp_path / "_Matlock" / "001_Due_Today.md").read_text()
+        content = (tmp_path / "_Matlock" / "Due Today.md").read_text()
         assert "Fix the thing" in content
         assert "⏫ High Priority" in content
         assert "note" in content  # wikilink stem
@@ -1109,8 +1120,17 @@ class TestDueTodayPage:
         conn.commit()
         run_report(cfg, conn, target="dashboard")
         conn.close()
-        dashboard = (tmp_path / "_Matlock" / "000_Daily_Dashboard.md").read_text()
-        assert "001_Due_Today" in dashboard
+        dashboard = (tmp_path / "_Matlock" / "Home.md").read_text()
+        assert "Due%20Today.md" in dashboard
+
+    def test_due_today_links_back_to_dashboard(self, tmp_path: Path):
+        cfg = self._cfg(tmp_path)
+        conn = get_connection(cfg.db_path)
+        init_db(conn)
+        run_report(cfg, conn, target="dashboard")
+        conn.close()
+        content = (tmp_path / "_Matlock" / "Due Today.md").read_text()
+        assert "[🏠 Back to Dashboard](Home.md)" in content
 
 
 # ---------------------------------------------------------------------------
@@ -1323,7 +1343,7 @@ class TestTaskViewPages:
         init_db(conn)
         run_report(cfg, conn, target="dashboard")
         conn.close()
-        for name in ("002_Past_Due.md", "003_Due_Soon.md", "004_Future_Due.md", "005_Not_Due.md"):
+        for name in ("Past Due.md", "Due Soon.md", "Future Due.md", "Not Due.md"):
             assert (tmp_path / "_Matlock" / name).exists(), f"Missing {name}"
 
     def test_past_due_shows_overdue_task(self, tmp_path: Path):
@@ -1344,7 +1364,7 @@ class TestTaskViewPages:
         conn.commit()
         run_report(cfg, conn, target="dashboard")
         conn.close()
-        content = (tmp_path / "_Matlock" / "002_Past_Due.md").read_text()
+        content = (tmp_path / "_Matlock" / "Past Due.md").read_text()
         assert "Overdue thing" in content
         assert yesterday in content
 
@@ -1366,7 +1386,7 @@ class TestTaskViewPages:
         conn.commit()
         run_report(cfg, conn, target="dashboard")
         conn.close()
-        content = (tmp_path / "_Matlock" / "003_Due_Soon.md").read_text()
+        content = (tmp_path / "_Matlock" / "Due Soon.md").read_text()
         assert "Coming up soon" in content
 
     def test_not_due_shows_undated_task(self, tmp_path: Path):
@@ -1386,7 +1406,7 @@ class TestTaskViewPages:
         conn.commit()
         run_report(cfg, conn, target="dashboard")
         conn.close()
-        content = (tmp_path / "_Matlock" / "005_Not_Due.md").read_text()
+        content = (tmp_path / "_Matlock" / "Not Due.md").read_text()
         assert "No date task" in content
 
     def test_estimate_total_in_tier_heading(self, tmp_path: Path):
@@ -1407,7 +1427,7 @@ class TestTaskViewPages:
         conn.commit()
         run_report(cfg, conn, target="dashboard")
         conn.close()
-        content = (tmp_path / "_Matlock" / "001_Due_Today.md").read_text()
+        content = (tmp_path / "_Matlock" / "Due Today.md").read_text()
         assert "30m" in content
         assert "⏫ High Priority" in content
 
@@ -1417,8 +1437,8 @@ class TestTaskViewPages:
         init_db(conn)
         run_report(cfg, conn, target="dashboard")
         conn.close()
-        content = (tmp_path / "_Matlock" / "000_Daily_Dashboard.md").read_text()
-        assert "002_Past_Due" in content
-        assert "003_Due_Soon" in content
-        assert "004_Future_Due" in content
-        assert "005_Not_Due" in content
+        content = (tmp_path / "_Matlock" / "Home.md").read_text()
+        assert "Past%20Due.md" in content
+        assert "Due%20Soon.md" in content
+        assert "Future%20Due.md" in content
+        assert "Not%20Due.md" in content

@@ -15,7 +15,7 @@ Matlock is a pipeline-driven task extractor and report generator for Markdown "s
 
 Matlock enforces a strict, flat two-tier hierarchy defined in `config.yaml`. This constraint prevents deep nesting and keeps SQL aggregations simple.
 
-1. **SuperProjects** — Broad thematic categories (e.g., "Personal Admin", "Website Overhaul").
+1. **Super Projects** — Broad thematic categories (e.g., "Personal Admin", "Website Overhaul").
 2. **Projects** — Actionable buckets (e.g., "Taxes 2026") that map directly to specific files or directories in your vault.
 
 ## 3. The Five-Stage Pipeline
@@ -40,9 +40,14 @@ Run all five stages in sequence with `matlock run-all`.
     Projects/
     ...
     _Matlock/               ← Output only. Never read as input.
-        000_Daily_Dashboard.md
+    Home.md
+    Due Today.md
+    Past Due.md
+    Due Soon.md
+    Future Due.md
+    Not Due.md
         Projects/
-        SuperProjects/
+    Super Projects/
         History/
 ```
 

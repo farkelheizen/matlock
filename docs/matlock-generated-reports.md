@@ -11,7 +11,7 @@ Template files live at `matlock/templates/`.
 ## 1. Global Dashboard
 
 **Template:** `matlock/templates/daily_dashboard.md.j2`
-**Output:** `_Matlock/000_Daily_Dashboard.md`
+**Output:** `_Matlock/Home.md`
 **Regenerated:** On every `matlock report` or `run-all` call; automatically by server mode after the nightly `rollup`.
 
 ### Template
@@ -161,7 +161,7 @@ Template files live at `matlock/templates/`.
 ## 3. Super-Project Page
 
 **Template:** `matlock/templates/super_project.md.j2`
-**Output:** `_Matlock/SuperProjects/<super_project_id>.md`
+**Output:** `_Matlock/Super Projects/<super_project_id>.md`
 **Regenerated:** When any child project is updated.
 
 ### Template
@@ -174,7 +174,7 @@ Template files live at `matlock/templates/`.
 | :--- | :--- | :--- | :--- | :--- | :--- |
 {% for p in child_projects %}
 | **[[{{ p.id }}]]** | {{ p.priority | title }} | {{ p.stats.open_count }} | {{ p.stats.completed_count }} | {{ p.due_date or "—" }} | {{ p.status_emoji }} {{ p.status_label }} |
-{%- endfor %}
+{% endfor %}
 
 ## 🚨 Critical Aggregated Tasks
 {% for task in critical_tasks %}
@@ -222,7 +222,7 @@ Template files live at `matlock/templates/`.
 {% endfor %}
 
 ## ⬅️ Navigation
-* **Previous Day:** [[{{ prev_date }}]] | **Back to Dashboard:** [[000_Daily_Dashboard]]
+* **Previous Day:** [{{ prev_date }}]({{ history_link(prev_date) }}) | **Back to Dashboard:** [Home]({{ dashboard_link }})
 ```
 
 ---
@@ -231,15 +231,22 @@ Template files live at `matlock/templates/`.
 
 ```
 _Matlock/
-    000_Daily_Dashboard.md
+    Home.md
+    Due Today.md
+    Past Due.md
+    Due Soon.md
+    Future Due.md
+    Not Due.md
     Projects/
         backend_api.md
         frontend_ui.md
-    SuperProjects/
+    Super Projects/
         website_overhaul.md
     History/
-        2026-04-23.md
-        2026-04-24.md
+        2026/
+            2026-04/
+                2026-04-23.md
+                2026-04-24.md
 ```
 
 All files in `_Matlock/` are registered in the `file` table with `is_generated = 1` so the `sync` stage ignores them.

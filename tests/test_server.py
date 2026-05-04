@@ -98,7 +98,7 @@ class TestVaultEventHandler:
 
     def test_ignores_output_directory(self, tmp_path: Path):
         handler, config, vault, db_path, dirty, dirty_event = self._make_handler(tmp_path)
-        out_file = str(config.output_directory / "000_Daily_Dashboard.md")
+        out_file = str(config.output_directory / "Home.md")
         event = SimpleNamespace(
             is_directory=False,
             src_path=out_file,

@@ -44,6 +44,14 @@ _HEATMAP_EMOJI = {0: "⬜", 1: "🟩", 2: "🟩", 3: "🟩", 4: "🟦", 5: "🟦
 
 _DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
+_HOME_PAGE = "Home.md"
+_DUE_TODAY_PAGE = "Due Today.md"
+_PAST_DUE_PAGE = "Past Due.md"
+_DUE_SOON_PAGE = "Due Soon.md"
+_FUTURE_DUE_PAGE = "Future Due.md"
+_NOT_DUE_PAGE = "Not Due.md"
+_SUPER_PROJECTS_DIR = "Super Projects"
+
 
 def _heatmap_emoji(count: int) -> str:
     if count >= 8:
@@ -164,7 +172,9 @@ def run_report(
                     for r in conn.execute("SELECT super_project_id FROM super_project").fetchall()
                 }
                 files_deleted += _cleanup_stale_report_files(conn, out_dir / "Projects", current_proj_ids)
-                files_deleted += _cleanup_stale_report_files(conn, out_dir / "SuperProjects", current_sp_ids)
+                files_deleted += _cleanup_stale_report_files(
+                    conn, out_dir / _SUPER_PROJECTS_DIR, current_sp_ids
+                )
         if target in ("all", "history"):
             files_written += _render_history(env, conn, out_dir, base_dir, today_str)
 
@@ -497,7 +507,7 @@ def _render_due_today(
     today_str: str,
 ) -> int:
     tasks = _get_due_today_tasks(conn, today_str)
-    this_file = out_dir / "001_Due_Today.md"
+    this_file = out_dir / _DUE_TODAY_PAGE
     _attach_task_links(tasks, this_file, base_dir, out_dir)
     tiers = _build_tiers(tasks)
     any_tasks = any(tier["tasks"] for tier in tiers)
@@ -507,6 +517,7 @@ def _render_due_today(
         generated_at=generated_at,
         tiers=tiers,
         any_tasks=any_tasks,
+        dashboard_link=_rel(this_file, out_dir / _HOME_PAGE),
     )
     _write_file(conn, this_file, content, today_str)
     return 1
@@ -520,7 +531,7 @@ def _render_past_due(
     today_str: str,
 ) -> int:
     tasks = _get_past_due_tasks(conn, today_str)
-    this_file = out_dir / "002_Past_Due.md"
+    this_file = out_dir / _PAST_DUE_PAGE
     _attach_task_links(tasks, this_file, base_dir, out_dir)
     tiers = _build_tiers(tasks)
     any_tasks = any(tier["tasks"] for tier in tiers)
@@ -530,6 +541,7 @@ def _render_past_due(
         generated_at=generated_at,
         tiers=tiers,
         any_tasks=any_tasks,
+        dashboard_link=_rel(this_file, out_dir / _HOME_PAGE),
     )
     _write_file(conn, this_file, content, today_str)
     return 1
@@ -543,7 +555,7 @@ def _render_due_soon(
     today_str: str,
 ) -> int:
     tasks = _get_due_soon_tasks(conn, today_str)
-    this_file = out_dir / "003_Due_Soon.md"
+    this_file = out_dir / _DUE_SOON_PAGE
     _attach_task_links(tasks, this_file, base_dir, out_dir)
     tiers = _build_tiers(tasks)
     any_tasks = any(tier["tasks"] for tier in tiers)
@@ -555,6 +567,7 @@ def _render_due_soon(
         generated_at=generated_at,
         tiers=tiers,
         any_tasks=any_tasks,
+        dashboard_link=_rel(this_file, out_dir / _HOME_PAGE),
     )
     _write_file(conn, this_file, content, today_str)
     return 1
@@ -568,7 +581,7 @@ def _render_future_due(
     today_str: str,
 ) -> int:
     tasks = _get_future_due_tasks(conn, today_str)
-    this_file = out_dir / "004_Future_Due.md"
+    this_file = out_dir / _FUTURE_DUE_PAGE
     _attach_task_links(tasks, this_file, base_dir, out_dir)
     tiers = _build_tiers(tasks)
     any_tasks = any(tier["tasks"] for tier in tiers)
@@ -578,6 +591,7 @@ def _render_future_due(
         generated_at=generated_at,
         tiers=tiers,
         any_tasks=any_tasks,
+        dashboard_link=_rel(this_file, out_dir / _HOME_PAGE),
     )
     _write_file(conn, this_file, content, today_str)
     return 1
@@ -591,7 +605,7 @@ def _render_not_due(
     today_str: str,
 ) -> int:
     tasks = _get_not_due_tasks(conn)
-    this_file = out_dir / "005_Not_Due.md"
+    this_file = out_dir / _NOT_DUE_PAGE
     _attach_task_links(tasks, this_file, base_dir, out_dir)
     tiers = _build_tiers(tasks)
     any_tasks = any(tier["tasks"] for tier in tiers)
@@ -601,6 +615,7 @@ def _render_not_due(
         generated_at=generated_at,
         tiers=tiers,
         any_tasks=any_tasks,
+        dashboard_link=_rel(this_file, out_dir / _HOME_PAGE),
     )
     _write_file(conn, this_file, content, today_str)
     return 1
@@ -671,7 +686,7 @@ def _render_dashboard(
         "SELECT project_id AS id, title FROM project ORDER BY project_id"
     ).fetchall()
 
-    this_file = out_dir / "000_Daily_Dashboard.md"
+    this_file = out_dir / _HOME_PAGE
 
     def source_link(file_path: str) -> str:
         return _rel(this_file, base_dir / file_path)
@@ -699,11 +714,11 @@ def _render_dashboard(
         source_link=source_link,
         project_link=project_link,
         history_link=history_link,
-        due_today_link=_rel(this_file, out_dir / "001_Due_Today.md"),
-        past_due_link=_rel(this_file, out_dir / "002_Past_Due.md"),
-        due_soon_link=_rel(this_file, out_dir / "003_Due_Soon.md"),
-        future_due_link=_rel(this_file, out_dir / "004_Future_Due.md"),
-        not_due_link=_rel(this_file, out_dir / "005_Not_Due.md"),
+        due_today_link=_rel(this_file, out_dir / _DUE_TODAY_PAGE),
+        past_due_link=_rel(this_file, out_dir / _PAST_DUE_PAGE),
+        due_soon_link=_rel(this_file, out_dir / _DUE_SOON_PAGE),
+        future_due_link=_rel(this_file, out_dir / _FUTURE_DUE_PAGE),
+        not_due_link=_rel(this_file, out_dir / _NOT_DUE_PAGE),
     )
     _write_file(conn, this_file, content, today_str)
     return 1
@@ -825,7 +840,7 @@ def _render_project_page(
         return _rel(this_file, base_dir / file_path)
 
     def super_project_link(sp_id: str) -> str:
-        return _rel(this_file, out_dir / "SuperProjects" / f"{sp_id}.md")
+        return _rel(this_file, out_dir / _SUPER_PROJECTS_DIR / f"{sp_id}.md")
 
     content = env.get_template("project.md.j2").render(
         project=project_row,
@@ -906,17 +921,17 @@ def _compute_expected_paths(
     """Return the complete set of paths that should exist after a run with *target*."""
     expected: set[Path] = set()
     if target in ("all", "dashboard"):
-        expected.add(out_dir / "000_Daily_Dashboard.md")
-        expected.add(out_dir / "001_Due_Today.md")
-        expected.add(out_dir / "002_Past_Due.md")
-        expected.add(out_dir / "003_Due_Soon.md")
-        expected.add(out_dir / "004_Future_Due.md")
-        expected.add(out_dir / "005_Not_Due.md")
+        expected.add(out_dir / _HOME_PAGE)
+        expected.add(out_dir / _DUE_TODAY_PAGE)
+        expected.add(out_dir / _PAST_DUE_PAGE)
+        expected.add(out_dir / _DUE_SOON_PAGE)
+        expected.add(out_dir / _FUTURE_DUE_PAGE)
+        expected.add(out_dir / _NOT_DUE_PAGE)
     if target in ("all", "projects"):
         for r in conn.execute("SELECT project_id FROM project").fetchall():
             expected.add(out_dir / "Projects" / f"{r['project_id']}.md")
         for r in conn.execute("SELECT super_project_id FROM super_project").fetchall():
-            expected.add(out_dir / "SuperProjects" / f"{r['super_project_id']}.md")
+            expected.add(out_dir / _SUPER_PROJECTS_DIR / f"{r['super_project_id']}.md")
     if target in ("all", "history"):
         for r in conn.execute("SELECT DISTINCT metric_date FROM daily_metric").fetchall():
             expected.add(out_dir / _history_subpath(r["metric_date"]))
@@ -1037,7 +1052,7 @@ def _render_all_super_projects(
                         )
                     )
 
-        this_file = out_dir / "SuperProjects" / f"{sp_id}.md"
+        this_file = out_dir / _SUPER_PROJECTS_DIR / f"{sp_id}.md"
 
         def source_link(file_path: str, _tf: Path = this_file) -> str:
             return _rel(_tf, base_dir / file_path)
@@ -1137,7 +1152,7 @@ def _render_history_page(
     def history_link(date_str: str) -> str:
         return _rel(out_path, out_dir / _history_subpath(date_str))
 
-    dashboard_link = _rel(out_path, out_dir / "000_Daily_Dashboard.md")
+    dashboard_link = _rel(out_path, out_dir / _HOME_PAGE)
 
     content = env.get_template("daily_history.md.j2").render(
         metric_date=metric_date,
