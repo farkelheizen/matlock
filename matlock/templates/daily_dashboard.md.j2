@@ -1,4 +1,4 @@
-# ☀️ Good Morning: Matlock Daily Dashboard
+# 🎯 Matlock Daily Dashboard
 **Date Generated:** {{ generated_at }}
 
 ## 🔥 Momentum & Streaks
@@ -19,32 +19,7 @@
 - **[{{ project_id }}]({{ project_link(project_id) }})**: {{ count }} tasks completed
 {%- endfor %}
 
-## 🎯 Today's Focus
-
-### ⏰ Past Due
-{% if past_due_tasks %}
-{% for task in past_due_tasks %}
-- ⬛ {{ task.task_text }} *(Due: {{ task.due_date }})* [↗]({{ source_link(task.file_path) }})
-{% endfor %}
-*→ All past-due tasks: [Past Due]({{ past_due_link }})*
-{% else %}
-*Nothing past due. Keep it up!*
-{% endif %}
-
-### 📅 Due Today
-{% if due_today_tasks %}
-{% for task in due_today_tasks %}
-- ⬜ {{ task.task_text }} [↗]({{ source_link(task.file_path) }})
-{% endfor %}
-*→ Full due-today list with priorities: [Due Today]({{ due_today_link }})*
-{% else %}
-*No tasks due today.*
-{% endif %}
-
-### 📋 Task Views
-[⚠️ Past Due]({{ past_due_link }}) · [📅 Due Today]({{ due_today_link }}) · [⏰ Due Soon]({{ due_soon_link }}) · [📆 Future Due]({{ future_due_link }}) · [📝 Not Due]({{ not_due_link }})
-
-### 📊 Task Matrix By Priority
+### 📋 Tasks
 | View | ⏫ High | 🔼 Medium | 🔽 Low | None |
 |:-----|:-------:|:---------:|:------:|:----:|
 {% for row in task_view_table_rows %}

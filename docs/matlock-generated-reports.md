@@ -17,7 +17,7 @@ Template files live at `matlock/templates/`.
 ### Template
 
 ```jinja
-# ☀️ Good Morning: Matlock Daily Dashboard
+# 🎯 Matlock Daily Dashboard
 **Date Generated:** {{ generated_at }}
 
 ## 🔥 Momentum & Streaks

@@ -535,13 +535,18 @@ class TestDashboardContent:
         assert "alpha" in content
 
     def test_dashboard_shows_past_due_task(self, tmp_path: Path):
+        """Past-due tasks appear in the Past Due page, not inline on Home."""
         conn = _conn()
         _seed_file(conn, "work.md")
         _seed_task(conn, "td1", "work.md", checked=0, due_date="2020-01-01")
         cfg = _make_config(tmp_path)
         run_report(cfg, conn, target="dashboard")
-        content = (cfg.output_directory / "Home.md").read_text()
-        assert "Task td1" in content
+        # Home shows matrix with a link into Past Due page
+        home = (cfg.output_directory / "Home.md").read_text()
+        assert "Past%20Due.md" in home
+        # Past Due page contains the task text
+        past_due = (cfg.output_directory / "Past Due.md").read_text()
+        assert "Task td1" in past_due
 
     def test_dashboard_heatmap_section_present(self, tmp_path: Path):
         conn = _conn()
@@ -1518,7 +1523,7 @@ class TestTaskViewPages:
         conn.close()
 
         dashboard = (tmp_path / "_Matlock" / "Home.md").read_text()
-        assert "Task Matrix By Priority" in dashboard
+        assert "📋 Tasks" in dashboard
         assert "[1 (2m)](Due%20Today.md#priority-high)" in dashboard
         assert "[1 (0m)](Past%20Due.md#priority-low)" in dashboard
         assert "[1 (0m)](Due%20Soon.md#priority-none)" in dashboard
