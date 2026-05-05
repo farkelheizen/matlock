@@ -1,6 +1,6 @@
 [project]
 name = "matlock"
-version = "0.2.0"
+version = "0.3.0"
 description = "Pipeline-driven task extractor and report generator for Markdown second brains"
 authors = [
     {name = "farkelheizen",email = "billspratley@gmail.com"}

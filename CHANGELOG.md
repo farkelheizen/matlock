@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+---
+
+## [0.3.0] — 2026-05-05
+
 ### Added
 
 - **`file_touch` table** — Immutable per-day file-event snapshot (created/modified/deleted) populated by the `rollup` stage. Enables accurate history page regeneration at any future date.
@@ -20,11 +24,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - Files Touched table (descending by time; deleted events show "—" for time)
   - Tasks This Day table (with event type, estimate, and project link)
   - Graceful fallback text for dates without snapshot data (pre-migration history pages)
+- **Virtual Unassigned project and super-project pages** — `Projects/Unassigned.md` and `Super Projects/Unassigned.md` are always generated. They surface all tasks, files, and daily metrics not mapped to any project. The Unassigned page appears in the Projects index, Super Projects index, and all history pages.
 
 ### Changed
 
 - `rollup` stage now populates `file_touch` and `daily_task` after writing `daily_metric` rows (idempotent via `INSERT OR REPLACE`).
 - `db.mark_file_deleted` now sets `deleted_date = today` in addition to `deleted = 1`.
+- `report` stage: today's history page is always generated; if today's `daily_metric` row is absent, `rollup` is invoked inline.
+- `project.md.j2`: added `generated_at` timestamp to the header; fixed list-item rendering (trailing-whitespace-strip bug caused items to collapse onto one line).
+- `scan-projects`: `status` validation is now case-insensitive (`in progress` → `In Progress`).
+- `scan-projects`: project metadata fields (`super_project_id`, `priority`, `status`, `title`, `start_date`, `due_date`) are now resolved across **all** candidate files for a project, not just the first/home file.
+
+### Documentation
+
+- `matlock-generated-reports.md`: rewrote all template blocks and variable tables to reflect current templates (dashboard, project page, super-project page). Added Unassigned virtual pages. Updated output directory structure.
+- `matlock-pipeline-specification.md`: updated Stage V output files table with new pages (`Warnings.md`, `Super Projects.md`, `Projects.md`, virtual Unassigned pages).
+- `matlock-high-level-design.md`: updated `_Matlock/` directory structure diagram.
+- `matlock-scan-projects.md`: documented case-insensitive status validation and multi-candidate field resolution.
 
 ---
 
