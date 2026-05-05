@@ -447,6 +447,22 @@ def _parse_date_value(val: Any, attr: str, warnings: list[str]) -> str | None:
     return None
 
 
+def _candidate_home_file(pc: ProjectCandidate) -> str | None:
+    """Return the canonical home file path for a project candidate set."""
+    if not pc.candidates:
+        return None
+    return pc.candidates[0].file_path
+
+
+def _candidate_first_non_none(pc: ProjectCandidate, field: str) -> Any:
+    """Return the first non-None value of *field* across candidate files."""
+    for sf in pc.candidates:
+        value = getattr(sf, field, None)
+        if value is not None:
+            return value
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Public: --print-yaml formatter
 # ---------------------------------------------------------------------------
@@ -457,11 +473,12 @@ def format_as_yaml(
     scanned: list[ScannedFile],  # noqa: ARG001 — reserved for future use
 ) -> str:
     """Return a YAML string with super_projects and projects ready to paste into config.yaml."""
-    # Collect distinct super_project IDs from first candidates, sorted
+    # Collect distinct super_project IDs from effective candidate values, sorted
     sp_ids: dict[str, None] = {}
     for pc in candidates:
-        if pc.candidates and pc.candidates[0].super_project_id:
-            sp_ids[pc.candidates[0].super_project_id] = None
+        sp_id = _candidate_first_non_none(pc, "super_project_id")
+        if sp_id:
+            sp_ids[sp_id] = None
 
     super_projects_list = [
         {"id": sp_id, "title": ""}
@@ -472,20 +489,27 @@ def format_as_yaml(
     for pc in candidates:
         if not pc.candidates:
             continue
-        first = pc.candidates[0]
+        title = _candidate_first_non_none(pc, "title")
+        home_file = _candidate_home_file(pc)
+        super_project_id = _candidate_first_non_none(pc, "super_project_id")
+        priority = _candidate_first_non_none(pc, "priority")
+        status = _candidate_first_non_none(pc, "status")
+        start_date = _candidate_first_non_none(pc, "start_date")
+        due_date = _candidate_first_non_none(pc, "due_date")
         proj: dict[str, Any] = {"id": pc.project_id}
-        proj["title"] = first.title if first.title else pc.project_id
-        proj["home_file"] = first.file_path
-        if first.super_project_id:
-            proj["super_project_id"] = first.super_project_id
-        if first.priority:
-            proj["priority"] = first.priority
-        if first.status:
-            proj["status"] = first.status
-        if first.start_date:
-            proj["start_date"] = first.start_date
-        if first.due_date:
-            proj["due_date"] = first.due_date
+        proj["title"] = title if title else pc.project_id
+        if home_file is not None:
+            proj["home_file"] = home_file
+        if super_project_id:
+            proj["super_project_id"] = super_project_id
+        if priority:
+            proj["priority"] = priority
+        if status:
+            proj["status"] = status
+        if start_date:
+            proj["start_date"] = start_date
+        if due_date:
+            proj["due_date"] = due_date
         if pc.resources:
             proj["resources"] = [
                 {"type": r.type, "path": r.path} for r in pc.resources
@@ -515,9 +539,9 @@ def format_as_diff(
     # ---- Super-projects ----
     config_sp = {sp.id: sp for sp in config.super_projects}
     scan_sp_ids: set[str] = {
-        pc.candidates[0].super_project_id
+        sp_id
         for pc in candidates
-        if pc.candidates and pc.candidates[0].super_project_id
+        if (sp_id := _candidate_first_non_none(pc, "super_project_id"))
     }
 
     sp_added = sorted(scan_sp_ids - set(config_sp), key=str.lower)
@@ -563,7 +587,7 @@ def format_as_diff(
         lines.append("Added:")
         for pid in proj_added:
             pc = scan_proj[pid]
-            t = pc.candidates[0].title if pc.candidates else pid
+            t = _candidate_first_non_none(pc, "title") if pc.candidates else pid
             lines.append(f"  + {pid}  (title: {t!r})")
     if proj_removed:
         lines.append("Removed:")
@@ -592,20 +616,26 @@ def _diff_project_fields(
     """Return (field, config_val, scan_val) tuples for fields that differ."""
     if not pc.candidates:
         return []
-    first = pc.candidates[0]
+    title = _candidate_first_non_none(pc, "title")
+    super_project_id = _candidate_first_non_none(pc, "super_project_id")
+    home_file = _candidate_home_file(pc)
+    priority = _candidate_first_non_none(pc, "priority")
+    status = _candidate_first_non_none(pc, "status")
+    start_date = _candidate_first_non_none(pc, "start_date")
+    due_date = _candidate_first_non_none(pc, "due_date")
     diffs: list[tuple[str, Any, Any]] = []
 
     def _check(field: str, config_val: Any, scan_val: Any) -> None:
         if scan_val is not None and config_val != scan_val:
             diffs.append((field, config_val, scan_val))
 
-    _check("title", cfg.title, first.title)
-    _check("super_project_id", cfg.super_project_id, first.super_project_id)
-    _check("home_file", cfg.home_file, first.file_path)
-    _check("priority", cfg.priority, first.priority)
-    _check("status", cfg.status, first.status)
-    _check("start_date", cfg.start_date, first.start_date)
-    _check("due_date", cfg.due_date, first.due_date)
+    _check("title", cfg.title, title)
+    _check("super_project_id", cfg.super_project_id, super_project_id)
+    _check("home_file", cfg.home_file, home_file)
+    _check("priority", cfg.priority, priority)
+    _check("status", cfg.status, status)
+    _check("start_date", cfg.start_date, start_date)
+    _check("due_date", cfg.due_date, due_date)
 
     scan_res = sorted((r.type, r.path) for r in pc.resources)
     cfg_res = sorted((r.type, r.path) for r in cfg.resources)
@@ -654,9 +684,9 @@ def merge_into_config(
 
     # Collect scan-derived super_project IDs
     scan_sp_ids: set[str] = {
-        pc.candidates[0].super_project_id
+        sp_id
         for pc in candidates
-        if pc.candidates and pc.candidates[0].super_project_id
+        if (sp_id := _candidate_first_non_none(pc, "super_project_id"))
     }
     scan_proj_map = {pc.project_id: pc for pc in candidates}
 
@@ -706,14 +736,20 @@ def _build_project_dict(
 ) -> dict[str, Any]:
     """Build a project config dict, merging scan data over any existing config entry."""
     first = pc.candidates[0] if pc.candidates else None
+    title = _candidate_first_non_none(pc, "title")
+    super_project_id = _candidate_first_non_none(pc, "super_project_id")
+    priority = _candidate_first_non_none(pc, "priority")
+    status = _candidate_first_non_none(pc, "status")
+    start_date = _candidate_first_non_none(pc, "start_date")
+    due_date = _candidate_first_non_none(pc, "due_date")
     d: dict[str, Any] = dict(existing) if existing else {}
 
     d["id"] = pc.project_id
 
     if first:
         # title: use scanned value if present, else keep existing, else fallback to id
-        if first.title is not None:
-            d["title"] = first.title
+        if title is not None:
+            d["title"] = title
         elif "title" not in d:
             d["title"] = pc.project_id
 
@@ -723,11 +759,11 @@ def _build_project_dict(
         # Optional fields: update when scan has a value; remove when scan has None
         # (vault is source of truth — absence in frontmatter means absence in config)
         for field, val in (
-            ("super_project_id", first.super_project_id),
-            ("priority", first.priority),
-            ("status", first.status),
-            ("start_date", first.start_date),
-            ("due_date", first.due_date),
+            ("super_project_id", super_project_id),
+            ("priority", priority),
+            ("status", status),
+            ("start_date", start_date),
+            ("due_date", due_date),
         ):
             if val is not None:
                 d[field] = val

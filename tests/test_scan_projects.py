@@ -871,6 +871,24 @@ class TestFormatAsYaml:
         assert len(data["super_projects"]) == 1
         assert data["super_projects"][0]["id"] == "MySP"
 
+    def test_super_project_derived_from_non_first_candidate(self):
+        first = ScannedFile(
+            file_path="Projects/Alpha/Alpha.md",
+            project_id="Alpha",
+            title="Alpha",
+        )
+        second = ScannedFile(
+            file_path="Resources/Alpha, Project.md",
+            project_id="Alpha",
+            super_project_id="Gifts",
+        )
+        pc = ProjectCandidate(project_id="Alpha", candidates=[first, second], resources=[])
+
+        output = format_as_yaml([pc], [])
+        data = yaml.safe_load(output)
+        assert data["super_projects"][0]["id"] == "Gifts"
+        assert data["projects"][0]["super_project_id"] == "Gifts"
+
     def test_empty_candidates(self):
         output = format_as_yaml([], [])
         data = yaml.safe_load(output)
@@ -1131,6 +1149,46 @@ class TestMergeIntoConfig:
             data = yaml.safe_load(f)
         sp_ids = [sp["id"] for sp in data.get("super_projects", [])]
         assert "MySP" in sp_ids
+
+    def test_merge_uses_non_first_candidate_metadata(self, tmp_path: Path):
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        config_path = tmp_path / "config.yaml"
+        self._write_minimal_config(
+            config_path,
+            vault,
+            tmp_path,
+            projects=[{"id": "Alpha", "title": "Alpha"}],
+            super_projects=[],
+        )
+
+        first = ScannedFile(
+            file_path="Projects/Alpha/Alpha.md",
+            project_id="Alpha",
+            title="Alpha",
+            start_date="2025-01-01",
+        )
+        second = ScannedFile(
+            file_path="Resources/Alpha, Project.md",
+            project_id="Alpha",
+            super_project_id="Gifts",
+            priority="High",
+            status="In Progress",
+        )
+        pc = ProjectCandidate(project_id="Alpha", candidates=[first, second], resources=[])
+
+        result = merge_into_config(config_path, [pc], [])
+
+        assert result.super_projects_added == 1
+        assert result.projects_updated == 1
+        with config_path.open() as f:
+            data = yaml.safe_load(f)
+        proj = next(p for p in data["projects"] if p["id"] == "Alpha")
+        assert proj["super_project_id"] == "Gifts"
+        assert proj["priority"] == "High"
+        assert proj["status"] == "In Progress"
+        sp_ids = [sp["id"] for sp in data.get("super_projects", [])]
+        assert "Gifts" in sp_ids
 
     def test_deletes_absent_super_project(self, tmp_path: Path):
         vault = tmp_path / "vault"
