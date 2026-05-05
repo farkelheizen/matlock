@@ -55,6 +55,7 @@ _WARNINGS_PAGE = "Warnings.md"
 _SUPER_PROJECTS_INDEX_PAGE = "Super Projects.md"
 _PROJECTS_INDEX_PAGE = "Projects.md"
 _SUPER_PROJECTS_DIR = "Super Projects"
+_UNASSIGNED_ID = "Unassigned"  # reserved virtual project / super-project
 
 
 def _heatmap_emoji(count: int) -> str:
@@ -181,10 +182,12 @@ def run_report(
                     r["project_id"]
                     for r in conn.execute("SELECT project_id FROM project").fetchall()
                 }
+                current_proj_ids.add(_UNASSIGNED_ID)
                 current_sp_ids = {
                     r["super_project_id"]
                     for r in conn.execute("SELECT super_project_id FROM super_project").fetchall()
                 }
+                current_sp_ids.add(_UNASSIGNED_ID)
                 files_deleted += _cleanup_stale_report_files(conn, out_dir / "Projects", current_proj_ids)
                 files_deleted += _cleanup_stale_report_files(
                     conn, out_dir / _SUPER_PROJECTS_DIR, current_sp_ids
@@ -515,11 +518,12 @@ def _attach_task_links(
     """Stamp source_link and project_link onto each task in-place."""
     for t in tasks:
         t.source_link = _rel(this_file, base_dir / t.file_path)
-        t.project_link = (
-            _rel(this_file, out_dir / "Projects" / f"{t.project_id}.md")
-            if t.project_id
-            else None
-        )
+        # Use the Unassigned virtual project for tasks with no project assignment
+        proj_id = t.project_id or _UNASSIGNED_ID
+        if not t.project_id:
+            t.project_title = _UNASSIGNED_ID
+            t.project_priority_emoji = ""
+        t.project_link = _rel(this_file, out_dir / "Projects" / f"{proj_id}.md")
 
 
 def _render_due_today(
@@ -818,6 +822,39 @@ def _calc_current_streak_for_projects(
         prev_d = d
 
     return current
+
+
+def _calc_current_streak_for_unassigned(conn: sqlite3.Connection) -> int:
+    """Return consecutive active-day streak for files not assigned to any project."""
+    rows = conn.execute(
+        "SELECT metric_date, SUM(tasks_completed_count) AS total"
+        " FROM daily_metric WHERE project_id IS NULL"
+        " GROUP BY metric_date ORDER BY metric_date ASC"
+    ).fetchall()
+    if not rows:
+        return 0
+    current = 0
+    prev_d: datetime.date | None = None
+    for row in reversed(rows):
+        active = (row["total"] or 0) > 0
+        if not active:
+            break
+        d = datetime.date.fromisoformat(row["metric_date"])
+        if prev_d is not None and (prev_d - d).days > 1:
+            break
+        current += 1
+        prev_d = d
+    return current
+
+
+def _get_unassigned_file_paths(conn: sqlite3.Connection) -> list[str]:
+    """Return file paths of non-deleted, non-generated files not in any project."""
+    rows = conn.execute(
+        "SELECT file_path FROM file"
+        " WHERE deleted = 0 AND is_generated = 0"
+        " AND file_path NOT IN (SELECT file_path FROM file_project)"
+    ).fetchall()
+    return [r["file_path"] for r in rows]
 
 
 def _calc_super_project_health(
@@ -1451,6 +1488,71 @@ def _render_super_projects_index(
         )
     )
 
+    # --- Unassigned virtual super-project row (always last) ---
+    ua_sp_task_rows = conn.execute(
+        "SELECT t.due_date, t.attributes"
+        " FROM task t JOIN file f ON t.file_path = f.file_path"
+        " WHERE t.checked = 0 AND f.deleted = 0"
+        " AND f.file_path NOT IN (SELECT file_path FROM file_project)"
+    ).fetchall()
+    ua_sp_buckets: dict[str, dict[str, int]] = {
+        "due_today": {"count": 0, "minutes": 0},
+        "past_due": {"count": 0, "minutes": 0},
+        "due_soon": {"count": 0, "minutes": 0},
+        "future_due": {"count": 0, "minutes": 0},
+        "not_due": {"count": 0, "minutes": 0},
+    }
+    for task in ua_sp_task_rows:
+        due_date = task["due_date"]
+        est = _estimate_minutes_from_attributes(task["attributes"])
+        if due_date is None:
+            bk = "not_due"
+        elif due_date < today_str:
+            bk = "past_due"
+        elif due_date == today_str:
+            bk = "due_today"
+        elif due_date <= soon_date:
+            bk = "due_soon"
+        else:
+            bk = "future_due"
+        ua_sp_buckets[bk]["count"] += 1
+        ua_sp_buckets[bk]["minutes"] += est
+    ua_sp_last_updated_row = conn.execute(
+        "SELECT f.modified, f.modified_date FROM file f"
+        " WHERE f.deleted = 0 AND f.is_generated = 0"
+        " AND f.file_path NOT IN (SELECT file_path FROM file_project)"
+        " ORDER BY"
+        " CASE WHEN f.modified IS NULL OR f.modified <= 0 THEN 0 ELSE 1 END DESC,"
+        " f.modified DESC, f.modified_date DESC, f.file_path ASC LIMIT 1"
+    ).fetchone()
+    ua_sp_streak = _calc_current_streak_for_unassigned(conn)
+    ua_sp_total_open = sum(v["count"] for v in ua_sp_buckets.values())
+    ua_sp_health_ns = _calc_super_project_health(
+        current_streak=ua_sp_streak,
+        past_due_count=ua_sp_buckets["past_due"]["count"],
+        past_due_minutes=ua_sp_buckets["past_due"]["minutes"],
+        total_open_count=ua_sp_total_open,
+        due_today_count=ua_sp_buckets["due_today"]["count"],
+        due_soon_count=ua_sp_buckets["due_soon"]["count"],
+    )
+    rows.append(
+        SimpleNamespace(
+            sp_label=_UNASSIGNED_ID,
+            sp_link=_rel(this_file, out_dir / _SUPER_PROJECTS_DIR / f"{_UNASSIGNED_ID}.md"),
+            current_streak=ua_sp_streak,
+            health=ua_sp_health_ns.display,
+            last_updated=_format_last_updated_row(ua_sp_last_updated_row),
+            active_count=1,
+            on_hold_count=0,
+            planned_count=0,
+            complete_count=0,
+            cancelled_count=0,
+            _has_active=True,
+            _sp_display_title=_UNASSIGNED_ID,
+            _health_score=ua_sp_health_ns.score,
+        )
+    )
+
     content = env.get_template("super_projects_index.md.j2").render(
         generated_at=generated_at,
         dashboard_link=_rel(this_file, out_dir / _HOME_PAGE),
@@ -1573,6 +1675,75 @@ def _render_projects_index(
     planned_rows = [r for r in rows if r.status == "Planned"]
     complete_rows = [r for r in rows if r.status == "Complete"]
     cancelled_rows = [r for r in rows if r.status == "Cancelled"]
+
+    # --- Unassigned virtual project row ---
+    unassigned_file_paths = _get_unassigned_file_paths(conn)
+    unassigned_task_rows = conn.execute(
+        "SELECT t.due_date, t.attributes"
+        " FROM task t JOIN file f ON t.file_path = f.file_path"
+        " WHERE t.checked = 0 AND f.deleted = 0"
+        " AND f.file_path NOT IN (SELECT file_path FROM file_project)"
+    ).fetchall()
+    ua_buckets: dict[str, dict[str, int]] = {
+        "due_today": {"count": 0, "minutes": 0},
+        "past_due": {"count": 0, "minutes": 0},
+        "due_soon": {"count": 0, "minutes": 0},
+        "future_due": {"count": 0, "minutes": 0},
+        "not_due": {"count": 0, "minutes": 0},
+    }
+    for task in unassigned_task_rows:
+        due_date = task["due_date"]
+        est = _estimate_minutes_from_attributes(task["attributes"])
+        if due_date is None:
+            bk = "not_due"
+        elif due_date < today_str:
+            bk = "past_due"
+        elif due_date == today_str:
+            bk = "due_today"
+        elif due_date <= soon_date:
+            bk = "due_soon"
+        else:
+            bk = "future_due"
+        ua_buckets[bk]["count"] += 1
+        ua_buckets[bk]["minutes"] += est
+    ua_last_updated_row = conn.execute(
+        "SELECT f.modified, f.modified_date FROM file f"
+        " WHERE f.deleted = 0 AND f.is_generated = 0"
+        " AND f.file_path NOT IN (SELECT file_path FROM file_project)"
+        " ORDER BY"
+        " CASE WHEN f.modified IS NULL OR f.modified <= 0 THEN 0 ELSE 1 END DESC,"
+        " f.modified DESC, f.modified_date DESC, f.file_path ASC LIMIT 1"
+    ).fetchone()
+    ua_streak = _calc_current_streak_for_unassigned(conn)
+    ua_total_open = sum(v["count"] for v in ua_buckets.values())
+    ua_health_ns = _calc_super_project_health(
+        current_streak=ua_streak,
+        past_due_count=ua_buckets["past_due"]["count"],
+        past_due_minutes=ua_buckets["past_due"]["minutes"],
+        total_open_count=ua_total_open,
+        due_today_count=ua_buckets["due_today"]["count"],
+        due_soon_count=ua_buckets["due_soon"]["count"],
+    )
+    active_rows.append(
+        SimpleNamespace(
+            project_label=_UNASSIGNED_ID,
+            project_link=_rel(this_file, out_dir / "Projects" / f"{_UNASSIGNED_ID}.md"),
+            status="In Progress",
+            current_streak=ua_streak,
+            health=ua_health_ns.display,
+            _health_score=ua_health_ns.score,
+            last_updated=_format_last_updated_row(ua_last_updated_row),
+            due_today_display=(
+                f"{ua_buckets['due_today']['count']:,} ({ua_buckets['due_today']['minutes']}m)"
+            ),
+            past_due_display=f"{ua_buckets['past_due']['count']:,}",
+            due_soon_display=f"{ua_buckets['due_soon']['count']:,}",
+            future_due_display=f"{ua_buckets['future_due']['count']:,}",
+            not_due_display=f"{ua_buckets['not_due']['count']:,}",
+            _status_order=_STATUS_SORT_ORDER.get("In Progress", 99),
+            _display_title=_UNASSIGNED_ID,
+        )
+    )
 
     # Active projects: worst-to-best health, then title.
     active_rows.sort(key=lambda r: (r._health_score, r._display_title.lower()))
@@ -1726,6 +1897,114 @@ def _render_project_page(
     _write_file(conn, this_file, content, today_str)
 
 
+def _render_unassigned_project_page(
+    env: jinja2.Environment,
+    conn: sqlite3.Connection,
+    out_dir: Path,
+    base_dir: Path,
+    today_str: str,
+) -> None:
+    """Render the virtual Unassigned project page covering all files with no project."""
+    file_paths = _get_unassigned_file_paths(conn)
+    today = today_str
+    seven_days_ago = (datetime.date.today() - datetime.timedelta(days=7)).isoformat()
+
+    stats = SimpleNamespace(
+        open_count=0, open_minutes=0,
+        completed_count=0, completed_minutes=0,
+        past_due_count=0, past_due_minutes=0,
+    )
+    past_due_tasks: list[Any] = []
+    open_tasks: list[Any] = []
+    recently_completed: list[Any] = []
+
+    if file_paths:
+        ph = ",".join("?" * len(file_paths))
+        open_rows = conn.execute(
+            f"SELECT attributes FROM task WHERE checked = 0 AND file_path IN ({ph})",
+            file_paths,
+        ).fetchall()
+        completed_rows = conn.execute(
+            f"SELECT attributes FROM task WHERE checked = 1 AND file_path IN ({ph})",
+            file_paths,
+        ).fetchall()
+        past_due_stat_rows = conn.execute(
+            f"SELECT attributes FROM task"
+            f" WHERE checked = 0 AND due_date < ? AND file_path IN ({ph})",
+            [today] + file_paths,
+        ).fetchall()
+
+        def _mins(rows_: list, col: str = "attributes") -> int:
+            import json as _json
+            total = 0
+            for r in rows_:
+                try:
+                    attrs = _json.loads(r[col] or "{}")
+                    total += int(attrs.get("estimate", 0) or 0) // 60
+                except Exception:
+                    pass
+            return total
+
+        stats = SimpleNamespace(
+            open_count=len(open_rows),
+            open_minutes=_mins(open_rows),
+            completed_count=len(completed_rows),
+            completed_minutes=_mins(completed_rows),
+            past_due_count=len(past_due_stat_rows),
+            past_due_minutes=_mins(past_due_stat_rows),
+        )
+
+        past_due_tasks = conn.execute(
+            f"SELECT task_text, due_date, file_path FROM task"
+            f" WHERE checked = 0 AND due_date < ? AND file_path IN ({ph})",
+            [today] + file_paths,
+        ).fetchall()
+        open_tasks = conn.execute(
+            f"SELECT task_text, file_path FROM task"
+            f" WHERE checked = 0 AND file_path IN ({ph}) ORDER BY file_path",
+            file_paths,
+        ).fetchall()
+        recently_completed = conn.execute(
+            f"SELECT task_text, file_path FROM task"
+            f" WHERE checked = 1 AND act_comp_date >= ? AND file_path IN ({ph})",
+            [seven_days_ago] + file_paths,
+        ).fetchall()
+
+    open_by_file: dict[str, list[Any]] = {}
+    for t in open_tasks:
+        open_by_file.setdefault(t["file_path"], []).append(t)
+
+    this_file = out_dir / "Projects" / f"{_UNASSIGNED_ID}.md"
+
+    project = SimpleNamespace(
+        project_id=_UNASSIGNED_ID,
+        title=_UNASSIGNED_ID,
+        priority="Low",
+        status="In Progress",
+        start_date=None,
+        due_date=None,
+        super_project_id=_UNASSIGNED_ID,
+    )
+
+    def source_link(file_path: str) -> str:
+        return _rel(this_file, base_dir / file_path)
+
+    def super_project_link(sp_id: str) -> str:
+        return _rel(this_file, out_dir / _SUPER_PROJECTS_DIR / f"{sp_id}.md")
+
+    content = env.get_template("project.md.j2").render(
+        project=project,
+        stats=stats,
+        past_due_tasks=past_due_tasks,
+        open_by_file=open_by_file,
+        recently_completed=recently_completed,
+        source_files=file_paths,
+        source_link=source_link,
+        super_project_link=super_project_link,
+    )
+    _write_file(conn, this_file, content, today_str)
+
+
 def _render_single_project(
     env: jinja2.Environment,
     conn: sqlite3.Connection,
@@ -1734,6 +2013,9 @@ def _render_single_project(
     project_id: str,
     today_str: str,
 ) -> int:
+    if project_id == _UNASSIGNED_ID:
+        _render_unassigned_project_page(env, conn, out_dir, base_dir, today_str)
+        return 1
     row = conn.execute(
         "SELECT * FROM project WHERE project_id = ?", (project_id,)
     ).fetchone()
@@ -1753,7 +2035,8 @@ def _render_all_projects(
     rows = conn.execute("SELECT * FROM project ORDER BY project_id").fetchall()
     for row in rows:
         _render_project_page(env, conn, out_dir, base_dir, row, today_str)
-    return len(rows)
+    _render_unassigned_project_page(env, conn, out_dir, base_dir, today_str)
+    return len(rows) + 1
 
 
 # ---------------------------------------------------------------------------
@@ -1804,8 +2087,10 @@ def _compute_expected_paths(
     if target in ("all", "projects"):
         for r in conn.execute("SELECT project_id FROM project").fetchall():
             expected.add(out_dir / "Projects" / f"{r['project_id']}.md")
+        expected.add(out_dir / "Projects" / f"{_UNASSIGNED_ID}.md")
         for r in conn.execute("SELECT super_project_id FROM super_project").fetchall():
             expected.add(out_dir / _SUPER_PROJECTS_DIR / f"{r['super_project_id']}.md")
+        expected.add(out_dir / _SUPER_PROJECTS_DIR / f"{_UNASSIGNED_ID}.md")
     if target in ("all", "history"):
         for r in conn.execute("SELECT DISTINCT metric_date FROM daily_metric").fetchall():
             expected.add(out_dir / _history_subpath(r["metric_date"]))
@@ -1860,6 +2145,108 @@ def _purge_stale_generated(
 # ---------------------------------------------------------------------------
 
 
+def _render_unassigned_super_project_page(
+    env: jinja2.Environment,
+    conn: sqlite3.Connection,
+    out_dir: Path,
+    today_str: str,
+) -> None:
+    """Render the virtual Unassigned super-project page."""
+    this_file = out_dir / _SUPER_PROJECTS_DIR / f"{_UNASSIGNED_ID}.md"
+    generated_at = datetime.datetime.now().strftime("%Y-%m-%d %-I:%M %p")
+    soon_date = (datetime.date.fromisoformat(today_str) + datetime.timedelta(days=7)).isoformat()
+
+    # Build a single active project row for the Unassigned project
+    task_rows = conn.execute(
+        "SELECT t.due_date, t.attributes"
+        " FROM task t JOIN file f ON t.file_path = f.file_path"
+        " WHERE t.checked = 0 AND f.deleted = 0"
+        " AND f.file_path NOT IN (SELECT file_path FROM file_project)"
+    ).fetchall()
+
+    buckets: dict[str, dict[str, int]] = {
+        "due_today": {"count": 0, "minutes": 0},
+        "past_due": {"count": 0, "minutes": 0},
+        "due_soon": {"count": 0, "minutes": 0},
+        "future_due": {"count": 0, "minutes": 0},
+        "not_due": {"count": 0, "minutes": 0},
+    }
+    for task in task_rows:
+        due_date = task["due_date"]
+        est = _estimate_minutes_from_attributes(task["attributes"])
+        if due_date is None:
+            bk = "not_due"
+        elif due_date < today_str:
+            bk = "past_due"
+        elif due_date == today_str:
+            bk = "due_today"
+        elif due_date <= soon_date:
+            bk = "due_soon"
+        else:
+            bk = "future_due"
+        buckets[bk]["count"] += 1
+        buckets[bk]["minutes"] += est
+
+    last_updated_row = conn.execute(
+        "SELECT f.modified, f.modified_date FROM file f"
+        " WHERE f.deleted = 0 AND f.is_generated = 0"
+        " AND f.file_path NOT IN (SELECT file_path FROM file_project)"
+        " ORDER BY"
+        " CASE WHEN f.modified IS NULL OR f.modified <= 0 THEN 0 ELSE 1 END DESC,"
+        " f.modified DESC, f.modified_date DESC, f.file_path ASC"
+        " LIMIT 1"
+    ).fetchone()
+
+    current_streak = _calc_current_streak_for_unassigned(conn)
+    total_open = sum(v["count"] for v in buckets.values())
+    health_ns = _calc_super_project_health(
+        current_streak=current_streak,
+        past_due_count=buckets["past_due"]["count"],
+        past_due_minutes=buckets["past_due"]["minutes"],
+        total_open_count=total_open,
+        due_today_count=buckets["due_today"]["count"],
+        due_soon_count=buckets["due_soon"]["count"],
+    )
+
+    unassigned_project_row = SimpleNamespace(
+        project_label=_UNASSIGNED_ID,
+        project_link=_rel(this_file, out_dir / "Projects" / f"{_UNASSIGNED_ID}.md"),
+        current_streak=current_streak,
+        last_updated=_format_last_updated_row(last_updated_row),
+        due_today_display=(
+            f"{buckets['due_today']['count']:,} ({buckets['due_today']['minutes']}m)"
+        ),
+        past_due_display=f"{buckets['past_due']['count']:,}",
+        due_soon_display=f"{buckets['due_soon']['count']:,}",
+        future_due_display=f"{buckets['future_due']['count']:,}",
+        not_due_display=f"{buckets['not_due']['count']:,}",
+        health=health_ns.display,
+    )
+
+    def home_link(_tf: Path = this_file) -> str:
+        return _rel(_tf, out_dir / _HOME_PAGE)
+
+    def project_link(pid: str, _tf: Path = this_file) -> str:
+        return _rel(_tf, out_dir / "Projects" / f"{pid}.md")
+
+    content = env.get_template("super_project.md.j2").render(
+        super_project=SimpleNamespace(
+            super_project_id=_UNASSIGNED_ID,
+            title=_UNASSIGNED_ID,
+            priority="Low",
+        ),
+        super_project_display_title=_UNASSIGNED_ID,
+        active_project_rows=[unassigned_project_row],
+        on_hold_project_rows=[],
+        cancelled_project_rows=[],
+        completed_project_rows=[],
+        generated_at=generated_at,
+        home_link=home_link,
+        project_link=project_link,
+    )
+    _write_file(conn, this_file, content, today_str)
+
+
 def _render_all_super_projects(
     env: jinja2.Environment,
     conn: sqlite3.Connection,
@@ -1909,7 +2296,8 @@ def _render_all_super_projects(
         )
         _write_file(conn, this_file, content, today_str)
         count += 1
-    return count
+    _render_unassigned_super_project_page(env, conn, out_dir, today_str)
+    return count + 1
 
 
 # ---------------------------------------------------------------------------
@@ -1981,7 +2369,7 @@ def _render_history_page(
                 else None
             )
         else:
-            proj = None
+            proj = SimpleNamespace(id=_UNASSIGNED_ID, title=_UNASSIGNED_ID)
         created_count = r["tasks_created_count"] or 0
         created_mins = r["tasks_created_minutes"] or 0
         completed_count = r["tasks_completed_count"] or 0
@@ -2038,7 +2426,7 @@ def _render_history_page(
         sp_link = (
             _rel(out_path, out_dir / _SUPER_PROJECTS_DIR / f"{agg['sp_id']}.md")
             if agg["sp_id"]
-            else None
+            else _rel(out_path, out_dir / _SUPER_PROJECTS_DIR / f"{_UNASSIGNED_ID}.md")
         )
         super_project_title = agg["sp_title"] or (agg["sp_id"] or "Unassigned")
         super_project_summary.append(
@@ -2113,8 +2501,8 @@ def _render_history_page(
             " WHERE fp.file_path = ? LIMIT 1",
             (t["file_path"],),
         ).fetchone()
-        proj_title = None
-        proj_link = None
+        proj_title: str | None = None
+        proj_link: str | None = None
         if proj_link_row:
             proj_id = proj_link_row["project_id"]
             proj_title_row = conn.execute(
@@ -2122,6 +2510,9 @@ def _render_history_page(
             ).fetchone()
             proj_title = (proj_title_row["title"] if proj_title_row else proj_id) or proj_id
             proj_link = _rel(out_path, out_dir / "Projects" / f"{proj_id}.md")
+        else:
+            proj_title = _UNASSIGNED_ID
+            proj_link = _rel(out_path, out_dir / "Projects" / f"{_UNASSIGNED_ID}.md")
 
         task_list.append(
             SimpleNamespace(

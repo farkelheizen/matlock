@@ -286,14 +286,14 @@ class TestRunReportBasic:
         conn = _conn()
         cfg = _make_config(tmp_path)
         result = run_report(cfg, conn)
-        assert result.files_written == 10  # 9 standard pages + today's history page
+        assert result.files_written == 12  # 9 standard pages + today's history + 2 Unassigned pages
 
     def test_idempotent_second_run(self, tmp_path: Path):
         conn = _conn()
         cfg = _make_config(tmp_path)
         run_report(cfg, conn)
         result2 = run_report(cfg, conn)
-        assert result2.files_written == 10
+        assert result2.files_written == 12
         assert (cfg.output_directory / "Home.md").exists()
 
 

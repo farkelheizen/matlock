@@ -1,8 +1,6 @@
-# 📅 Daily History: {{ metric_date }}
+# 📅 Daily History: {{ metric_date }} {{ day_of_week }}
 
-**Day of Week:** {{ day_of_week }} | **Generated:** {{ generated_at }} | [🏠 Home]({{ dashboard_link }}){% if prev_date %} | [⬅ {{ prev_date }}]({{ history_link(prev_date) }}){% endif %}{% if next_date %} | [{{ next_date }} ➡]({{ history_link(next_date) }}){% endif %}
-
----
+**Generated:** {{ generated_at }} | [🏠 Home]({{ dashboard_link }}){% if prev_date %} | [⬅ {{ prev_date }}]({{ history_link(prev_date) }}){% endif %}{% if next_date %} | [{{ next_date }} ➡]({{ history_link(next_date) }}){% endif %}
 
 ## 📈 Daily Totals
 | Metric | Count | Minutes |
