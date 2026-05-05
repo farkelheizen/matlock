@@ -179,7 +179,7 @@ Represents a single vault file after frontmatter parsing.
 | `priority` | `str \| None` | Normalised to `Low \| Medium \| High` |
 | `start_date` | `str \| None` | ISO 8601; always populated with file creation fallback |
 | `due_date` | `str \| None` | ISO 8601 |
-| `status` | `str \| None` | One of `Planned \| In Progress \| On Hold \| Complete \| Cancelled` |
+| `status` | `str \ None` | Normalised to one of `Planned \| In Progress \| On Hold \| Complete \| Cancelled` (case-insensitive match; e.g., `in progress` → `In Progress`) |
 | `resources` | `list[ResourceConfig]` | Collected from `resources` + `related` frontmatter |
 | `warnings` | `list[str]` | Validation warnings (invalid priority, date, etc.) |
 | `projects` | `list[str]` | Contents of the `projects` frontmatter key |
@@ -194,6 +194,8 @@ Aggregates all `ScannedFile` instances that share the same `project_id`.
 | `candidates` | `list[ScannedFile]` | All files contributing to this project |
 | `resources` | `list[ResourceConfig]` | Merged resources (directory + file references) |
 
+**Multi-candidate field resolution:** When building output for a project, metadata fields (`super_project_id`, `priority`, `status`, `title`, `start_date`, `due_date`) are resolved by scanning **all** candidates in order and using the first non-`None` value found. This means a project's `super_project_id` or status can come from any file in the project, not just the primary home file.
+
 ---
 
 ## Warnings
@@ -201,7 +203,7 @@ Aggregates all `ScannedFile` instances that share the same `project_id`.
 Scan warnings are printed to **stderr** after the main output in all three modes. Common warning scenarios:
 
 - Invalid `priority` value (not `low`, `medium`, or `high`)
-- Invalid `status` value (not one of the five valid statuses)
+- Invalid `status` value (not one of the five valid statuses, even after case-folding)
 - Invalid date string (not matching `YYYY-MM-DD`)
 - Frontmatter `resources`/`related` entry pointing to a non-existent path
 

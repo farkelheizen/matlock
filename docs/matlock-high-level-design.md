@@ -40,14 +40,19 @@ Run all five stages in sequence with `matlock run-all`.
     Projects/
     ...
     _Matlock/               ← Output only. Never read as input.
-    Home.md
-    Due Today.md
-    Past Due.md
-    Due Soon.md
-    Future Due.md
-    Not Due.md
+        Home.md
+        Due Today.md
+        Past Due.md
+        Due Soon.md
+        Future Due.md
+        Not Due.md
+        Warnings.md
+        Projects.md         ← Projects index
+        Super Projects.md   ← Super Projects index
         Projects/
-    Super Projects/
+            Unassigned.md   ← Virtual page (always generated)
+        Super Projects/
+            Unassigned.md   ← Virtual page (always generated)
         History/
 ```
 

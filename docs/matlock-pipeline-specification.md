@@ -175,8 +175,13 @@ Query the database and render Jinja2 Markdown dashboards into the `output_direct
 | `due_soon.md.j2` | `_Matlock/Due Soon.md` | `matlock report` or `run-all` |
 | `future_due.md.j2` | `_Matlock/Future Due.md` | `matlock report` or `run-all` |
 | `not_due.md.j2` | `_Matlock/Not Due.md` | `matlock report` or `run-all` |
+| `warnings.md.j2` | `_Matlock/Warnings.md` | `matlock report` or `run-all` |
+| `super_projects_index.md.j2` | `_Matlock/Super Projects.md` | `matlock report` or `run-all` |
+| `projects_index.md.j2` | `_Matlock/Projects.md` | `matlock report` or `run-all` |
 | `super_project.md.j2` | `_Matlock/Super Projects/<id>.md` | Per super-project |
+| `super_project.md.j2` | `_Matlock/Super Projects/Unassigned.md` | Virtual page — always generated |
 | `project.md.j2` | `_Matlock/Projects/<id>.md` | Per project |
+| `project.md.j2` | `_Matlock/Projects/Unassigned.md` | Virtual page — always generated |
 | `daily_history.md.j2` | `_Matlock/History/<YYYY-MM-DD>.md` | After `rollup` |
 
 ### Logic
