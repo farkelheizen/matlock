@@ -67,6 +67,7 @@ Tracks every Markdown file under `base_directory`.
 | `meta_data`     | TEXT    |                  | JSON-serialised front-matter dict                      |
 | `is_generated`  | INTEGER |                  | `1` if created by `report` stage; skipped by `sync`   |
 | `needs_parsing` | INTEGER |                  | `1` if `sync` detected a change; `0` after `parse`    |
+| `deleted_date`  | TEXT    |                  | YYYY-MM-DD when the file was first detected as deleted (set by `sync`; NULL for active files) |
 
 ### `task` table
 
@@ -97,7 +98,7 @@ Top-level project groupings defined in `config.yaml`.
 |:-------------------|:-----|:------------|:-------------------------|
 | `super_project_id` | TEXT | PRIMARY KEY | Unique string identifier |
 | `title`            | TEXT |             | Display name             |
-| `priority`         | TEXT |             | `low`, `medium`, `high`  |
+| `priority`         | TEXT |             | `Low`, `Medium`, `High`  |
 
 ### `project` table
 
@@ -109,7 +110,8 @@ Actionable project buckets, optionally grouped under a SuperProject.
 | `super_project_id` | TEXT | FOREIGN KEY → `super_project` (nullable) | Parent grouping       |
 | `title`            | TEXT |                                   | Display name                 |
 | `home_file`        | TEXT |                                   | Primary source file path     |
-| `priority`         | TEXT |                                   | `low`, `medium`, `high`      |
+| `priority`         | TEXT |                                   | `Low`, `Medium`, `High`      |
+| `status`           | TEXT |                                   | `Planned`, `In Progress`, `Complete`, `On Hold`, `Cancelled` |
 | `start_date`       | TEXT |                                   | YYYY-MM-DD                   |
 | `due_date`         | TEXT |                                   | YYYY-MM-DD                   |
 
@@ -143,6 +145,38 @@ Immutable historical record populated by the `rollup` stage each night.
 | `files_created_count`        | INTEGER |             | Files created on this date          |
 | `files_modified_count`       | INTEGER |             | Files modified on this date         |
 | `files_deleted_count`        | INTEGER |             | Files deleted on this date          |
+
+### `file_touch` table
+
+Immutable per-day file-event snapshot. Populated by the `rollup` stage alongside `daily_metric`. Allows accurate re-generation of history pages long after the events occurred.
+
+| Column       | Type    | Constraints | Description                                                    |
+|:-------------|:--------|:------------|:---------------------------------------------------------------|
+| `file_path`  | TEXT    | PK part     | Path relative to `base_directory`                             |
+| `touch_date` | TEXT    | PK part     | YYYY-MM-DD of the event                                       |
+| `event_type` | TEXT    | PK part     | `'created'` \| `'modified'` \| `'deleted'`                    |
+| `modified`   | INTEGER |             | File `modified` epoch (ms) at snapshot time; NULL for deleted |
+
+**Primary key:** `(file_path, touch_date, event_type)` — allows a file to be both created and deleted on the same day.
+
+**Idempotency:** `INSERT OR REPLACE` — re-running rollup for the same date replaces existing rows cleanly.
+
+### `daily_task` table
+
+Immutable per-day task-event snapshot. Populated by the `rollup` stage. Denormalizes key task fields so history pages can be regenerated accurately even if the source task is later edited or deleted.
+
+| Column       | Type | Constraints | Description                                            |
+|:-------------|:-----|:------------|:-------------------------------------------------------|
+| `task_id`    | TEXT | PK part     | SHA-256 task identifier (matches `task.task_id`)      |
+| `event_date` | TEXT | PK part     | YYYY-MM-DD of the event                               |
+| `event_type` | TEXT | PK part     | `'created'` \| `'completed'`                          |
+| `task_text`  | TEXT |             | Denormalized task text at snapshot time               |
+| `file_path`  | TEXT |             | Source file path at snapshot time                     |
+| `attributes` | TEXT |             | JSON-serialized attributes at snapshot time (used for estimate extraction) |
+
+**Primary key:** `(task_id, event_date, event_type)` — a task can be both created and completed on the same day.
+
+**Idempotency:** `INSERT OR REPLACE` — re-running rollup for the same date replaces existing rows cleanly.
 
 ---
 

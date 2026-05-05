@@ -14,6 +14,16 @@ from matlock.stages.report import (
     _calc_streak,
     _calc_heatmap,
     _build_jinja_env,
+    _cleanup_stale_report_files,
+    _compute_expected_paths,
+    _get_due_today_tasks,
+    _get_past_due_tasks,
+    _get_due_soon_tasks,
+    _get_future_due_tasks,
+    _get_not_due_tasks,
+    _build_tiers,
+    _history_subpath,
+    _purge_stale_generated,
     run_report,
 )
 
@@ -37,13 +47,19 @@ def _make_config(out_dir: Path) -> MatlockConfig:
     )
 
 
-def _seed_file(conn, file_path: str, *, modified_date: str = "2026-04-26") -> None:
+def _seed_file(
+    conn,
+    file_path: str,
+    *,
+    modified_date: str = "2026-04-26",
+    modified: int = 0,
+) -> None:
     upsert_file(conn, {
         "file_path": file_path,
         "sha256": "abc",
         "file_ext": ".md",
         "created": 0,
-        "modified": 0,
+        "modified": modified,
         "modified_date": modified_date,
         "deleted": 0,
         "length": 0,
@@ -82,11 +98,11 @@ def _seed_task(
     })
 
 
-def _seed_metric(conn, metric_date: str, project_id: str | None, *, completed: int = 0) -> None:
+def _seed_metric(conn, metric_date: str, project_id: str | None, *, completed: int = 0, created: int = 0) -> None:
     upsert_daily_metric(conn, {
         "metric_date": metric_date,
         "project_id": project_id,
-        "tasks_created_count": 0,
+        "tasks_created_count": created,
         "tasks_created_minutes": 0,
         "tasks_completed_count": completed,
         "tasks_completed_minutes": 0,
@@ -103,11 +119,17 @@ def _seed_metric(conn, metric_date: str, project_id: str | None, *, completed: i
     conn.commit()
 
 
-def _seed_project(conn, project_id: str, title: str, super_project_id: str | None = None) -> None:
+def _seed_project(
+    conn,
+    project_id: str,
+    title: str,
+    super_project_id: str | None = None,
+    status: str | None = None,
+) -> None:
     conn.execute(
-        "INSERT OR REPLACE INTO project (project_id, super_project_id, title, priority)"
-        " VALUES (?, ?, ?, ?)",
-        (project_id, super_project_id, title, "medium"),
+        "INSERT OR REPLACE INTO project (project_id, super_project_id, title, priority, status)"
+        " VALUES (?, ?, ?, ?, ?)",
+        (project_id, super_project_id, title, "medium", status),
     )
     conn.commit()
 
@@ -246,13 +268,13 @@ class TestRunReportBasic:
         conn = _conn()
         cfg = _make_config(tmp_path)
         run_report(cfg, conn)
-        assert (cfg.output_directory / "000_Daily_Dashboard.md").exists()
+        assert (cfg.output_directory / "Home.md").exists()
 
     def test_dashboard_registered_in_file_table(self, tmp_path: Path):
         conn = _conn()
         cfg = _make_config(tmp_path)
         run_report(cfg, conn)
-        path = str(cfg.output_directory / "000_Daily_Dashboard.md")
+        path = str(cfg.output_directory / "Home.md")
         row = conn.execute(
             "SELECT is_generated FROM file WHERE file_path = ?", (path,)
         ).fetchone()
@@ -260,19 +282,19 @@ class TestRunReportBasic:
         assert row["is_generated"] == 1
 
     def test_files_written_count_empty_db(self, tmp_path: Path):
-        """Empty DB: only the dashboard is written (no projects, no history)."""
+        """Empty DB: dashboard + 5 task view pages + warnings + 2 index pages + today's history."""
         conn = _conn()
         cfg = _make_config(tmp_path)
         result = run_report(cfg, conn)
-        assert result.files_written == 1  # just dashboard
+        assert result.files_written == 12  # 9 standard pages + today's history + 2 Unassigned pages
 
     def test_idempotent_second_run(self, tmp_path: Path):
         conn = _conn()
         cfg = _make_config(tmp_path)
         run_report(cfg, conn)
         result2 = run_report(cfg, conn)
-        assert result2.files_written == 1
-        assert (cfg.output_directory / "000_Daily_Dashboard.md").exists()
+        assert result2.files_written == 12
+        assert (cfg.output_directory / "Home.md").exists()
 
 
 # ---------------------------------------------------------------------------
@@ -291,30 +313,36 @@ class TestRunReportTargetFilter:
     def test_target_dashboard_only_writes_dashboard(self, tmp_path: Path):
         conn, cfg = self._setup(tmp_path)
         result = run_report(cfg, conn, target="dashboard")
-        assert (cfg.output_directory / "000_Daily_Dashboard.md").exists()
+        assert (cfg.output_directory / "Home.md").exists()
+        assert (cfg.output_directory / "Due Today.md").exists()
+        assert (cfg.output_directory / "Past Due.md").exists()
+        assert (cfg.output_directory / "Due Soon.md").exists()
+        assert (cfg.output_directory / "Future Due.md").exists()
+        assert (cfg.output_directory / "Not Due.md").exists()
         assert not (cfg.output_directory / "Projects").exists()
         assert not (cfg.output_directory / "History").exists()
-        assert result.files_written == 1
+        assert result.files_written == 9
 
     def test_target_projects_writes_project_page(self, tmp_path: Path):
         conn, cfg = self._setup(tmp_path)
         result = run_report(cfg, conn, target="projects")
         assert (cfg.output_directory / "Projects" / "p1.md").exists()
-        assert not (cfg.output_directory / "000_Daily_Dashboard.md").exists()
+        assert not (cfg.output_directory / "Home.md").exists()
 
     def test_target_history_writes_history_page(self, tmp_path: Path):
         conn, cfg = self._setup(tmp_path)
         result = run_report(cfg, conn, target="history")
-        assert (cfg.output_directory / "History" / "2026-04-20.md").exists()
-        assert not (cfg.output_directory / "000_Daily_Dashboard.md").exists()
-        assert result.files_written == 1
+        assert (cfg.output_directory / _history_subpath("2026-04-20")).exists()
+        assert not (cfg.output_directory / "Home.md").exists()
+        # 2026-04-20 + today both generated
+        assert result.files_written == 2
 
     def test_target_all_writes_all(self, tmp_path: Path):
         conn, cfg = self._setup(tmp_path)
         result = run_report(cfg, conn, target="all")
-        assert (cfg.output_directory / "000_Daily_Dashboard.md").exists()
+        assert (cfg.output_directory / "Home.md").exists()
         assert (cfg.output_directory / "Projects" / "p1.md").exists()
-        assert (cfg.output_directory / "History" / "2026-04-20.md").exists()
+        assert (cfg.output_directory / _history_subpath("2026-04-20")).exists()
 
 
 # ---------------------------------------------------------------------------
@@ -400,15 +428,56 @@ class TestRunReportSuperProjectPage:
         _seed_project(conn, "p1", "Sub Project", super_project_id="sp1")
         cfg = _make_config(tmp_path)
         run_report(cfg, conn, target="projects")
-        assert (cfg.output_directory / "SuperProjects" / "sp1.md").exists()
+        assert (cfg.output_directory / "Super Projects" / "sp1.md").exists()
 
     def test_super_project_title_in_content(self, tmp_path: Path):
         conn = _conn()
         _seed_super_project(conn, "sp1", "Big Initiative")
         cfg = _make_config(tmp_path)
         run_report(cfg, conn, target="projects")
-        content = (cfg.output_directory / "SuperProjects" / "sp1.md").read_text()
+        content = (cfg.output_directory / "Super Projects" / "sp1.md").read_text()
         assert "Big Initiative" in content
+
+    def test_super_project_status_tables_render(self, tmp_path: Path):
+        conn = _conn()
+        _seed_super_project(conn, "sp1", "Big Initiative")
+        _seed_project(conn, "p_active", "Active Child", super_project_id="sp1", status="In Progress")
+        _seed_project(conn, "p_hold", "On Hold Child", super_project_id="sp1", status="On Hold")
+        _seed_project(conn, "p_cancel", "Cancelled Child", super_project_id="sp1", status="Cancelled")
+        _seed_project(conn, "p_done", "Done Child", super_project_id="sp1", status="Complete")
+
+        _seed_file(conn, "/vault/active.md", modified_date="2026-04-27")
+        _seed_file(conn, "/vault/hold.md", modified_date="2026-04-27")
+        _seed_file(conn, "/vault/cancel.md", modified_date="2026-04-27")
+        _seed_file(conn, "/vault/done.md", modified_date="2026-04-27")
+        _link(conn, "/vault/active.md", "p_active")
+        _link(conn, "/vault/hold.md", "p_hold")
+        _link(conn, "/vault/cancel.md", "p_cancel")
+        _link(conn, "/vault/done.md", "p_done")
+
+        today = datetime.date.today().isoformat()
+        _seed_task_full(conn, "sp_active_due", "/vault/active.md", due_date=today, estimate_secs=1200)
+
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="projects")
+        content = (cfg.output_directory / "Super Projects" / "sp1.md").read_text()
+
+        assert "## 🚀 Active Projects" in content
+        assert "## ⏸️ On-Hold Projects" in content
+        assert "## ❌ Cancelled Projects" in content
+        assert "## ✅ Completed Projects" in content
+
+        assert "| [Active Child](../Projects/p_active.md) |" in content
+        assert "| [On Hold Child](../Projects/p_hold.md) |" in content
+        assert "| [Cancelled Child](../Projects/p_cancel.md) |" in content
+        assert "| [Done Child](../Projects/p_done.md) |" in content
+
+        assert "| Project | Current Streak | Health | Last Updated | Due Today (count + est)" in content
+        assert "| Project | Current Streak | Last Updated | Due Today (count + est)" in content
+        assert "2026-04-27 12:00 AM" in content
+        assert "**Generated:**" in content
+        assert "| [🏠 Back to Dashboard](../Home.md)" in content
+        assert "Critical Aggregated Tasks" not in content
 
 
 # ---------------------------------------------------------------------------
@@ -423,15 +492,15 @@ class TestRunReportHistoryPage:
         _seed_metric(conn, "2026-04-21", None, completed=1)
         cfg = _make_config(tmp_path)
         run_report(cfg, conn, target="history")
-        assert (cfg.output_directory / "History" / "2026-04-20.md").exists()
-        assert (cfg.output_directory / "History" / "2026-04-21.md").exists()
+        assert (cfg.output_directory / _history_subpath("2026-04-20")).exists()
+        assert (cfg.output_directory / _history_subpath("2026-04-21")).exists()
 
     def test_history_page_content_contains_date(self, tmp_path: Path):
         conn = _conn()
         _seed_metric(conn, "2026-04-20", None, completed=1)
         cfg = _make_config(tmp_path)
         run_report(cfg, conn, target="history")
-        content = (cfg.output_directory / "History" / "2026-04-20.md").read_text()
+        content = (cfg.output_directory / _history_subpath("2026-04-20")).read_text()
         assert "2026-04-20" in content
 
     def test_history_page_day_of_week(self, tmp_path: Path):
@@ -439,7 +508,7 @@ class TestRunReportHistoryPage:
         _seed_metric(conn, "2026-04-20", None, completed=1)  # Monday
         cfg = _make_config(tmp_path)
         run_report(cfg, conn, target="history")
-        content = (cfg.output_directory / "History" / "2026-04-20.md").read_text()
+        content = (cfg.output_directory / _history_subpath("2026-04-20")).read_text()
         assert "Monday" in content
 
     def test_history_page_registered_as_generated(self, tmp_path: Path):
@@ -447,7 +516,7 @@ class TestRunReportHistoryPage:
         _seed_metric(conn, "2026-04-20", None, completed=1)
         cfg = _make_config(tmp_path)
         run_report(cfg, conn, target="history")
-        path = str(cfg.output_directory / "History" / "2026-04-20.md")
+        path = str(cfg.output_directory / _history_subpath("2026-04-20"))
         row = conn.execute(
             "SELECT is_generated FROM file WHERE file_path = ?", (path,)
         ).fetchone()
@@ -455,18 +524,20 @@ class TestRunReportHistoryPage:
         assert row["is_generated"] == 1
 
     def test_no_history_if_no_daily_metrics(self, tmp_path: Path):
+        """Even with no prior daily_metric rows, today's history page is always generated."""
         conn = _conn()
         cfg = _make_config(tmp_path)
         result = run_report(cfg, conn, target="history")
-        assert result.files_written == 0
-        assert not (cfg.output_directory / "History").exists()
+        today = datetime.date.today().isoformat()
+        assert result.files_written == 1
+        assert (cfg.output_directory / _history_subpath(today)).exists()
 
     def test_history_breakdown_shows_unassigned(self, tmp_path: Path):
         conn = _conn()
         _seed_metric(conn, "2026-04-20", None, completed=3)
         cfg = _make_config(tmp_path)
         run_report(cfg, conn, target="history")
-        content = (cfg.output_directory / "History" / "2026-04-20.md").read_text()
+        content = (cfg.output_directory / _history_subpath("2026-04-20")).read_text()
         assert "Unassigned" in content
 
     def test_history_breakdown_shows_project(self, tmp_path: Path):
@@ -475,8 +546,113 @@ class TestRunReportHistoryPage:
         _seed_metric(conn, "2026-04-20", "p1", completed=2)
         cfg = _make_config(tmp_path)
         run_report(cfg, conn, target="history")
-        content = (cfg.output_directory / "History" / "2026-04-20.md").read_text()
+        content = (cfg.output_directory / _history_subpath("2026-04-20")).read_text()
         assert "p1" in content
+
+    def test_history_shows_created_counts_in_project_table(self, tmp_path: Path):
+        conn = _conn()
+        _seed_project(conn, "p1", "Work")
+        _seed_metric(conn, "2026-04-20", "p1", completed=1, created=3)
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="history")
+        content = (cfg.output_directory / _history_subpath("2026-04-20")).read_text()
+        assert "Created" in content
+
+    def test_history_shows_prev_date_link(self, tmp_path: Path):
+        conn = _conn()
+        _seed_metric(conn, "2026-04-20", None, completed=1)
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="history")
+        content = (cfg.output_directory / _history_subpath("2026-04-20")).read_text()
+        assert "2026-04-19" in content
+
+    def test_history_shows_next_date_link(self, tmp_path: Path):
+        conn = _conn()
+        _seed_metric(conn, "2026-04-20", None, completed=1)
+        _seed_metric(conn, "2026-04-21", None, completed=1)
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="history")
+        content = (cfg.output_directory / _history_subpath("2026-04-20")).read_text()
+        assert "2026-04-21" in content
+
+    def test_history_no_next_date_when_last_date(self, tmp_path: Path):
+        """Today's history page has no next_date, so ➡ should not appear."""
+        conn = _conn()
+        today = datetime.date.today().isoformat()
+        _seed_metric(conn, today, None, completed=1)
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="history")
+        content = (cfg.output_directory / _history_subpath(today)).read_text()
+        # today is the last date, so next_date is None — ➡ should not appear
+        assert "➡" not in content
+
+    def test_history_file_touches_section_empty_fallback(self, tmp_path: Path):
+        conn = _conn()
+        _seed_metric(conn, "2026-04-20", None, completed=1)
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="history")
+        content = (cfg.output_directory / _history_subpath("2026-04-20")).read_text()
+        assert "Files Touched" in content
+        assert "No file-touch data available" in content
+
+    def test_history_file_touches_shows_when_data_present(self, tmp_path: Path):
+        conn = _conn()
+        _seed_metric(conn, "2026-04-20", None, completed=0)
+        conn.execute(
+            "INSERT INTO file_touch (file_path, touch_date, event_type, modified)"
+            " VALUES (?, ?, ?, ?)",
+            ("Notes/work.md", "2026-04-20", "modified", 1745193600000),
+        )
+        conn.commit()
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="history")
+        content = (cfg.output_directory / _history_subpath("2026-04-20")).read_text()
+        assert "work.md" in content
+        assert "modified" in content
+
+    def test_history_tasks_section_empty_fallback(self, tmp_path: Path):
+        conn = _conn()
+        _seed_metric(conn, "2026-04-20", None, completed=1)
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="history")
+        content = (cfg.output_directory / _history_subpath("2026-04-20")).read_text()
+        assert "Tasks This Day" in content
+        assert "No task-event data available" in content
+
+    def test_history_tasks_shows_when_data_present(self, tmp_path: Path):
+        conn = _conn()
+        _seed_metric(conn, "2026-04-20", None, completed=1)
+        conn.execute(
+            "INSERT INTO daily_task (task_id, event_date, event_type, task_text, file_path, attributes)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
+            ("t-abc", "2026-04-20", "completed", "Write the report", "Notes/work.md", "{}"),
+        )
+        conn.commit()
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="history")
+        content = (cfg.output_directory / _history_subpath("2026-04-20")).read_text()
+        assert "Write the report" in content
+        assert "completed" in content
+
+    def test_history_super_project_summary_with_data(self, tmp_path: Path):
+        conn = _conn()
+        _seed_super_project(conn, "sp1", "Platform")
+        _seed_project(conn, "p1", "API", super_project_id="sp1")
+        _seed_metric(conn, "2026-04-20", "p1", completed=2, created=1)
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="history")
+        content = (cfg.output_directory / _history_subpath("2026-04-20")).read_text()
+        assert "Platform" in content
+        assert "Super-Project" in content
+
+    def test_history_home_link_present(self, tmp_path: Path):
+        conn = _conn()
+        _seed_metric(conn, "2026-04-20", None, completed=1)
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="history")
+        content = (cfg.output_directory / _history_subpath("2026-04-20")).read_text()
+        assert "Home" in content
+        assert "🏠" in content
 
 
 # ---------------------------------------------------------------------------
@@ -491,29 +667,1357 @@ class TestDashboardContent:
         _seed_metric(conn, "2026-04-20", None, completed=1)
         cfg = _make_config(tmp_path)
         run_report(cfg, conn, target="dashboard")
-        content = (cfg.output_directory / "000_Daily_Dashboard.md").read_text()
+        content = (cfg.output_directory / "Home.md").read_text()
         assert "Current Streak" in content
 
-    def test_dashboard_shows_project_hub(self, tmp_path: Path):
+    def test_dashboard_shows_projects_index_link(self, tmp_path: Path):
         conn = _conn()
-        _seed_project(conn, "alpha", "Alpha Project")
+        _seed_project(conn, "alpha", "Alpha Project", status="In Progress")
         cfg = _make_config(tmp_path)
         run_report(cfg, conn, target="dashboard")
-        content = (cfg.output_directory / "000_Daily_Dashboard.md").read_text()
-        assert "alpha" in content
+        content = (cfg.output_directory / "Home.md").read_text()
+        assert "Projects.md" in content
 
     def test_dashboard_shows_past_due_task(self, tmp_path: Path):
+        """Past-due tasks appear in the Past Due page, not inline on Home."""
         conn = _conn()
         _seed_file(conn, "work.md")
         _seed_task(conn, "td1", "work.md", checked=0, due_date="2020-01-01")
         cfg = _make_config(tmp_path)
         run_report(cfg, conn, target="dashboard")
-        content = (cfg.output_directory / "000_Daily_Dashboard.md").read_text()
-        assert "Task td1" in content
+        # Home shows matrix with a link into Past Due page
+        home = (cfg.output_directory / "Home.md").read_text()
+        assert "Past%20Due.md" in home
+        # Past Due page contains the task text
+        past_due = (cfg.output_directory / "Past Due.md").read_text()
+        assert "Task td1" in past_due
 
     def test_dashboard_heatmap_section_present(self, tmp_path: Path):
         conn = _conn()
         cfg = _make_config(tmp_path)
         run_report(cfg, conn, target="dashboard")
-        content = (cfg.output_directory / "000_Daily_Dashboard.md").read_text()
+        content = (cfg.output_directory / "Home.md").read_text()
         assert "Activity Heatmap" in content
+
+    def test_dashboard_shows_recently_changed_files_section(self, tmp_path: Path):
+        conn = _conn()
+        _seed_file(conn, "notes/alpha.md", modified_date="2026-04-26")
+        _seed_file(conn, "notes/beta.md", modified_date="2026-04-27")
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="dashboard")
+
+        content = (cfg.output_directory / "Home.md").read_text()
+
+        assert "Recently Changed Files" in content
+        assert "2026-04-27 12:00 AM" in content
+        assert "[beta.md](../vault/notes/beta.md)" in content
+        assert "[alpha.md](../vault/notes/alpha.md)" in content
+
+    def test_dashboard_shows_active_super_projects_table(self, tmp_path: Path):
+        conn = _conn()
+        _seed_super_project(conn, "sp1", "Platform")
+        _seed_super_project(conn, "sp2", "Backlog")
+        _seed_project(conn, "p_active", "API", super_project_id="sp1", status="In Progress")
+        _seed_project(conn, "p_planned", "Docs", super_project_id="sp2", status="Planned")
+
+        _seed_file(conn, "/vault/api.md", modified_date="2026-04-27")
+        _seed_file(conn, "/vault/docs.md", modified_date="2026-04-27")
+        _link(conn, "/vault/api.md", "p_active")
+        _link(conn, "/vault/docs.md", "p_planned")
+
+        today = datetime.date.today().isoformat()
+        yesterday = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
+        _seed_task_full(conn, "sp_due_today", "/vault/api.md", due_date=today, estimate_secs=1800)
+        _seed_task_full(conn, "sp_past_due", "/vault/api.md", due_date=yesterday, estimate_secs=600)
+        _seed_metric(conn, yesterday, "p_active", completed=1)
+        _seed_metric(conn, today, "p_active", completed=1)
+
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="dashboard")
+
+        content = (cfg.output_directory / "Home.md").read_text()
+
+        assert "Active Super Projects" in content
+        assert "| [Platform (1)](Super%20Projects/sp1.md) | 2 |" in content
+        assert "| [Platform (1)](Super%20Projects/sp1.md)" in content
+        assert "| 1 (30m) | 1 |" in content
+        assert "[Backlog (1)](Super%20Projects/sp2.md)" not in content
+
+    def test_dashboard_super_project_health_reflects_overdue_burden(self, tmp_path: Path):
+        conn = _conn()
+        _seed_super_project(conn, "sp1", "Platform")
+        _seed_project(conn, "p_active", "API", super_project_id="sp1", status="In Progress")
+        _seed_file(conn, "/vault/api.md", modified_date="2026-04-27")
+        _link(conn, "/vault/api.md", "p_active")
+
+        yesterday = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
+        _seed_task_full(conn, "pd1", "/vault/api.md", due_date=yesterday, estimate_secs=3600)
+        _seed_task_full(conn, "pd2", "/vault/api.md", due_date=yesterday, estimate_secs=3600)
+        _seed_task_full(conn, "pd3", "/vault/api.md", due_date=yesterday, estimate_secs=3600)
+
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="dashboard")
+
+        content = (cfg.output_directory / "Home.md").read_text()
+
+        assert "🔴 At Risk" in content
+
+    def test_dashboard_recently_changed_files_limit_from_config(self, tmp_path: Path):
+        conn = _conn()
+        _seed_file(conn, "notes/one.md", modified_date="2026-04-25")
+        _seed_file(conn, "notes/two.md", modified_date="2026-04-26")
+        _seed_file(conn, "notes/three.md", modified_date="2026-04-27")
+
+        cfg = _make_config(tmp_path).model_copy(update={"dashboard_recent_changes_limit": 2})
+        run_report(cfg, conn, target="dashboard")
+
+        content = (cfg.output_directory / "Home.md").read_text()
+
+        assert "[three.md](../vault/notes/three.md)" in content
+        assert "[two.md](../vault/notes/two.md)" in content
+        assert "[one.md](../vault/notes/one.md)" not in content
+
+    def test_dashboard_has_warnings_link(self, tmp_path: Path):
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="dashboard")
+        content = (cfg.output_directory / "Home.md").read_text()
+        assert "Warnings.md" in content
+
+    def test_dashboard_has_super_projects_index_link(self, tmp_path: Path):
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="dashboard")
+        content = (cfg.output_directory / "Home.md").read_text()
+        assert "Super%20Projects.md" in content
+
+    def test_dashboard_has_projects_index_link(self, tmp_path: Path):
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="dashboard")
+        content = (cfg.output_directory / "Home.md").read_text()
+        assert "Projects.md" in content
+
+
+# ---------------------------------------------------------------------------
+# Warnings page
+# ---------------------------------------------------------------------------
+
+
+class TestWarningsPage:
+    def test_warnings_page_created(self, tmp_path: Path):
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="dashboard")
+        assert (cfg.output_directory / "Warnings.md").exists()
+
+    def test_warnings_page_has_header(self, tmp_path: Path):
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="dashboard")
+        content = (cfg.output_directory / "Warnings.md").read_text()
+        assert "**Generated:**" in content
+        assert "[🏠 Back to Dashboard](Home.md)" in content
+
+    def test_warnings_tasks_with_errors(self, tmp_path: Path):
+        conn = _conn()
+        _seed_file(conn, "work.md")
+        upsert_task(conn, {
+            "task_id": "bad-task-1",
+            "file_path": "work.md",
+            "parent_task_id": None,
+            "created_date": "2026-05-01",
+            "due_date": None,
+            "est_comp_date": None,
+            "act_comp_date": None,
+            "checked": 0,
+            "task_text": "Bad Task",
+            "overflow": 0,
+            "headers": None,
+            "attributes": None,
+            "errors": '["Invalid date value"]',
+            "twin_index": 0,
+        })
+        conn.commit()
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="dashboard")
+        content = (cfg.output_directory / "Warnings.md").read_text()
+        assert "Bad Task" in content
+        assert "Invalid date value" in content
+
+    def test_warnings_projects_no_super(self, tmp_path: Path):
+        conn = _conn()
+        _seed_project(conn, "lone-wolf", "Lone Wolf")
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="dashboard")
+        content = (cfg.output_directory / "Warnings.md").read_text()
+        assert "Lone Wolf" in content
+        assert "Projects without a Super-Project" in content
+
+    def test_warnings_projects_no_files(self, tmp_path: Path):
+        conn = _conn()
+        _seed_project(conn, "empty-proj", "Empty Project")
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="dashboard")
+        content = (cfg.output_directory / "Warnings.md").read_text()
+        assert "Empty Project" in content
+        assert "Projects with No Associated Files" in content
+
+    def test_warnings_orphaned_files(self, tmp_path: Path):
+        conn = _conn()
+        _seed_file(conn, "notes/orphan.md")
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="dashboard")
+        content = (cfg.output_directory / "Warnings.md").read_text()
+        assert "1 tracked file(s) not linked to any project" in content
+        assert "Orphaned Files" in content
+
+    def test_warnings_orphaned_tasks(self, tmp_path: Path):
+        conn = _conn()
+        _seed_file(conn, "notes/unlinked.md")
+        _seed_task(conn, "ot1", "notes/unlinked.md")
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="dashboard")
+        content = (cfg.output_directory / "Warnings.md").read_text()
+        assert "1 task(s) in files not linked to any project" in content
+        assert "Orphaned Tasks" in content
+
+    def test_warnings_empty_sections_show_ok_messages(self, tmp_path: Path):
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="dashboard")
+        content = (cfg.output_directory / "Warnings.md").read_text()
+        assert "No tasks with parse errors" in content
+        assert "All projects are assigned to a super-project" in content
+        assert "All projects have at least one associated file" in content
+
+
+
+# ---------------------------------------------------------------------------
+# Super Projects index page
+# ---------------------------------------------------------------------------
+
+
+class TestSuperProjectsIndexPage:
+    def test_super_projects_index_page_created(self, tmp_path: Path):
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="dashboard")
+        assert (cfg.output_directory / "Super Projects.md").exists()
+
+    def test_super_projects_index_has_header(self, tmp_path: Path):
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="dashboard")
+        content = (cfg.output_directory / "Super Projects.md").read_text()
+        assert "Generated:" in content
+        assert "Back to Dashboard" in content
+
+    def test_super_projects_index_empty_db_renders_table(self, tmp_path: Path):
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="dashboard")
+        content = (cfg.output_directory / "Super Projects.md").read_text()
+        assert "Super Project" in content
+
+    def test_super_projects_index_lists_super_project(self, tmp_path: Path):
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        _seed_super_project(conn, "sp1", "Alpha SP")
+        _seed_project(conn, "p1", "P One", super_project_id="sp1", status="In Progress")
+        run_report(cfg, conn, target="dashboard")
+        content = (cfg.output_directory / "Super Projects.md").read_text()
+        assert "Alpha SP" in content
+
+    def test_super_projects_index_active_count(self, tmp_path: Path):
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        _seed_super_project(conn, "sp1", "Alpha SP")
+        _seed_project(conn, "p1", "Active", super_project_id="sp1", status="In Progress")
+        _seed_project(conn, "p2", "Done", super_project_id="sp1", status="Complete")
+        run_report(cfg, conn, target="dashboard")
+        content = (cfg.output_directory / "Super Projects.md").read_text()
+        # SP row should appear with sp1 link
+        assert "sp1.md" in content
+
+    def test_super_projects_index_no_health_when_no_active(self, tmp_path: Path):
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        _seed_super_project(conn, "sp1", "Idle SP")
+        _seed_project(conn, "p1", "Done", super_project_id="sp1", status="Complete")
+        run_report(cfg, conn, target="dashboard")
+        content = (cfg.output_directory / "Super Projects.md").read_text()
+        # Health column should be blank for this SP (no active projects)
+        # Row contains the sp label and empty health cell
+        assert "Idle SP" in content
+
+    def test_super_projects_index_sorts_worst_health_first_then_title(self, tmp_path: Path):
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+
+        _seed_super_project(conn, "sp_bad", "AAA Bad")
+        _seed_super_project(conn, "sp_good", "ZZZ Good")
+
+        _seed_project(conn, "p_bad", "Bad Project", super_project_id="sp_bad", status="In Progress")
+        _seed_project(conn, "p_good", "Good Project", super_project_id="sp_good", status="In Progress")
+
+        _seed_file(conn, "vault/bad.md")
+        _seed_file(conn, "vault/good.md")
+        _link(conn, "vault/bad.md", "p_bad")
+        _link(conn, "vault/good.md", "p_good")
+
+        today = datetime.date.today().isoformat()
+        yesterday = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
+        _seed_task_full(conn, "t_bad", "vault/bad.md", due_date=yesterday, estimate_secs=3600)
+        _seed_task_full(conn, "t_good", "vault/good.md", due_date=today, estimate_secs=0)
+
+        run_report(cfg, conn, target="dashboard")
+        content = (cfg.output_directory / "Super Projects.md").read_text()
+        assert content.index("AAA Bad") < content.index("ZZZ Good")
+
+
+# ---------------------------------------------------------------------------
+# Projects index page
+# ---------------------------------------------------------------------------
+
+
+class TestProjectsIndexPage:
+    def test_projects_index_page_created(self, tmp_path: Path):
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="dashboard")
+        assert (cfg.output_directory / "Projects.md").exists()
+
+    def test_projects_index_has_header(self, tmp_path: Path):
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="dashboard")
+        content = (cfg.output_directory / "Projects.md").read_text()
+        assert "Generated:" in content
+        assert "Back to Dashboard" in content
+
+    def test_projects_index_empty_db_renders_table(self, tmp_path: Path):
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="dashboard")
+        content = (cfg.output_directory / "Projects.md").read_text()
+        assert "Project" in content
+        assert "Active Projects" in content
+        assert "On Hold" in content
+        assert "Planned" in content
+        assert "Complete" in content
+        assert "Cancelled" in content
+
+    def test_projects_index_lists_project(self, tmp_path: Path):
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        _seed_project(conn, "p1", "My Project", status="In Progress")
+        run_report(cfg, conn, target="dashboard")
+        content = (cfg.output_directory / "Projects.md").read_text()
+        assert "My Project" in content
+        assert "Active Projects" in content
+
+    def test_projects_index_has_section_links(self, tmp_path: Path):
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="dashboard")
+        content = (cfg.output_directory / "Projects.md").read_text()
+        assert "#active-projects" in content
+        assert "#on-hold" in content
+        assert "#planned" in content
+        assert "#complete" in content
+        assert "#cancelled" in content
+
+    def test_projects_index_active_sorted_by_health_then_title(self, tmp_path: Path):
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+
+        _seed_project(conn, "p_bad", "AAA Bad", status="In Progress")
+        _seed_project(conn, "p_good", "ZZZ Good", status="In Progress")
+
+        _seed_file(conn, "vault/active_bad.md")
+        _seed_file(conn, "vault/active_good.md")
+        _link(conn, "vault/active_bad.md", "p_bad")
+        _link(conn, "vault/active_good.md", "p_good")
+
+        yesterday = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
+        _seed_task_full(conn, "ta1", "vault/active_bad.md", due_date=yesterday, estimate_secs=3600)
+        _seed_task_full(conn, "tb1", "vault/active_good.md", due_date=None, estimate_secs=0)
+
+        run_report(cfg, conn, target="dashboard")
+        content = (cfg.output_directory / "Projects.md").read_text()
+        assert content.index("AAA Bad") < content.index("ZZZ Good")
+
+    def test_projects_index_health_column_only_in_active_table(self, tmp_path: Path):
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        _seed_project(conn, "p1", "P One", status="In Progress")
+        _seed_project(conn, "p2", "P Two", status="On Hold")
+        run_report(cfg, conn, target="dashboard")
+        content = (cfg.output_directory / "Projects.md").read_text()
+        assert content.count("| Project | Current Streak | Health |") == 1
+
+
+# ---------------------------------------------------------------------------
+# Report cleanup — stale project / super-project page deletion
+# ---------------------------------------------------------------------------
+
+
+class TestReportCleanup:
+    def test_stale_project_file_deleted(self, tmp_path: Path):
+        """A project page for a removed project is deleted on the next full report."""
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        # First run: project "old" exists
+        _seed_project(conn, "old", "Old Project")
+        run_report(cfg, conn, target="projects")
+        stale = cfg.output_directory / "Projects" / "old.md"
+        assert stale.exists()
+
+        # Remove the project from the DB (simulates removing from config + map-projects)
+        conn.execute("DELETE FROM project WHERE project_id = 'old'")
+        conn.commit()
+
+        result = run_report(cfg, conn, target="projects")
+
+        assert not stale.exists()
+        assert result.files_deleted == 1
+
+    def test_stale_super_project_file_deleted(self, tmp_path: Path):
+        """A super-project page for a removed super-project is deleted on the next full report."""
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        _seed_super_project(conn, "old-sp", "Old SP")
+        run_report(cfg, conn, target="projects")
+        stale = cfg.output_directory / "Super Projects" / "old-sp.md"
+        assert stale.exists()
+
+        conn.execute("DELETE FROM super_project WHERE super_project_id = 'old-sp'")
+        conn.commit()
+
+        result = run_report(cfg, conn, target="projects")
+
+        assert not stale.exists()
+        assert result.files_deleted == 1
+
+    def test_current_project_file_not_deleted(self, tmp_path: Path):
+        """Project pages for still-active projects must survive cleanup."""
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        _seed_project(conn, "keep", "Keep Me")
+        run_report(cfg, conn, target="projects")
+
+        result = run_report(cfg, conn, target="projects")
+
+        assert (cfg.output_directory / "Projects" / "keep.md").exists()
+        assert result.files_deleted == 0
+
+    def test_files_deleted_count_multiple(self, tmp_path: Path):
+        """files_deleted reflects the total number of stale files removed."""
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        _seed_project(conn, "p1", "P1")
+        _seed_project(conn, "p2", "P2")
+        _seed_project(conn, "keep", "Keep")
+        run_report(cfg, conn, target="projects")
+
+        conn.execute("DELETE FROM project WHERE project_id IN ('p1', 'p2')")
+        conn.commit()
+
+        result = run_report(cfg, conn, target="projects")
+
+        assert not (cfg.output_directory / "Projects" / "p1.md").exists()
+        assert not (cfg.output_directory / "Projects" / "p2.md").exists()
+        assert (cfg.output_directory / "Projects" / "keep.md").exists()
+        assert result.files_deleted == 2
+
+    def test_cleanup_removes_file_table_row(self, tmp_path: Path):
+        """The file table row for a deleted report file must also be removed."""
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        _seed_project(conn, "old", "Old")
+        run_report(cfg, conn, target="projects")
+        stale_path = str(cfg.output_directory / "Projects" / "old.md")
+        # Row should exist before cleanup
+        assert conn.execute(
+            "SELECT 1 FROM file WHERE file_path = ?", (stale_path,)
+        ).fetchone() is not None
+
+        conn.execute("DELETE FROM project WHERE project_id = 'old'")
+        conn.commit()
+        run_report(cfg, conn, target="projects")
+
+        assert conn.execute(
+            "SELECT 1 FROM file WHERE file_path = ?", (stale_path,)
+        ).fetchone() is None
+
+    def test_cleanup_not_triggered_for_targeted_project_id(self, tmp_path: Path):
+        """A single-project targeted render must NOT delete other project pages."""
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        _seed_project(conn, "keep", "Keep")
+        _seed_project(conn, "target", "Target")
+        run_report(cfg, conn, target="projects")
+
+        # Remove "keep" from DB — but then only render "target" via project_id
+        conn.execute("DELETE FROM project WHERE project_id = 'keep'")
+        conn.commit()
+        run_report(cfg, conn, project_id="target")
+
+        # "keep.md" should still exist — targeted render must not clean up
+        assert (cfg.output_directory / "Projects" / "keep.md").exists()
+
+    def test_cleanup_not_triggered_for_target_dashboard(self, tmp_path: Path):
+        """target='dashboard' must NOT delete stale project pages."""
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        _seed_project(conn, "old", "Old")
+        run_report(cfg, conn, target="projects")
+
+        conn.execute("DELETE FROM project WHERE project_id = 'old'")
+        conn.commit()
+        result = run_report(cfg, conn, target="dashboard")
+
+        assert (cfg.output_directory / "Projects" / "old.md").exists()
+        assert result.files_deleted == 0
+
+    def test_cleanup_no_error_when_subdir_missing(self, tmp_path: Path):
+        """Cleanup must be a no-op (not an error) when the report subdirectory doesn't exist."""
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        # Never ran a project render — Projects/ doesn't exist
+        result = run_report(cfg, conn, target="projects")
+        assert result.files_deleted == 0
+
+
+# ---------------------------------------------------------------------------
+# Force regeneration
+# ---------------------------------------------------------------------------
+
+
+class TestRunReportForce:
+    def test_force_runs_without_error(self, tmp_path: Path):
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        result = run_report(cfg, conn, target="all", force=True)
+        assert result.files_written >= 1
+
+    def test_force_no_stale_files_deletes_nothing(self, tmp_path: Path):
+        """force=True with a clean state should delete 0 files."""
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="all")
+        result = run_report(cfg, conn, target="all", force=True)
+        assert result.files_deleted == 0
+
+    def test_force_deletes_stale_db_tracked_project_file(self, tmp_path: Path):
+        """force=True removes a DB-tracked generated file for a removed project."""
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        _seed_project(conn, "gone", "Gone")
+        run_report(cfg, conn, target="all")
+        stale = cfg.output_directory / "Projects" / "gone.md"
+        assert stale.exists()
+
+        conn.execute("DELETE FROM project WHERE project_id = 'gone'")
+        conn.commit()
+
+        result = run_report(cfg, conn, target="all", force=True)
+
+        assert not stale.exists()
+        assert result.files_deleted >= 1
+
+    def test_force_deletes_stale_history_file(self, tmp_path: Path):
+        """force=True removes a History page for a date no longer in daily_metric."""
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        _seed_metric(conn, "2026-01-01", None, completed=1)
+        run_report(cfg, conn, target="all")
+        stale = cfg.output_directory / _history_subpath("2026-01-01")
+        assert stale.exists()
+
+        conn.execute("DELETE FROM daily_metric WHERE metric_date = '2026-01-01'")
+        conn.commit()
+
+        result = run_report(cfg, conn, target="all", force=True)
+
+        assert not stale.exists()
+        assert result.files_deleted >= 1
+
+    def test_force_deletes_orphaned_md_file(self, tmp_path: Path):
+        """force=True removes .md files in output_directory with no DB row."""
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="all")
+
+        # Plant an orphaned file (not registered in DB)
+        orphan = cfg.output_directory / "orphan.md"
+        orphan.write_text("stale")
+
+        result = run_report(cfg, conn, target="all", force=True)
+
+        assert not orphan.exists()
+        assert result.files_deleted >= 1
+
+    def test_force_keeps_current_files(self, tmp_path: Path):
+        """force=True must not delete files that belong to the current run."""
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        _seed_project(conn, "keep", "Keep")
+        result = run_report(cfg, conn, target="all", force=True)
+        assert (cfg.output_directory / "Home.md").exists()
+        assert (cfg.output_directory / "Projects" / "keep.md").exists()
+
+    def test_force_removes_stale_file_table_row(self, tmp_path: Path):
+        """force=True removes the file table row for deleted generated files."""
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        _seed_project(conn, "old", "Old")
+        run_report(cfg, conn, target="all")
+        stale_path = str(cfg.output_directory / "Projects" / "old.md")
+        assert conn.execute(
+            "SELECT 1 FROM file WHERE file_path = ?", (stale_path,)
+        ).fetchone() is not None
+
+        conn.execute("DELETE FROM project WHERE project_id = 'old'")
+        conn.commit()
+        run_report(cfg, conn, target="all", force=True)
+
+        assert conn.execute(
+            "SELECT 1 FROM file WHERE file_path = ?", (stale_path,)
+        ).fetchone() is None
+
+
+# ---------------------------------------------------------------------------
+# _compute_expected_paths / _purge_stale_generated
+# ---------------------------------------------------------------------------
+
+
+class TestComputeExpectedPaths:
+    def test_all_target_includes_dashboard(self, tmp_path: Path):
+        conn = _conn()
+        out = tmp_path / "_Matlock"
+        paths = _compute_expected_paths(conn, out, "all")
+        assert out / "Home.md" in paths
+
+    def test_all_target_includes_due_today(self, tmp_path: Path):
+        conn = _conn()
+        out = tmp_path / "_Matlock"
+        paths = _compute_expected_paths(conn, out, "all")
+        assert out / "Due Today.md" in paths
+
+    def test_all_target_includes_all_task_views(self, tmp_path: Path):
+        conn = _conn()
+        out = tmp_path / "_Matlock"
+        paths = _compute_expected_paths(conn, out, "all")
+        for name in ("Past Due.md", "Due Soon.md", "Future Due.md", "Not Due.md"):
+            assert out / name in paths
+
+    def test_dashboard_target_includes_due_today(self, tmp_path: Path):
+        conn = _conn()
+        out = tmp_path / "_Matlock"
+        paths = _compute_expected_paths(conn, out, "dashboard")
+        assert out / "Due Today.md" in paths
+
+    def test_dashboard_target_includes_all_task_views(self, tmp_path: Path):
+        conn = _conn()
+        out = tmp_path / "_Matlock"
+        paths = _compute_expected_paths(conn, out, "dashboard")
+        for name in ("Past Due.md", "Due Soon.md", "Future Due.md", "Not Due.md"):
+            assert out / name in paths
+
+    def test_dashboard_target_only_has_dashboard(self, tmp_path: Path):
+        conn = _conn()
+        _seed_project(conn, "p1", "P1")
+        out = tmp_path / "_Matlock"
+        paths = _compute_expected_paths(conn, out, "dashboard")
+        assert out / "Home.md" in paths
+        assert out / "Projects" / "p1.md" not in paths
+
+    def test_projects_target_includes_project_paths(self, tmp_path: Path):
+        conn = _conn()
+        _seed_project(conn, "p1", "P1")
+        _seed_super_project(conn, "sp1", "SP1")
+        out = tmp_path / "_Matlock"
+        paths = _compute_expected_paths(conn, out, "projects")
+        assert out / "Projects" / "p1.md" in paths
+        assert out / "Super Projects" / "sp1.md" in paths
+
+    def test_history_target_includes_metric_dates(self, tmp_path: Path):
+        conn = _conn()
+        _seed_metric(conn, "2026-04-20", None, completed=1)
+        out = tmp_path / "_Matlock"
+        paths = _compute_expected_paths(conn, out, "history")
+        assert out / _history_subpath("2026-04-20") in paths
+
+    def test_dashboard_target_includes_super_projects_index(self, tmp_path: Path):
+        conn = _conn()
+        out = tmp_path / "_Matlock"
+        paths = _compute_expected_paths(conn, out, "dashboard")
+        assert out / "Super Projects.md" in paths
+
+    def test_dashboard_target_includes_projects_index(self, tmp_path: Path):
+        conn = _conn()
+        out = tmp_path / "_Matlock"
+        paths = _compute_expected_paths(conn, out, "dashboard")
+        assert out / "Projects.md" in paths
+
+
+# ---------------------------------------------------------------------------
+# _get_due_today_tasks
+# ---------------------------------------------------------------------------
+
+
+def _seed_task_full(
+    conn,
+    task_id: str,
+    file_path: str,
+    *,
+    checked: int = 0,
+    due_date: str | None = None,
+    task_priority: str | None = None,
+    estimate_secs: int = 0,
+) -> None:
+    attrs = {}
+    if task_priority:
+        attrs["priority"] = task_priority
+    if estimate_secs:
+        attrs["estimate"] = estimate_secs
+    upsert_task(conn, {
+        "task_id": task_id,
+        "file_path": file_path,
+        "parent_task_id": None,
+        "created_date": "2026-05-01",
+        "due_date": due_date,
+        "est_comp_date": None,
+        "act_comp_date": None,
+        "checked": checked,
+        "task_text": f"Task {task_id}",
+        "overflow": 0,
+        "headers": None,
+        "attributes": json.dumps(attrs) if attrs else None,
+        "errors": None,
+        "twin_index": 0,
+    })
+
+
+def _seed_project_priority(conn, project_id: str, title: str, priority: str | None) -> None:
+    conn.execute(
+        "INSERT OR REPLACE INTO project (project_id, title, priority) VALUES (?, ?, ?)",
+        (project_id, title, priority),
+    )
+    conn.commit()
+
+
+class TestGetDueTodayTasks:
+    TODAY = "2026-05-01"
+
+    def test_returns_empty_when_no_tasks(self):
+        conn = _conn()
+        result = _get_due_today_tasks(conn, self.TODAY)
+        assert result == []
+
+    def test_excludes_checked_tasks(self):
+        conn = _conn()
+        _seed_file(conn, "/vault/f.md")
+        _seed_task_full(conn, "t1", "/vault/f.md", due_date=self.TODAY, checked=1)
+        result = _get_due_today_tasks(conn, self.TODAY)
+        assert result == []
+
+    def test_excludes_tasks_due_other_dates(self):
+        conn = _conn()
+        _seed_file(conn, "/vault/f.md")
+        _seed_task_full(conn, "t1", "/vault/f.md", due_date="2026-04-30")
+        result = _get_due_today_tasks(conn, self.TODAY)
+        assert result == []
+
+    def test_includes_task_due_today(self):
+        conn = _conn()
+        _seed_file(conn, "/vault/f.md")
+        _seed_task_full(conn, "t1", "/vault/f.md", due_date=self.TODAY)
+        result = _get_due_today_tasks(conn, self.TODAY)
+        assert len(result) == 1
+        assert result[0].task_text == "Task t1"
+
+    def test_file_stem_strips_extension(self):
+        conn = _conn()
+        _seed_file(conn, "/vault/My Note.md")
+        _seed_task_full(conn, "t1", "/vault/My Note.md", due_date=self.TODAY)
+        result = _get_due_today_tasks(conn, self.TODAY)
+        assert result[0].file_stem == "My Note"
+
+    def test_estimate_formatted_as_minutes(self):
+        conn = _conn()
+        _seed_file(conn, "/vault/f.md")
+        _seed_task_full(conn, "t1", "/vault/f.md", due_date=self.TODAY, estimate_secs=1800)
+        result = _get_due_today_tasks(conn, self.TODAY)
+        assert result[0].estimate_display == "30m"
+
+    def test_no_estimate_shows_dash(self):
+        conn = _conn()
+        _seed_file(conn, "/vault/f.md")
+        _seed_task_full(conn, "t1", "/vault/f.md", due_date=self.TODAY)
+        result = _get_due_today_tasks(conn, self.TODAY)
+        assert result[0].estimate_display == "—"
+
+    def test_task_priority_high_sorts_first(self):
+        conn = _conn()
+        _seed_file(conn, "/vault/f.md")
+        _seed_task_full(conn, "t_low", "/vault/f.md", due_date=self.TODAY, task_priority="Low")
+        _seed_task_full(conn, "t_high", "/vault/f.md", due_date=self.TODAY, task_priority="High")
+        _seed_task_full(conn, "t_none", "/vault/f.md", due_date=self.TODAY)
+        result = _get_due_today_tasks(conn, self.TODAY)
+        priorities = [t.task_priority for t in result]
+        assert priorities == ["High", "Low", None]
+
+    def test_lowercase_priority_normalised(self):
+        """Priorities stored as 'high'/'medium'/'low' (lowercase) must be treated the same as title-case."""
+        conn = _conn()
+        _seed_file(conn, "/vault/f.md")
+        _seed_task_full(conn, "t1", "/vault/f.md", due_date=self.TODAY, task_priority="high")
+        result = _get_due_today_tasks(conn, self.TODAY)
+        assert result[0].task_priority == "High"
+        assert result[0].task_priority_rank == 0
+
+    def test_project_priority_used_as_tiebreaker(self):
+        conn = _conn()
+        _seed_file(conn, "/vault/a.md")
+        _seed_file(conn, "/vault/b.md")
+        _seed_project_priority(conn, "p_high", "High Project", "High")
+        _seed_project_priority(conn, "p_low", "Low Project", "Low")
+        conn.execute("INSERT OR REPLACE INTO file_project VALUES (?, ?)", ("/vault/a.md", "p_low"))
+        conn.execute("INSERT OR REPLACE INTO file_project VALUES (?, ?)", ("/vault/b.md", "p_high"))
+        conn.commit()
+        # Both tasks have same task priority (none), sorted by project priority
+        _seed_task_full(conn, "t_low_proj", "/vault/a.md", due_date=self.TODAY)
+        _seed_task_full(conn, "t_high_proj", "/vault/b.md", due_date=self.TODAY)
+        result = _get_due_today_tasks(conn, self.TODAY)
+        assert result[0].project_id == "p_high"
+        assert result[1].project_id == "p_low"
+
+    def test_no_priority_task_sorts_last(self):
+        conn = _conn()
+        _seed_file(conn, "/vault/f.md")
+        _seed_task_full(conn, "t_med", "/vault/f.md", due_date=self.TODAY, task_priority="Medium")
+        _seed_task_full(conn, "t_none", "/vault/f.md", due_date=self.TODAY)
+        result = _get_due_today_tasks(conn, self.TODAY)
+        assert result[-1].task_priority is None
+
+    def test_project_priority_emoji_high(self):
+        conn = _conn()
+        _seed_file(conn, "/vault/f.md")
+        _seed_project_priority(conn, "p1", "P1", "High")
+        conn.execute("INSERT OR REPLACE INTO file_project VALUES (?, ?)", ("/vault/f.md", "p1"))
+        conn.commit()
+        _seed_task_full(conn, "t1", "/vault/f.md", due_date=self.TODAY)
+        result = _get_due_today_tasks(conn, self.TODAY)
+        assert result[0].project_priority_emoji == "⏫"
+
+    def test_task_without_project(self):
+        conn = _conn()
+        _seed_file(conn, "/vault/f.md")
+        _seed_task_full(conn, "t1", "/vault/f.md", due_date=self.TODAY)
+        result = _get_due_today_tasks(conn, self.TODAY)
+        assert result[0].project_id is None
+        assert result[0].project_title is None
+
+    def test_excludes_tasks_on_deleted_files(self):
+        conn = _conn()
+        upsert_file(conn, {
+            "file_path": "/vault/deleted.md",
+            "sha256": "x", "file_ext": ".md", "created": 0,
+            "modified": 0, "modified_date": "2026-05-01", "deleted": 1,
+            "length": 0, "word_count": 0, "meta_data": None,
+            "is_generated": 0, "needs_parsing": 0,
+        })
+        _seed_task_full(conn, "t1", "/vault/deleted.md", due_date=self.TODAY)
+        result = _get_due_today_tasks(conn, self.TODAY)
+        assert result == []
+
+
+class TestDueTodayPage:
+    TODAY = datetime.date.today().isoformat()
+
+    def _cfg(self, tmp_path: Path) -> MatlockConfig:
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        return MatlockConfig(
+            base_directory=vault,
+            db_path=tmp_path / "matlock.db",
+            output_directory=tmp_path / "_Matlock",
+        )
+
+    def test_due_today_file_created(self, tmp_path: Path):
+        cfg = self._cfg(tmp_path)
+        conn = get_connection(cfg.db_path)
+        init_db(conn)
+        run_report(cfg, conn)
+        conn.close()
+        assert (tmp_path / "_Matlock" / "Due Today.md").exists()
+
+    def test_due_today_created_by_dashboard_target(self, tmp_path: Path):
+        cfg = self._cfg(tmp_path)
+        conn = get_connection(cfg.db_path)
+        init_db(conn)
+        run_report(cfg, conn, target="dashboard")
+        conn.close()
+        assert (tmp_path / "_Matlock" / "Due Today.md").exists()
+
+    def test_due_today_not_created_by_projects_target(self, tmp_path: Path):
+        cfg = self._cfg(tmp_path)
+        conn = get_connection(cfg.db_path)
+        init_db(conn)
+        run_report(cfg, conn, target="projects")
+        conn.close()
+        assert not (tmp_path / "_Matlock" / "Due Today.md").exists()
+
+    def test_empty_page_shows_no_tasks_message(self, tmp_path: Path):
+        cfg = self._cfg(tmp_path)
+        conn = get_connection(cfg.db_path)
+        init_db(conn)
+        run_report(cfg, conn, target="dashboard")
+        conn.close()
+        content = (tmp_path / "_Matlock" / "Due Today.md").read_text()
+        assert "No tasks due today" in content
+
+    def test_page_contains_task_text(self, tmp_path: Path):
+        cfg = self._cfg(tmp_path)
+        conn = get_connection(cfg.db_path)
+        init_db(conn)
+        upsert_file(conn, {
+            "file_path": str(cfg.base_directory / "note.md"),
+            "sha256": "abc", "file_ext": ".md", "created": 0,
+            "modified": 0, "modified_date": self.TODAY, "deleted": 0,
+            "length": 0, "word_count": 0, "meta_data": None,
+            "is_generated": 0, "needs_parsing": 0,
+        })
+        upsert_task(conn, {
+            "task_id": "t1",
+            "file_path": str(cfg.base_directory / "note.md"),
+            "parent_task_id": None,
+            "created_date": self.TODAY,
+            "due_date": self.TODAY,
+            "est_comp_date": None,
+            "act_comp_date": None,
+            "checked": 0,
+            "task_text": "Fix the thing",
+            "overflow": 0,
+            "headers": None,
+            "attributes": json.dumps({"priority": "High"}),
+            "errors": None,
+            "twin_index": 0,
+        })
+        conn.commit()
+        run_report(cfg, conn, target="dashboard")
+        conn.close()
+        content = (tmp_path / "_Matlock" / "Due Today.md").read_text()
+        assert "Fix the thing" in content
+        assert "⏫ High Priority" in content
+        assert "note" in content  # wikilink stem
+
+    def test_dashboard_links_to_due_today(self, tmp_path: Path):
+        cfg = self._cfg(tmp_path)
+        conn = get_connection(cfg.db_path)
+        init_db(conn)
+        upsert_file(conn, {
+            "file_path": str(cfg.base_directory / "note.md"),
+            "sha256": "abc", "file_ext": ".md", "created": 0,
+            "modified": 0, "modified_date": self.TODAY, "deleted": 0,
+            "length": 0, "word_count": 0, "meta_data": None,
+            "is_generated": 0, "needs_parsing": 0,
+        })
+        upsert_task(conn, {
+            "task_id": "t1",
+            "file_path": str(cfg.base_directory / "note.md"),
+            "parent_task_id": None,
+            "created_date": self.TODAY,
+            "due_date": self.TODAY,
+            "est_comp_date": None,
+            "act_comp_date": None,
+            "checked": 0,
+            "task_text": "Some task",
+            "overflow": 0,
+            "headers": None,
+            "attributes": None,
+            "errors": None,
+            "twin_index": 0,
+        })
+        conn.commit()
+        run_report(cfg, conn, target="dashboard")
+        conn.close()
+        dashboard = (tmp_path / "_Matlock" / "Home.md").read_text()
+        assert "Due%20Today.md" in dashboard
+
+    def test_due_today_links_back_to_dashboard(self, tmp_path: Path):
+        cfg = self._cfg(tmp_path)
+        conn = get_connection(cfg.db_path)
+        init_db(conn)
+        run_report(cfg, conn, target="dashboard")
+        conn.close()
+        content = (tmp_path / "_Matlock" / "Due Today.md").read_text()
+        assert "[🏠 Back to Dashboard](Home.md)" in content
+
+
+# ---------------------------------------------------------------------------
+# _build_tiers
+# ---------------------------------------------------------------------------
+
+
+class TestBuildTiers:
+    def _task(self, priority, estimate_secs=0):
+        from types import SimpleNamespace
+        t = SimpleNamespace(
+            task_priority=priority,
+            task_priority_rank={"High": 0, "Medium": 1, "Low": 2, None: 3}[priority],
+            estimate_secs=estimate_secs,
+        )
+        return t
+
+    def test_four_tiers_returned(self):
+        tiers = _build_tiers([])
+        assert len(tiers) == 4
+
+    def test_tasks_grouped_by_priority(self):
+        tasks = [self._task("High"), self._task("Low"), self._task(None)]
+        tiers = _build_tiers(tasks)
+        assert len(tiers[0]["tasks"]) == 1  # High
+        assert len(tiers[1]["tasks"]) == 0  # Medium
+        assert len(tiers[2]["tasks"]) == 1  # Low
+        assert len(tiers[3]["tasks"]) == 1  # None
+
+    def test_total_est_none_when_no_estimates(self):
+        tasks = [self._task("High", 0)]
+        tiers = _build_tiers(tasks)
+        assert tiers[0]["total_est"] is None
+
+    def test_total_est_sums_minutes(self):
+        tasks = [self._task("High", 1200), self._task("High", 600)]
+        tiers = _build_tiers(tasks)
+        assert tiers[0]["total_est"] == "30m"
+
+    def test_total_est_only_for_populated_tier(self):
+        tasks = [self._task("High", 600)]
+        tiers = _build_tiers(tasks)
+        assert tiers[0]["total_est"] == "10m"
+        assert tiers[1]["total_est"] is None  # Medium empty
+
+
+# ---------------------------------------------------------------------------
+# New task query functions
+# ---------------------------------------------------------------------------
+
+_YESTERDAY = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
+_TODAY = datetime.date.today().isoformat()
+_TOMORROW = (datetime.date.today() + datetime.timedelta(days=1)).isoformat()
+_IN_5_DAYS = (datetime.date.today() + datetime.timedelta(days=5)).isoformat()
+_IN_10_DAYS = (datetime.date.today() + datetime.timedelta(days=10)).isoformat()
+
+
+class TestGetPastDueTasks:
+    def test_empty_when_nothing_past_due(self):
+        conn = _conn()
+        assert _get_past_due_tasks(conn, _TODAY) == []
+
+    def test_returns_past_due_task(self):
+        conn = _conn()
+        _seed_file(conn, "/vault/f.md")
+        _seed_task_full(conn, "t1", "/vault/f.md", due_date=_YESTERDAY)
+        result = _get_past_due_tasks(conn, _TODAY)
+        assert len(result) == 1
+
+    def test_excludes_today(self):
+        conn = _conn()
+        _seed_file(conn, "/vault/f.md")
+        _seed_task_full(conn, "t1", "/vault/f.md", due_date=_TODAY)
+        assert _get_past_due_tasks(conn, _TODAY) == []
+
+    def test_excludes_checked(self):
+        conn = _conn()
+        _seed_file(conn, "/vault/f.md")
+        _seed_task_full(conn, "t1", "/vault/f.md", due_date=_YESTERDAY, checked=1)
+        assert _get_past_due_tasks(conn, _TODAY) == []
+
+    def test_has_due_date_field(self):
+        conn = _conn()
+        _seed_file(conn, "/vault/f.md")
+        _seed_task_full(conn, "t1", "/vault/f.md", due_date=_YESTERDAY)
+        result = _get_past_due_tasks(conn, _TODAY)
+        assert result[0].due_date == _YESTERDAY
+
+    def test_sorted_by_priority_then_date(self):
+        conn = _conn()
+        _seed_file(conn, "/vault/f.md")
+        # Two high-priority tasks, different dates
+        two_days_ago = (datetime.date.today() - datetime.timedelta(days=2)).isoformat()
+        _seed_task_full(conn, "t_old", "/vault/f.md", due_date=two_days_ago, task_priority="High")
+        _seed_task_full(conn, "t_new", "/vault/f.md", due_date=_YESTERDAY, task_priority="High")
+        _seed_task_full(conn, "t_med", "/vault/f.md", due_date=_YESTERDAY, task_priority="Medium")
+        result = _get_past_due_tasks(conn, _TODAY)
+        assert result[0].due_date == two_days_ago
+        assert result[1].due_date == _YESTERDAY
+        assert result[2].task_priority == "Medium"
+
+
+class TestGetDueSoonTasks:
+    def test_empty_when_nothing_due_soon(self):
+        conn = _conn()
+        assert _get_due_soon_tasks(conn, _TODAY) == []
+
+    def test_returns_task_due_tomorrow(self):
+        conn = _conn()
+        _seed_file(conn, "/vault/f.md")
+        _seed_task_full(conn, "t1", "/vault/f.md", due_date=_TOMORROW)
+        result = _get_due_soon_tasks(conn, _TODAY)
+        assert len(result) == 1
+
+    def test_returns_task_due_in_7_days(self):
+        conn = _conn()
+        _seed_file(conn, "/vault/f.md")
+        _seed_task_full(conn, "t1", "/vault/f.md", due_date=_IN_5_DAYS)
+        result = _get_due_soon_tasks(conn, _TODAY)
+        assert len(result) == 1
+
+    def test_excludes_today(self):
+        conn = _conn()
+        _seed_file(conn, "/vault/f.md")
+        _seed_task_full(conn, "t1", "/vault/f.md", due_date=_TODAY)
+        assert _get_due_soon_tasks(conn, _TODAY) == []
+
+    def test_excludes_tasks_beyond_7_days(self):
+        conn = _conn()
+        _seed_file(conn, "/vault/f.md")
+        _seed_task_full(conn, "t1", "/vault/f.md", due_date=_IN_10_DAYS)
+        assert _get_due_soon_tasks(conn, _TODAY) == []
+
+    def test_excludes_past_due(self):
+        conn = _conn()
+        _seed_file(conn, "/vault/f.md")
+        _seed_task_full(conn, "t1", "/vault/f.md", due_date=_YESTERDAY)
+        assert _get_due_soon_tasks(conn, _TODAY) == []
+
+
+class TestGetFutureDueTasks:
+    def test_empty_when_nothing_future(self):
+        conn = _conn()
+        assert _get_future_due_tasks(conn, _TODAY) == []
+
+    def test_returns_task_due_in_10_days(self):
+        conn = _conn()
+        _seed_file(conn, "/vault/f.md")
+        _seed_task_full(conn, "t1", "/vault/f.md", due_date=_IN_10_DAYS)
+        result = _get_future_due_tasks(conn, _TODAY)
+        assert len(result) == 1
+
+    def test_excludes_tasks_within_7_days(self):
+        conn = _conn()
+        _seed_file(conn, "/vault/f.md")
+        _seed_task_full(conn, "t1", "/vault/f.md", due_date=_IN_5_DAYS)
+        assert _get_future_due_tasks(conn, _TODAY) == []
+
+    def test_excludes_today(self):
+        conn = _conn()
+        _seed_file(conn, "/vault/f.md")
+        _seed_task_full(conn, "t1", "/vault/f.md", due_date=_TODAY)
+        assert _get_future_due_tasks(conn, _TODAY) == []
+
+
+class TestGetNotDueTasks:
+    def test_empty_when_all_have_dates(self):
+        conn = _conn()
+        _seed_file(conn, "/vault/f.md")
+        _seed_task_full(conn, "t1", "/vault/f.md", due_date=_TODAY)
+        assert _get_not_due_tasks(conn) == []
+
+    def test_returns_task_with_no_date(self):
+        conn = _conn()
+        _seed_file(conn, "/vault/f.md")
+        _seed_task_full(conn, "t1", "/vault/f.md")
+        result = _get_not_due_tasks(conn)
+        assert len(result) == 1
+        assert result[0].due_date is None
+
+    def test_excludes_checked(self):
+        conn = _conn()
+        _seed_file(conn, "/vault/f.md")
+        _seed_task_full(conn, "t1", "/vault/f.md", checked=1)
+        assert _get_not_due_tasks(conn) == []
+
+
+# ---------------------------------------------------------------------------
+# New task view pages
+# ---------------------------------------------------------------------------
+
+
+class TestTaskViewPages:
+    """Smoke tests that the 4 new task-view pages are created by run_report."""
+
+    TODAY = datetime.date.today().isoformat()
+
+    def _cfg(self, tmp_path: Path) -> MatlockConfig:
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        return MatlockConfig(
+            base_directory=vault,
+            db_path=tmp_path / "matlock.db",
+            output_directory=tmp_path / "_Matlock",
+        )
+
+    def test_all_task_view_files_created(self, tmp_path: Path):
+        cfg = self._cfg(tmp_path)
+        conn = get_connection(cfg.db_path)
+        init_db(conn)
+        run_report(cfg, conn, target="dashboard")
+        conn.close()
+        for name in ("Past Due.md", "Due Soon.md", "Future Due.md", "Not Due.md"):
+            assert (tmp_path / "_Matlock" / name).exists(), f"Missing {name}"
+
+    def test_past_due_shows_overdue_task(self, tmp_path: Path):
+        cfg = self._cfg(tmp_path)
+        conn = get_connection(cfg.db_path)
+        init_db(conn)
+        yesterday = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
+        fp = str(cfg.base_directory / "note.md")
+        upsert_file(conn, {"file_path": fp, "sha256": "x", "file_ext": ".md",
+                            "created": 0, "modified": 0, "modified_date": self.TODAY,
+                            "deleted": 0, "length": 0, "word_count": 0,
+                            "meta_data": None, "is_generated": 0, "needs_parsing": 0})
+        upsert_task(conn, {"task_id": "t1", "file_path": fp, "parent_task_id": None,
+                           "created_date": self.TODAY, "due_date": yesterday,
+                           "est_comp_date": None, "act_comp_date": None, "checked": 0,
+                           "task_text": "Overdue thing", "overflow": 0, "headers": None,
+                           "attributes": None, "errors": None, "twin_index": 0})
+        conn.commit()
+        run_report(cfg, conn, target="dashboard")
+        conn.close()
+        content = (tmp_path / "_Matlock" / "Past Due.md").read_text()
+        assert "Overdue thing" in content
+        assert yesterday in content
+
+    def test_due_soon_shows_upcoming_task(self, tmp_path: Path):
+        cfg = self._cfg(tmp_path)
+        conn = get_connection(cfg.db_path)
+        init_db(conn)
+        in_3 = (datetime.date.today() + datetime.timedelta(days=3)).isoformat()
+        fp = str(cfg.base_directory / "note.md")
+        upsert_file(conn, {"file_path": fp, "sha256": "x", "file_ext": ".md",
+                            "created": 0, "modified": 0, "modified_date": self.TODAY,
+                            "deleted": 0, "length": 0, "word_count": 0,
+                            "meta_data": None, "is_generated": 0, "needs_parsing": 0})
+        upsert_task(conn, {"task_id": "t1", "file_path": fp, "parent_task_id": None,
+                           "created_date": self.TODAY, "due_date": in_3,
+                           "est_comp_date": None, "act_comp_date": None, "checked": 0,
+                           "task_text": "Coming up soon", "overflow": 0, "headers": None,
+                           "attributes": None, "errors": None, "twin_index": 0})
+        conn.commit()
+        run_report(cfg, conn, target="dashboard")
+        conn.close()
+        content = (tmp_path / "_Matlock" / "Due Soon.md").read_text()
+        assert "Coming up soon" in content
+
+    def test_not_due_shows_undated_task(self, tmp_path: Path):
+        cfg = self._cfg(tmp_path)
+        conn = get_connection(cfg.db_path)
+        init_db(conn)
+        fp = str(cfg.base_directory / "note.md")
+        upsert_file(conn, {"file_path": fp, "sha256": "x", "file_ext": ".md",
+                            "created": 0, "modified": 0, "modified_date": self.TODAY,
+                            "deleted": 0, "length": 0, "word_count": 0,
+                            "meta_data": None, "is_generated": 0, "needs_parsing": 0})
+        upsert_task(conn, {"task_id": "t1", "file_path": fp, "parent_task_id": None,
+                           "created_date": self.TODAY, "due_date": None,
+                           "est_comp_date": None, "act_comp_date": None, "checked": 0,
+                           "task_text": "No date task", "overflow": 0, "headers": None,
+                           "attributes": None, "errors": None, "twin_index": 0})
+        conn.commit()
+        run_report(cfg, conn, target="dashboard")
+        conn.close()
+        content = (tmp_path / "_Matlock" / "Not Due.md").read_text()
+        assert "No date task" in content
+
+    def test_estimate_total_in_tier_heading(self, tmp_path: Path):
+        cfg = self._cfg(tmp_path)
+        conn = get_connection(cfg.db_path)
+        init_db(conn)
+        fp = str(cfg.base_directory / "note.md")
+        upsert_file(conn, {"file_path": fp, "sha256": "x", "file_ext": ".md",
+                            "created": 0, "modified": 0, "modified_date": self.TODAY,
+                            "deleted": 0, "length": 0, "word_count": 0,
+                            "meta_data": None, "is_generated": 0, "needs_parsing": 0})
+        upsert_task(conn, {"task_id": "t1", "file_path": fp, "parent_task_id": None,
+                           "created_date": self.TODAY, "due_date": self.TODAY,
+                           "est_comp_date": None, "act_comp_date": None, "checked": 0,
+                           "task_text": "Estimated task", "overflow": 0, "headers": None,
+                           "attributes": json.dumps({"priority": "High", "estimate": 1800}),
+                           "errors": None, "twin_index": 0})
+        conn.commit()
+        run_report(cfg, conn, target="dashboard")
+        conn.close()
+        content = (tmp_path / "_Matlock" / "Due Today.md").read_text()
+        assert "30m" in content
+        assert "⏫ High Priority" in content
+
+    def test_dashboard_has_task_views_nav(self, tmp_path: Path):
+        cfg = self._cfg(tmp_path)
+        conn = get_connection(cfg.db_path)
+        init_db(conn)
+        run_report(cfg, conn, target="dashboard")
+        conn.close()
+        content = (tmp_path / "_Matlock" / "Home.md").read_text()
+        assert "Past%20Due.md" in content
+        assert "Due%20Soon.md" in content
+        assert "Future%20Due.md" in content
+        assert "Not%20Due.md" in content
+
+    def test_dashboard_task_matrix_links_populated_cells_to_page_anchors(self, tmp_path: Path):
+        cfg = self._cfg(tmp_path)
+        conn = get_connection(cfg.db_path)
+        init_db(conn)
+
+        fp = str(cfg.base_directory / "note.md")
+        upsert_file(conn, {"file_path": fp, "sha256": "x", "file_ext": ".md",
+                           "created": 0, "modified": 0, "modified_date": self.TODAY,
+                           "deleted": 0, "length": 0, "word_count": 0,
+                           "meta_data": None, "is_generated": 0, "needs_parsing": 0})
+
+        yesterday = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
+        in_3_days = (datetime.date.today() + datetime.timedelta(days=3)).isoformat()
+
+        upsert_task(conn, {"task_id": "t_due_today", "file_path": fp, "parent_task_id": None,
+                           "created_date": self.TODAY, "due_date": self.TODAY,
+                           "est_comp_date": None, "act_comp_date": None, "checked": 0,
+                           "task_text": "Due today high", "overflow": 0, "headers": None,
+                           "attributes": json.dumps({"priority": "High", "estimate": 120}),
+                           "errors": None, "twin_index": 0})
+
+        upsert_task(conn, {"task_id": "t_past_due", "file_path": fp, "parent_task_id": None,
+                           "created_date": self.TODAY, "due_date": yesterday,
+                           "est_comp_date": None, "act_comp_date": None, "checked": 0,
+                           "task_text": "Past due low", "overflow": 0, "headers": None,
+                           "attributes": json.dumps({"priority": "Low"}),
+                           "errors": None, "twin_index": 0})
+
+        upsert_task(conn, {"task_id": "t_due_soon", "file_path": fp, "parent_task_id": None,
+                           "created_date": self.TODAY, "due_date": in_3_days,
+                           "est_comp_date": None, "act_comp_date": None, "checked": 0,
+                           "task_text": "Due soon none", "overflow": 0, "headers": None,
+                           "attributes": None,
+                           "errors": None, "twin_index": 0})
+
+        conn.commit()
+        run_report(cfg, conn, target="dashboard")
+        conn.close()
+
+        dashboard = (tmp_path / "_Matlock" / "Home.md").read_text()
+        assert "📋 Tasks" in dashboard
+        assert "[1 (2m)](Due%20Today.md#priority-high)" in dashboard
+        assert "[1 (0m)](Past%20Due.md#priority-low)" in dashboard
+        assert "[1 (0m)](Due%20Soon.md#priority-none)" in dashboard
+        assert "Future%20Due.md#priority-high" not in dashboard
+
+        due_today_page = (tmp_path / "_Matlock" / "Due Today.md").read_text()
+        past_due_page = (tmp_path / "_Matlock" / "Past Due.md").read_text()
+        due_soon_page = (tmp_path / "_Matlock" / "Due Soon.md").read_text()
+
+        assert '<a id="priority-high"></a>' in due_today_page
+        assert '<a id="priority-low"></a>' in past_due_page
+        assert '<a id="priority-none"></a>' in due_soon_page

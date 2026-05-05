@@ -1,5 +1,6 @@
-# 📅 Daily History: {{ metric_date }}
-**Day of Week:** {{ day_of_week }}
+# 📅 Daily History: {{ metric_date }} {{ day_of_week }}
+
+**Generated:** {{ generated_at }} | [🏠 Home]({{ dashboard_link }}){% if prev_date %} | [⬅ {{ prev_date }}]({{ history_link(prev_date) }}){% endif %}{% if next_date %} | [{{ next_date }} ➡]({{ history_link(next_date) }}){% endif %}
 
 ## 📈 Daily Totals
 | Metric | Count | Minutes |
@@ -8,12 +9,46 @@
 | **Tasks Created** | {{ totals.tasks_created_count }} | {{ totals.tasks_created_minutes }} |
 | **Files Modified** | {{ totals.files_modified_count }} | — |
 
-## 📊 Breakdown by Project
-{% for row in project_rows %}
-### {% if row.project %}[[{{ row.project.id }}]]{% else %}Unassigned{% endif %}
-- Tasks Completed: {{ row.tasks_completed_count }} ({{ row.tasks_completed_minutes }} mins)
-- End-of-Day Overdue: {{ row.tasks_past_due_count }}
+## 🌍 Summary by Super-Project
+{% if super_project_summary %}
+| Super-Project | Created | Created (m) | Completed | Completed (m) |
+| :--- | :--- | :--- | :--- | :--- |
+{% for row in super_project_summary %}
+| {% if row.sp_link %}[{{ row.super_project_title }}]({{ row.sp_link }}){% else %}{{ row.super_project_title }}{% endif %} | {{ row.tasks_created_count }} | {{ row.tasks_created_minutes }} | {{ row.tasks_completed_count }} | {{ row.tasks_completed_minutes }} |
 {% endfor %}
+{% else %}
+*No super-project data available.*
+{% endif %}
 
-## ⬅️ Navigation
-* **Previous Day:** [[{{ prev_date }}]] | **Back to Dashboard:** [[000_Daily_Dashboard]]
+## 🚀 Summary by Project
+{% if project_rows %}
+| Project | Created | Created (m) | Completed | Completed (m) | Overdue (EoD) |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+{% for row in project_rows %}
+| {% if row.project %}[{{ row.project.title }}]({{ project_link(row.project.id) }}){% else %}Unassigned{% endif %} | {{ row.tasks_created_count }} | {{ row.tasks_created_minutes }} | {{ row.tasks_completed_count }} | {{ row.tasks_completed_minutes }} | {{ row.tasks_past_due_count }} |
+{% endfor %}
+{% else %}
+*No project data available.*
+{% endif %}
+
+## 📄 Files Touched
+{% if file_touches %}
+| File | Event | Time |
+| :--- | :--- | :--- |
+{% for ft in file_touches %}
+| [{{ ft.file_path | basename }}]({{ ft.source_link }}) | {{ ft.event_type }} | {{ ft.modified_text }} |
+{% endfor %}
+{% else %}
+*No file-touch data available for this date.*
+{% endif %}
+
+## ✅ Tasks This Day
+{% if task_list %}
+| Task | Events | Estimate | Project |
+| :--- | :--- | :--- | :--- |
+{% for t in task_list %}
+| {% if t.source_link %}[{{ t.task_text }}]({{ t.source_link }}){% else %}{{ t.task_text }}{% endif %} | {{ t.events_display }} | {{ t.estimate_display }} | {% if t.project_link %}[{{ t.project_title }}]({{ t.project_link }}){% else %}—{% endif %} |
+{% endfor %}
+{% else %}
+*No task-event data available for this date.*
+{% endif %}

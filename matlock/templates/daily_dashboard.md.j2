@@ -1,5 +1,10 @@
-# ☀️ Good Morning: Matlock Daily Dashboard
+# 🎯 Matlock Daily Dashboard
 **Date Generated:** {{ generated_at }}
+
+## 🔗 Quick Links
+- [⚠️ Warnings]({{ warnings_link }})
+- [🌍 Super Projects]({{ super_projects_index_link }})
+- [🚀 Projects]({{ projects_index_link }})
 
 ## 🔥 Momentum & Streaks
 * **Current Streak:** {{ current_streak }} Days
@@ -14,35 +19,34 @@
 | **{{ day }}** | {{ heatmap[day][-5] }} | {{ heatmap[day][-4] }} | {{ heatmap[day][-3] }} | {{ heatmap[day][-2] }} | {{ heatmap[day][-1] }} |
 {% endfor %}
 ## 🏆 Yesterday's Wins
-*You completed **{{ yesterday_completed_count }} tasks**. View full details: [[{{ yesterday_date }}]]*
+*You completed **{{ yesterday_completed_count }} tasks**. View full details: [{{ yesterday_date }}]({{ history_link(yesterday_date) }})*
 {% for project_id, count in yesterday_by_project.items() %}
-- **[[{{ project_id }}]]**: {{ count }} tasks completed
+- **[{{ project_id }}]({{ project_link(project_id) }})**: {{ count }} tasks completed
 {%- endfor %}
 
-## 🎯 Today's Focus
+### 📋 Tasks
+| View | ⏫ High | 🔼 Medium | 🔽 Low | None |
+|:-----|:-------:|:---------:|:------:|:----:|
+{% for row in task_view_table_rows %}
+| [{{ row.label }}]({{ row.view_link }}) | {% if row.cells[0].link %}[{{ row.cells[0].display }}]({{ row.cells[0].link }}){% else %}-{% endif %} | {% if row.cells[1].link %}[{{ row.cells[1].display }}]({{ row.cells[1].link }}){% else %}-{% endif %} | {% if row.cells[2].link %}[{{ row.cells[2].display }}]({{ row.cells[2].link }}){% else %}-{% endif %} | {% if row.cells[3].link %}[{{ row.cells[3].display }}]({{ row.cells[3].link }}){% else %}-{% endif %} |
+{% endfor %}
 
-### ⏰ Past Due
-{% if past_due_tasks %}
-{% for task in past_due_tasks %}
-- [ ] {{ task.task_text }} *(Due: {{ task.due_date }})* 🔗 [[{{ task.file_path | basename }}]]
-{%- endfor %}
+## 🌍 Active Super Projects
+{% if active_super_project_rows %}
+| Super Project | Current Streak | Health | Last Updated | Due Today (count + est) | Past Due | Due Soon | Future Due | Not Due |
+|:--------------|:--------------:|:------:|:------------:|:-----------------------:|:--------:|:--------:|:----------:|:-------:|
+{% for row in active_super_project_rows %}
+| [{{ row.super_project_label }}]({{ row.super_project_link }}) | {{ row.current_streak }} | {{ row.health }} | {{ row.last_updated }} | {{ row.due_today_display }} | {{ row.past_due_display }} | {{ row.due_soon_display }} | {{ row.future_due_display }} | {{ row.not_due_display }} |
+{% endfor %}
 {% else %}
-*Nothing past due. Keep it up!*
+*No active super projects with In Progress child projects.*
 {% endif %}
 
-### 📅 Due Today
-{% if due_today_tasks %}
-{% for task in due_today_tasks %}
-- [ ] {{ task.task_text }} 🔗 [[{{ task.file_path | basename }}]]
-{%- endfor %}
+## 🕒 Recently Changed Files
+{% if recently_changed_files %}
+{% for file in recently_changed_files %}
+- **{{ file.changed_at_text }}** - [{{ file.file_path | basename }}]({{ source_link(file.file_path) }})
+{% endfor %}
 {% else %}
-*No tasks due today.*
+*No tracked files found.*
 {% endif %}
-
-## 🧭 Active Projects Hub
-{% for sp in super_projects %}
-- 🌍 [[{{ sp.id }}]] — {{ sp.title }}
-{% endfor %}
-{% for p in projects %}
-- 🚀 [[{{ p.id }}]] — {{ p.title }}
-{% endfor %}

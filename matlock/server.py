@@ -21,6 +21,7 @@ from watchdog.observers import Observer
 
 from matlock.config import MatlockConfig
 from matlock.db import get_connection, init_db
+from matlock.stages.map_projects import run_map_projects
 from matlock.stages.parse import run_parse
 from matlock.stages.report import run_report
 from matlock.stages.rollup import run_rollup
@@ -138,6 +139,7 @@ def _debouncer_thread(
             conn = get_connection(config.db_path)
             try:
                 init_db(conn)
+                run_map_projects(config, conn)
                 run_report(config, conn, target="all")
             finally:
                 conn.close()
@@ -161,6 +163,7 @@ def _seconds_until_midnight() -> float:
 def _scheduler_thread(
     config: MatlockConfig,
     stop_event: threading.Event,
+    skip_rollup: bool = False,
 ) -> None:
     """At 00:01 each night, run rollup then a full report."""
     while not stop_event.is_set():
@@ -181,7 +184,9 @@ def _scheduler_thread(
             conn = get_connection(config.db_path)
             try:
                 init_db(conn)
-                run_rollup(config, conn, rollup_date)
+                if not skip_rollup:
+                    run_rollup(config, conn, rollup_date)
+                run_map_projects(config, conn)
                 run_report(config, conn, target="all")
             finally:
                 conn.close()
@@ -201,6 +206,9 @@ def typer_echo(message: str) -> None:
 def run_server(
     config: MatlockConfig,
     debounce_seconds: int | None = None,
+    skip_rollup: bool = False,
+    force_sync: bool = False,
+    force_report: bool = False,
 ) -> None:
     """Start the file watcher, debouncer, and scheduler. Blocks until SIGINT.
 
@@ -211,8 +219,32 @@ def run_server(
     debounce_seconds:
         Idle window (seconds) before triggering report after file changes.
         Overrides ``config.debounce_seconds`` when provided.
+    skip_rollup:
+        When True, the nightly scheduler skips the rollup step.
+    force_sync:
+        When True, run a full forced sync+parse once at startup before the watcher starts.
+    force_report:
+        When True, run a full forced report once at startup (after any startup sync).
     """
     effective_debounce = debounce_seconds if debounce_seconds is not None else config.debounce_seconds
+
+    # Startup block: one-time operations before the watcher starts
+    if force_sync or force_report:
+        startup_conn = get_connection(config.db_path)
+        try:
+            init_db(startup_conn)
+            if force_sync:
+                typer_echo("[startup] forced sync+parse starting")
+                run_sync(config, startup_conn, force=True)
+                run_parse(config, startup_conn)
+                typer_echo("[startup] forced sync+parse complete")
+            if force_report:
+                typer_echo("[startup] forced report starting")
+                run_map_projects(config, startup_conn)
+                run_report(config, startup_conn, target="all", force=True)
+                typer_echo("[startup] forced report complete")
+        finally:
+            startup_conn.close()
 
     # Shared state
     dirty_projects: set[str] = set()
@@ -244,7 +276,7 @@ def run_server(
     # Scheduler thread
     scheduler = threading.Thread(
         target=_scheduler_thread,
-        args=(config, stop_event),
+        args=(config, stop_event, skip_rollup),
         daemon=True,
         name="matlock-scheduler",
     )

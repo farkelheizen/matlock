@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 # ---------------------------------------------------------------------------
@@ -58,6 +58,40 @@ class SuperProjectConfig(BaseModel):
     priority: str | None = None
 
 
+_VALID_PROJECT_STATUSES = {"Planned", "In Progress", "Complete", "On Hold", "Cancelled"}
+
+_STATUS_CASE_MAP = {s.lower(): s for s in _VALID_PROJECT_STATUSES}
+
+_VALID_PRIORITIES = {"Low", "Medium", "High"}
+
+_PRIORITY_CASE_MAP = {p.lower(): p for p in _VALID_PRIORITIES}
+
+
+def _normalise_priority(v: object) -> str | None:
+    if v is None:
+        return None
+    normalised = _PRIORITY_CASE_MAP.get(str(v).lower())
+    if normalised is None:
+        raise ValueError(
+            f"Invalid priority {v!r}. "
+            f"Must be one of: {sorted(_VALID_PRIORITIES)}"
+        )
+    return normalised
+
+
+class SuperProjectConfig(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    id: str
+    title: str
+    priority: str | None = None
+
+    @field_validator("priority", mode="before")
+    @classmethod
+    def _normalise_priority(cls, v: object) -> str | None:
+        return _normalise_priority(v)
+
+
 class ProjectConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -66,9 +100,28 @@ class ProjectConfig(BaseModel):
     super_project_id: str | None = None
     home_file: str | None = None
     priority: str | None = None
+    status: str | None = None
     start_date: str | None = None
     due_date: str | None = None
     resources: list[ResourceConfig] = Field(default_factory=list)
+
+    @field_validator("priority", mode="before")
+    @classmethod
+    def _normalise_priority(cls, v: object) -> str | None:
+        return _normalise_priority(v)
+
+    @field_validator("status", mode="before")
+    @classmethod
+    def _normalise_status(cls, v: object) -> str | None:
+        if v is None:
+            return None
+        normalised = _STATUS_CASE_MAP.get(str(v).lower())
+        if normalised is None:
+            raise ValueError(
+                f"Invalid project status {v!r}. "
+                f"Must be one of: {sorted(_VALID_PROJECT_STATUSES)}"
+            )
+        return normalised
 
 
 # ---------------------------------------------------------------------------
@@ -101,6 +154,7 @@ class MatlockConfig(BaseModel):
     output_directory: Path
     ignore_dirs: list[str] = Field(default_factory=list)
     debounce_seconds: int = 5
+    dashboard_recent_changes_limit: int = Field(default=10, ge=1)
     headers: HeadersConfig = Field(default_factory=HeadersConfig)
     tasks: TasksConfig = Field(default_factory=TasksConfig)
     task_attributes: dict[str, TaskAttributeConfig] = Field(default_factory=dict)

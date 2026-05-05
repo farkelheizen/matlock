@@ -25,7 +25,7 @@ Keep the `file` table in sync with the physical filesystem under `base_directory
    - If the file is **new** (not in `file` table): insert a row with `needs_parsing = 1`.
    - If the file **exists** and its hash has changed: update the row, set `needs_parsing = 1`.
    - If the file **exists** and its hash is unchanged: no write needed (skip).
-3. For files in the `file` table that were **not found** on disk: set `deleted = 1`.
+3. For files in the `file` table that were **not found** on disk: set `deleted = 1` and `deleted_date = today` (YYYY-MM-DD). If `deleted_date` is already set, it is not overwritten (preserves the first detection date).
 
 ### Flags
 
@@ -132,6 +132,16 @@ Calculate historical metrics for the previous day and persist them to `daily_met
    - `tasks_future_due_count/minutes`: tasks whose `due_date > rollup_date` and `checked = 0`.
 3. Count file activity from the `file` table using `modified_date`.
 4. Upsert all rows into `daily_metric` (idempotent; re-running the same date is safe).
+5. **Populate `file_touch`** for `rollup_date`: query the `file` table for three event types and upsert one row per event into `file_touch`:
+   - `created`: files with `date(created/1000, 'unixepoch') = rollup_date AND is_generated = 0`
+   - `modified`: files with `modified_date = rollup_date AND deleted = 0 AND is_generated = 0`
+   - `deleted`: files with `deleted_date = rollup_date AND deleted = 1 AND is_generated = 0`
+6. **Populate `daily_task`** for `rollup_date`: query the `task` table for two event types and upsert one row per event into `daily_task`:
+   - `created`: tasks whose `created_date = rollup_date` (file not deleted)
+   - `completed`: tasks whose `act_comp_date = rollup_date AND checked = 1` (file not deleted)
+   - Denormalized fields (`task_text`, `file_path`, `attributes`) are snapshotted at rollup time so that history pages remain accurate even if the source task is later edited or deleted.
+
+Both steps are idempotent via `INSERT OR REPLACE`.
 
 ### Streak Calculation
 
@@ -159,9 +169,19 @@ Query the database and render Jinja2 Markdown dashboards into the `output_direct
 
 | Template | Output Path | Trigger |
 |:---------|:------------|:--------|
-| `daily_dashboard.md.j2` | `_Matlock/000_Daily_Dashboard.md` | `matlock report` or `run-all` |
-| `super_project.md.j2` | `_Matlock/SuperProjects/<id>.md` | Per super-project |
+| `daily_dashboard.md.j2` | `_Matlock/Home.md` | `matlock report` or `run-all` |
+| `due_today.md.j2` | `_Matlock/Due Today.md` | `matlock report` or `run-all` |
+| `past_due.md.j2` | `_Matlock/Past Due.md` | `matlock report` or `run-all` |
+| `due_soon.md.j2` | `_Matlock/Due Soon.md` | `matlock report` or `run-all` |
+| `future_due.md.j2` | `_Matlock/Future Due.md` | `matlock report` or `run-all` |
+| `not_due.md.j2` | `_Matlock/Not Due.md` | `matlock report` or `run-all` |
+| `warnings.md.j2` | `_Matlock/Warnings.md` | `matlock report` or `run-all` |
+| `super_projects_index.md.j2` | `_Matlock/Super Projects.md` | `matlock report` or `run-all` |
+| `projects_index.md.j2` | `_Matlock/Projects.md` | `matlock report` or `run-all` |
+| `super_project.md.j2` | `_Matlock/Super Projects/<id>.md` | Per super-project |
+| `super_project.md.j2` | `_Matlock/Super Projects/Unassigned.md` | Virtual page — always generated |
 | `project.md.j2` | `_Matlock/Projects/<id>.md` | Per project |
+| `project.md.j2` | `_Matlock/Projects/Unassigned.md` | Virtual page — always generated |
 | `daily_history.md.j2` | `_Matlock/History/<YYYY-MM-DD>.md` | After `rollup` |
 
 ### Logic

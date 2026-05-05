@@ -18,7 +18,9 @@ from matlock.db import (
     replace_projects,
     replace_super_projects,
     set_needs_parsing,
+    upsert_daily_task,
     upsert_file,
+    upsert_file_touch,
     upsert_task,
 )
 
@@ -134,7 +136,10 @@ def test_all_six_tables_created(conn):
             "SELECT name FROM sqlite_master WHERE type='table'"
         ).fetchall()
     }
-    assert tables == {"file", "task", "super_project", "project", "file_project", "daily_metric"}
+    assert tables == {
+        "file", "task", "super_project", "project", "file_project",
+        "daily_metric", "file_touch", "daily_task",
+    }
 
 
 def test_init_db_idempotent(conn):
@@ -143,7 +148,7 @@ def test_init_db_idempotent(conn):
     tables = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table'"
     ).fetchall()
-    assert len(tables) == 6
+    assert len(tables) == 8
 
 
 def test_daily_metric_project_id_nullable(conn):
@@ -224,7 +229,21 @@ def test_mark_file_deleted(conn):
     conn.commit()
     mark_file_deleted(conn, "Notes/foo.md")
     conn.commit()
-    assert get_file(conn, "Notes/foo.md")["deleted"] == 1
+    row = get_file(conn, "Notes/foo.md")
+    assert row["deleted"] == 1
+    # deleted_date defaults to today
+    import datetime
+    assert row["deleted_date"] == datetime.date.today().isoformat()
+
+
+def test_mark_file_deleted_explicit_date(conn):
+    upsert_file(conn, _file_row())
+    conn.commit()
+    mark_file_deleted(conn, "Notes/foo.md", deleted_date="2026-01-15")
+    conn.commit()
+    row = get_file(conn, "Notes/foo.md")
+    assert row["deleted"] == 1
+    assert row["deleted_date"] == "2026-01-15"
 
 
 def test_mark_file_deleted_excluded_from_needs_parsing(conn):
@@ -328,6 +347,7 @@ def _proj(id_: str, sp_id: str | None = None) -> dict:
         "title": f"Project {id_}",
         "home_file": None,
         "priority": None,
+        "status": None,
         "start_date": None,
         "due_date": None,
     }
@@ -386,3 +406,110 @@ def test_replace_super_projects_empty_list(conn):
     replace_super_projects(conn, [])
     conn.commit()
     assert conn.execute("SELECT * FROM super_project").fetchall() == []
+
+
+# ---------------------------------------------------------------------------
+# file_touch table helpers
+# ---------------------------------------------------------------------------
+
+
+def _ft(file_path="Notes/foo.md", touch_date="2026-05-01", event_type="modified", modified=2000):
+    return {
+        "file_path": file_path,
+        "touch_date": touch_date,
+        "event_type": event_type,
+        "modified": modified,
+    }
+
+
+def test_upsert_file_touch_insert(conn):
+    upsert_file_touch(conn, _ft())
+    conn.commit()
+    rows = conn.execute("SELECT * FROM file_touch").fetchall()
+    assert len(rows) == 1
+    assert rows[0]["file_path"] == "Notes/foo.md"
+    assert rows[0]["event_type"] == "modified"
+
+
+def test_upsert_file_touch_replaces_same_pk(conn):
+    upsert_file_touch(conn, _ft(modified=1000))
+    conn.commit()
+    upsert_file_touch(conn, _ft(modified=9999))
+    conn.commit()
+    rows = conn.execute("SELECT * FROM file_touch").fetchall()
+    assert len(rows) == 1
+    assert rows[0]["modified"] == 9999
+
+
+def test_upsert_file_touch_different_event_types(conn):
+    upsert_file_touch(conn, _ft(event_type="created"))
+    upsert_file_touch(conn, _ft(event_type="modified"))
+    upsert_file_touch(conn, _ft(event_type="deleted", modified=None))
+    conn.commit()
+    rows = conn.execute("SELECT * FROM file_touch ORDER BY event_type").fetchall()
+    assert len(rows) == 3
+    event_types = {r["event_type"] for r in rows}
+    assert event_types == {"created", "modified", "deleted"}
+
+
+def test_file_touch_migration_adds_table(tmp_path):
+    """Calling init_db on a fresh DB creates the file_touch table."""
+    from matlock.db import get_connection, init_db
+    db_path = tmp_path / "test.db"
+    c = get_connection(db_path)
+    init_db(c)
+    tables = {r["name"] for r in c.execute(
+        "SELECT name FROM sqlite_master WHERE type='table'"
+    ).fetchall()}
+    assert "file_touch" in tables
+    c.close()
+
+
+# ---------------------------------------------------------------------------
+# daily_task table helpers
+# ---------------------------------------------------------------------------
+
+
+def _dt_row(task_id="t1", event_date="2026-05-01", event_type="created"):
+    return {
+        "task_id": task_id,
+        "event_date": event_date,
+        "event_type": event_type,
+        "task_text": "Do something",
+        "file_path": "Notes/foo.md",
+        "attributes": '{"estimate": 3600}',
+    }
+
+
+def test_upsert_daily_task_insert(conn):
+    upsert_daily_task(conn, _dt_row())
+    conn.commit()
+    rows = conn.execute("SELECT * FROM daily_task").fetchall()
+    assert len(rows) == 1
+    assert rows[0]["task_id"] == "t1"
+    assert rows[0]["event_type"] == "created"
+
+
+def test_upsert_daily_task_replaces_same_pk(conn):
+    upsert_daily_task(conn, _dt_row(task_id="t1"))
+    conn.commit()
+    upsert_daily_task(conn, {**_dt_row(task_id="t1"), "task_text": "Updated text"})
+    conn.commit()
+    rows = conn.execute("SELECT * FROM daily_task").fetchall()
+    assert len(rows) == 1
+    assert rows[0]["task_text"] == "Updated text"
+
+
+def test_upsert_daily_task_created_and_completed_same_day(conn):
+    upsert_daily_task(conn, _dt_row(event_type="created"))
+    upsert_daily_task(conn, _dt_row(event_type="completed"))
+    conn.commit()
+    rows = conn.execute("SELECT * FROM daily_task ORDER BY event_type").fetchall()
+    assert len(rows) == 2
+    assert {r["event_type"] for r in rows} == {"created", "completed"}
+
+
+def test_deleted_date_column_on_file(conn):
+    """file table has deleted_date column after init_db."""
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(file)").fetchall()}
+    assert "deleted_date" in cols

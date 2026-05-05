@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from matlock.config import MatlockConfig
-from matlock.db import get_file, mark_file_deleted, upsert_file
+from matlock.db import delete_tasks_for_file, get_file, mark_file_deleted, upsert_file
 
 
 # ---------------------------------------------------------------------------
@@ -187,6 +187,7 @@ def run_sync(
     for row in rows:
         if row["file_path"] not in seen:
             mark_file_deleted(conn, row["file_path"])
+            delete_tasks_for_file(conn, row["file_path"])
             result.deleted += 1
 
     conn.commit()

@@ -99,6 +99,18 @@ def test_default_debounce_seconds(tmp_path: Path) -> None:
     assert load_config(cfg_file).debounce_seconds == 5
 
 
+def test_default_dashboard_recent_changes_limit(tmp_path: Path) -> None:
+    cfg_file = _write_config(tmp_path, _minimal_data())
+    assert load_config(cfg_file).dashboard_recent_changes_limit == 10
+
+
+def test_custom_dashboard_recent_changes_limit(tmp_path: Path) -> None:
+    data = _minimal_data()
+    data["dashboard_recent_changes_limit"] = 25
+    cfg_file = _write_config(tmp_path, data)
+    assert load_config(cfg_file).dashboard_recent_changes_limit == 25
+
+
 def test_default_ignore_dirs(tmp_path: Path) -> None:
     cfg_file = _write_config(tmp_path, _minimal_data())
     assert load_config(cfg_file).ignore_dirs == []
@@ -285,3 +297,133 @@ def test_validate_paths_ok(tmp_path: Path) -> None:
     config = load_config(cfg_file)
     # Should not raise
     validate_config_paths(config)
+
+
+# ---------------------------------------------------------------------------
+# Project status field
+# ---------------------------------------------------------------------------
+
+
+def test_project_status_none_by_default(tmp_path: Path) -> None:
+    data = {
+        **_minimal_data(),
+        "projects": [{"id": "p1", "title": "P1"}],
+    }
+    cfg = load_config(_write_config(tmp_path, data))
+    assert cfg.projects[0].status is None
+
+
+def test_project_status_valid_canonical(tmp_path: Path) -> None:
+    for value in ("Planned", "In Progress", "Complete", "On Hold", "Cancelled"):
+        data = {
+            **_minimal_data(),
+            "projects": [{"id": "p1", "title": "P1", "status": value}],
+        }
+        cfg = load_config(_write_config(tmp_path, data))
+        assert cfg.projects[0].status == value
+
+
+def test_project_status_case_correction(tmp_path: Path) -> None:
+    """Lower-case and mixed-case variants should be normalised to canonical form."""
+    cases = [
+        ("planned", "Planned"),
+        ("in progress", "In Progress"),
+        ("complete", "Complete"),
+        ("on hold", "On Hold"),
+        ("cancelled", "Cancelled"),
+        ("PLANNED", "Planned"),
+        ("IN PROGRESS", "In Progress"),
+    ]
+    for raw, expected in cases:
+        data = {
+            **_minimal_data(),
+            "projects": [{"id": "p1", "title": "P1", "status": raw}],
+        }
+        cfg = load_config(_write_config(tmp_path, data))
+        assert cfg.projects[0].status == expected, f"{raw!r} → expected {expected!r}"
+
+
+def test_project_status_invalid_raises(tmp_path: Path) -> None:
+    data = {
+        **_minimal_data(),
+        "projects": [{"id": "p1", "title": "P1", "status": "Doing"}],
+    }
+    with pytest.raises(ValidationError):
+        load_config(_write_config(tmp_path, data))
+
+
+# ---------------------------------------------------------------------------
+# Project / super-project priority field
+# ---------------------------------------------------------------------------
+
+
+def test_project_priority_none_by_default(tmp_path: Path) -> None:
+    data = {**_minimal_data(), "projects": [{"id": "p1", "title": "P1"}]}
+    cfg = load_config(_write_config(tmp_path, data))
+    assert cfg.projects[0].priority is None
+
+
+def test_super_project_priority_none_by_default(tmp_path: Path) -> None:
+    data = {**_minimal_data(), "super_projects": [{"id": "sp1", "title": "SP1"}]}
+    cfg = load_config(_write_config(tmp_path, data))
+    assert cfg.super_projects[0].priority is None
+
+
+def test_project_priority_valid_canonical(tmp_path: Path) -> None:
+    for value in ("Low", "Medium", "High"):
+        data = {
+            **_minimal_data(),
+            "projects": [{"id": "p1", "title": "P1", "priority": value}],
+        }
+        cfg = load_config(_write_config(tmp_path, data))
+        assert cfg.projects[0].priority == value
+
+
+def test_super_project_priority_valid_canonical(tmp_path: Path) -> None:
+    for value in ("Low", "Medium", "High"):
+        data = {
+            **_minimal_data(),
+            "super_projects": [{"id": "sp1", "title": "SP1", "priority": value}],
+        }
+        cfg = load_config(_write_config(tmp_path, data))
+        assert cfg.super_projects[0].priority == value
+
+
+def test_project_priority_case_correction(tmp_path: Path) -> None:
+    cases = [("low", "Low"), ("medium", "Medium"), ("high", "High"), ("HIGH", "High"), ("MEDIUM", "Medium")]
+    for raw, expected in cases:
+        data = {
+            **_minimal_data(),
+            "projects": [{"id": "p1", "title": "P1", "priority": raw}],
+        }
+        cfg = load_config(_write_config(tmp_path, data))
+        assert cfg.projects[0].priority == expected, f"{raw!r} → expected {expected!r}"
+
+
+def test_super_project_priority_case_correction(tmp_path: Path) -> None:
+    cases = [("low", "Low"), ("medium", "Medium"), ("high", "High"), ("HIGH", "High")]
+    for raw, expected in cases:
+        data = {
+            **_minimal_data(),
+            "super_projects": [{"id": "sp1", "title": "SP1", "priority": raw}],
+        }
+        cfg = load_config(_write_config(tmp_path, data))
+        assert cfg.super_projects[0].priority == expected, f"{raw!r} → expected {expected!r}"
+
+
+def test_project_priority_invalid_raises(tmp_path: Path) -> None:
+    data = {
+        **_minimal_data(),
+        "projects": [{"id": "p1", "title": "P1", "priority": "urgent"}],
+    }
+    with pytest.raises(ValidationError):
+        load_config(_write_config(tmp_path, data))
+
+
+def test_super_project_priority_invalid_raises(tmp_path: Path) -> None:
+    data = {
+        **_minimal_data(),
+        "super_projects": [{"id": "sp1", "title": "SP1", "priority": "urgent"}],
+    }
+    with pytest.raises(ValidationError):
+        load_config(_write_config(tmp_path, data))

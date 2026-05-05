@@ -21,7 +21,7 @@ from __future__ import annotations
 import dataclasses
 import sqlite3
 
-from matlock.config import MatlockConfig
+from matlock.config import MatlockConfig, ResourceConfig
 from matlock.db import replace_file_projects, replace_projects, replace_super_projects
 
 
@@ -121,6 +121,7 @@ def run_map_projects(
             "title": p.title,
             "home_file": p.home_file,
             "priority": p.priority,
+            "status": p.status,
             "start_date": p.start_date,
             "due_date": p.due_date,
         }
@@ -142,7 +143,12 @@ def run_map_projects(
     all_paths = _all_eligible_paths(conn)
     fp_rows: list[dict] = []
     for project in config.projects:
-        fp_rows.extend(_match_files(all_paths, project.id, project.resources))
+        resources = list(project.resources)
+        if not resources and project.home_file:
+            # When no explicit resources are defined, treat home_file as an
+            # implicit FILE resource so the project always links its own file.
+            resources = [ResourceConfig(type="FILE", path=project.home_file)]
+        fp_rows.extend(_match_files(all_paths, project.id, resources))
     replace_file_projects(conn, fp_rows)    # DELETE file_project (empty) + INSERT
     result.file_project_rows = len(fp_rows)
 

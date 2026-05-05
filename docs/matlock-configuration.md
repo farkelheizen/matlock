@@ -50,6 +50,9 @@ ignore_dirs:
 # Seconds of file-change inactivity before triggering report.
 debounce_seconds: 5
 
+# Number of recently changed tracked files shown on _Matlock/Home.md.
+dashboard_recent_changes_limit: 10
+
 # ────────────────────────────────────────────────────
 # Logging
 # ────────────────────────────────────────────────────
@@ -132,14 +135,15 @@ task_attributes:
 super_projects:
   - id: "website_overhaul"
     title: "Website Overhaul 2026"
-    priority: "high"
+    priority: "High"
 
 projects:
   - id: "backend_api"
     super_project_id: "website_overhaul"   # optional; omit for standalone projects
     title: "Backend API"
     home_file: "Projects/Backend_Notes.md" # relative to base_directory
-    priority: "high"
+    priority: "High"
+    status: "In Progress"                  # optional; Planned | In Progress | Complete | On Hold | Cancelled
     start_date: "2026-01-01"               # YYYY-MM-DD (optional)
     due_date: "2026-06-01"                 # YYYY-MM-DD (optional)
     resources:
@@ -211,6 +215,7 @@ This matches only `Projects/Planning.md`.
 | Field | Type | Default | Description |
 |:------|:-----|:--------|:------------|
 | `debounce_seconds` | int | `5` | Idle window before triggering report after file changes |
+| `dashboard_recent_changes_limit` | int | `10` | Max number of recently changed tracked files shown in `_Matlock/Home.md` |
 
 ### Logging
 

@@ -1,6 +1,6 @@
 # Matlock CLI Reference
 
-**Version:** 0.1.x
+**Version:** 0.2.x
 
 Matlock is invoked via the `matlock` command (registered as a Poetry script entrypoint). All commands accept `--config PATH` to specify a non-default `config.yaml` location.
 
@@ -113,6 +113,7 @@ matlock report [OPTIONS]
 |:-------|:--------|:------------|
 | `--target {all,dashboard,projects,history}` | `all` | Limit which report types to generate |
 | `--project-id ID` | None | Regenerate a single project page by its config ID |
+| `--force` | False | Regenerate all reports and delete any generated files that are no longer valid |
 | `--config PATH` | `./config.yaml` | Config file location |
 
 **Example:**
@@ -120,6 +121,7 @@ matlock report [OPTIONS]
 poetry run matlock report
 poetry run matlock report --target projects
 poetry run matlock report --project-id backend_api
+poetry run matlock report --force
 ```
 
 **Note:** `--target projects` regenerates both project pages and super-project pages. There is no separate `super-projects` target in the current CLI.
@@ -128,7 +130,7 @@ poetry run matlock report --project-id backend_api
 
 ### `matlock run-all`
 
-Run all five pipeline stages in sequence: `sync` → `parse` → `map-projects` → `rollup` → `report`.
+Run all pipeline stages in sequence: `[scan-projects →]` `sync` → `parse` → `map-projects` → `rollup` → `report`.
 
 ```
 matlock run-all [OPTIONS]
@@ -136,16 +138,52 @@ matlock run-all [OPTIONS]
 
 | Option | Default | Description |
 |:-------|:--------|:------------|
+| `--scan-projects` | False | Run `scan-projects --merge` before `sync` (opt-in) |
 | `--skip-rollup` | False | Skip Stage IV (for mid-day runs; rollup is designed for nightly use) |
 | `--force-sync` | False | Pass `--force` to the `sync` stage |
+| `--force-report` | False | Pass `--force` to the `report` stage (regenerate all, delete stale files) |
 | `--config PATH` | `./config.yaml` | Config file location |
 
 **Example:**
 ```bash
 poetry run matlock run-all
+poetry run matlock run-all --scan-projects
 poetry run matlock run-all --skip-rollup
 poetry run matlock run-all --force-sync
+poetry run matlock run-all --force-report
 ```
+
+When `--scan-projects` is enabled, Matlock runs vault scan + config merge first, then reloads config and continues the normal pipeline.
+
+---
+
+## Discovery Commands
+
+### `matlock scan-projects`
+
+Walk the vault and reverse-engineer the project/super-project hierarchy from frontmatter metadata. Does **not** require an initialised database.
+
+```
+matlock scan-projects [OPTIONS]
+```
+
+| Option | Short | Default | Description |
+|:-------|:------|:--------|:------------|
+| `--print-yaml` | `-p` | *(default)* | Print discovered projects as YAML |
+| `--diff` | `-d` | — | Show a human-readable diff against the current config |
+| `--merge` | `-m` | — | Apply changes into `config.yaml` (creates a timestamped backup first) |
+| `--config PATH` | `-c` | `./config.yaml` | Config file location |
+
+Only one mode flag may be given at a time. If none is given, `--print-yaml` is assumed.
+
+**Examples:**
+```bash
+poetry run matlock scan-projects
+poetry run matlock scan-projects --diff
+poetry run matlock scan-projects --merge
+```
+
+See `docs/matlock-scan-projects.md` for the full specification including scanning logic, data models, and output format details.
 
 ---
 
@@ -168,15 +206,23 @@ Three integrated triggers:
 | Option | Default | Description |
 |:-------|:--------|:------------|
 | `--debounce SECONDS` | From config (`5`) | Idle window before triggering `report` after file changes |
+| `--scan-projects` | `False` | Run `scan-projects --merge` once at startup before the watcher starts |
+| `--force-sync` | `False` | Run a full forced sync+parse once at startup before the watcher starts |
+| `--force-report` | `False` | Run a full forced report once at startup (after any startup sync) |
+| `--skip-rollup` | `False` | Skip rollup in the nightly scheduled job |
 | `--config PATH` | `./config.yaml` | Config file location |
 
 **Example:**
 ```bash
 poetry run matlock server
 poetry run matlock server --debounce 10
+poetry run matlock server --force-sync --force-report
+poetry run matlock server --skip-rollup
 ```
 
 **Notes:**
+- `--scan-projects`, `--force-sync`, `--force-report` are **startup-only** — they run once before the watcher starts.
+- `--skip-rollup` affects only the nightly scheduler job; the watcher and debouncer paths are unaffected.
 - Run as a background process or managed via `launchd` / `systemd` for continuous operation.
 - The server logs to stdout by default. Redirect to a file for daemon use: `matlock server >> matlock.log 2>&1 &`
 - Sending `SIGINT` (Ctrl+C) triggers a clean shutdown.

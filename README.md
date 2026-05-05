@@ -23,6 +23,9 @@ This registers the `matlock` command in the Poetry virtual environment.
 # Run the full pipeline (sync → parse → map-projects → rollup → report)
 poetry run matlock run-all
 
+# Run full pipeline and do an opt-in project scan/merge first
+poetry run matlock run-all --scan-projects
+
 # Or run each stage individually
 poetry run matlock sync
 poetry run matlock parse
@@ -125,21 +128,25 @@ All commands accept `--config PATH` to override the default config location.
 
 ### `matlock run-all`
 
-Run all five pipeline stages in sequence.
+Run all pipeline stages in sequence, with optional `scan-projects` pre-stage.
 
 ```
-matlock run-all [--skip-rollup] [--force-sync] [--config PATH]
+matlock run-all [--scan-projects] [--skip-rollup] [--force-sync] [--force-report] [--config PATH]
 ```
 
 | Flag | Default | Description |
 |------|---------|-------------|
+| `--scan-projects` | False | Run `scan-projects --merge` before `sync` (opt-in) |
 | `--skip-rollup` | False | Skip Stage IV rollup (useful for mid-day runs) |
 | `--force-sync` | False | Re-hash every file regardless of stored hash |
+| `--force-report` | False | Regenerate all reports and delete stale generated files |
 
 ```bash
 poetry run matlock run-all
+poetry run matlock run-all --scan-projects
 poetry run matlock run-all --skip-rollup
 poetry run matlock run-all --force-sync
+poetry run matlock run-all --force-report
 ```
 
 ---
@@ -202,12 +209,16 @@ poetry run matlock report --project-id backend_api
 Run a persistent daemon that monitors the vault in real time and orchestrates the pipeline automatically.
 
 ```
-matlock server [--debounce SECONDS] [--config PATH]
+matlock server [--debounce SECONDS] [--scan-projects] [--force-sync] [--force-report] [--skip-rollup] [--config PATH]
 ```
 
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--debounce SECONDS` | From config (`debounce_seconds`) | Idle window before triggering `report` after file changes |
+| `--scan-projects` | `False` | Run `scan-projects --merge` once at startup before the watcher starts |
+| `--force-sync` | `False` | Run a full forced sync+parse once at startup before the watcher starts |
+| `--force-report` | `False` | Run a full forced report once at startup (after any startup sync) |
+| `--skip-rollup` | `False` | Skip rollup in the nightly scheduled job |
 
 Three integrated triggers:
 
@@ -218,6 +229,8 @@ Three integrated triggers:
 ```bash
 poetry run matlock server
 poetry run matlock server --debounce 10
+poetry run matlock server --force-sync --force-report
+poetry run matlock server --skip-rollup
 ```
 
 Press `Ctrl+C` for a clean shutdown.

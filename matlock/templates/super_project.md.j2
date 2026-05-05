@@ -1,16 +1,46 @@
-# 🌍 Super-Project: {{ super_project.title }}
+# 🌍 Super-Project: {{ super_project_display_title }}
+**Generated:** {{ generated_at }} | [🏠 Back to Dashboard]({{ home_link() }})
 
-## 📈 Child Project Status
-| Project | Priority | Open Tasks | Completed | Due Date | Status |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-{% for p in child_projects %}
-| **[[{{ p.id }}]]** | {{ p.priority | title }} | {{ p.stats.open_count }} | {{ p.stats.completed_count }} | {{ p.due_date or "—" }} | {{ p.status_emoji }} {{ p.status_label }} |
-{%- endfor %}
+## 🚀 Active Projects
+{% if active_project_rows %}
+| Project | Current Streak | Health | Last Updated | Due Today (count + est) | Past Due | Due Soon | Future Due | Not Due |
+|:--------|:--------------:|:------:|:------------:|:-----------------------:|:--------:|:--------:|:----------:|:-------:|
+{% for row in active_project_rows %}
+| [{{ row.project_label }}]({{ row.project_link }}) | {{ row.current_streak }} | {{ row.health }} | {{ row.last_updated }} | {{ row.due_today_display }} | {{ row.past_due_display }} | {{ row.due_soon_display }} | {{ row.future_due_display }} | {{ row.not_due_display }} |
+{% endfor %}
+{% else %}
+*No active projects.*
+{% endif %}
 
-## 🚨 Critical Aggregated Tasks
-{% for task in critical_tasks %}
-- [ ] [{{ task.project_title }}] {{ task.task_text }} 🔗 [[{{ task.file_path | basename }}]]
-{%- endfor %}
-{% if not critical_tasks %}
-*No past-due tasks across child projects.*
+## ⏸️ On-Hold Projects
+{% if on_hold_project_rows %}
+| Project | Current Streak | Last Updated | Due Today (count + est) | Past Due | Due Soon | Future Due | Not Due |
+|:--------|:--------------:|:------------:|:-----------------------:|:--------:|:--------:|:----------:|:-------:|
+{% for row in on_hold_project_rows %}
+| [{{ row.project_label }}]({{ row.project_link }}) | {{ row.current_streak }} | {{ row.last_updated }} | {{ row.due_today_display }} | {{ row.past_due_display }} | {{ row.due_soon_display }} | {{ row.future_due_display }} | {{ row.not_due_display }} |
+{% endfor %}
+{% else %}
+*No on-hold projects.*
+{% endif %}
+
+## ❌ Cancelled Projects
+{% if cancelled_project_rows %}
+| Project | Current Streak | Last Updated | Due Today (count + est) | Past Due | Due Soon | Future Due | Not Due |
+|:--------|:--------------:|:------------:|:-----------------------:|:--------:|:--------:|:----------:|:-------:|
+{% for row in cancelled_project_rows %}
+| [{{ row.project_label }}]({{ row.project_link }}) | {{ row.current_streak }} | {{ row.last_updated }} | {{ row.due_today_display }} | {{ row.past_due_display }} | {{ row.due_soon_display }} | {{ row.future_due_display }} | {{ row.not_due_display }} |
+{% endfor %}
+{% else %}
+*No cancelled projects.*
+{% endif %}
+
+## ✅ Completed Projects
+{% if completed_project_rows %}
+| Project | Current Streak | Last Updated | Due Today (count + est) | Past Due | Due Soon | Future Due | Not Due |
+|:--------|:--------------:|:------------:|:-----------------------:|:--------:|:--------:|:----------:|:-------:|
+{% for row in completed_project_rows %}
+| [{{ row.project_label }}]({{ row.project_link }}) | {{ row.current_streak }} | {{ row.last_updated }} | {{ row.due_today_display }} | {{ row.past_due_display }} | {{ row.due_soon_display }} | {{ row.future_due_display }} | {{ row.not_due_display }} |
+{% endfor %}
+{% else %}
+*No completed projects.*
 {% endif %}

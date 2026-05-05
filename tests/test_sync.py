@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from matlock.config import MatlockConfig
-from matlock.db import get_connection, get_file, init_db
+from matlock.db import get_connection, get_file, get_tasks_for_file, init_db, upsert_file, upsert_task
 from matlock.stages.sync import SyncResult, _hash_file, _walk_vault, run_sync
 
 
@@ -340,6 +340,41 @@ class TestRunSyncDelete:
         assert result2.deleted == 1
         row = get_file(conn, "note.md")
         assert row["deleted"] == 1
+
+    def test_deleted_file_tasks_are_removed(self, tmp_path: Path):
+        """When a file disappears from disk, its tasks are deleted from the task table."""
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        f = vault / "note.md"
+        f.write_text("- [ ] A task\n")
+        config = _make_config(vault, tmp_path)
+        conn = _memory_conn(config)
+
+        run_sync(config, conn)
+        # Manually seed a task row for that file (simulating a prior parse)
+        upsert_task(conn, {
+            "task_id": "task-1",
+            "file_path": "note.md",
+            "parent_task_id": None,
+            "created_date": None,
+            "due_date": None,
+            "est_comp_date": None,
+            "act_comp_date": None,
+            "checked": 0,
+            "task_text": "A task",
+            "overflow": 0,
+            "headers": "[]",
+            "attributes": "{}",
+            "errors": "[]",
+            "twin_index": 0,
+        })
+        conn.commit()
+        assert len(get_tasks_for_file(conn, "note.md")) == 1
+
+        f.unlink()
+        run_sync(config, conn)
+
+        assert len(get_tasks_for_file(conn, "note.md")) == 0
 
     def test_deleted_file_not_re_deleted(self, tmp_path: Path):
         """Deleted files should not appear in subsequent delete counts."""

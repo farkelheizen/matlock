@@ -52,15 +52,139 @@ class TestServerHelp:
         result = _invoke_help()
         assert "--debounce" in result.output
 
-    def test_config_option_in_main_help(self):
-        # --config is a global option shown in the main help, not per-subcommand
-        result = runner.invoke(app, ["--help"])
-        assert "--config" in result.output
+    def test_scan_projects_option_in_help(self):
+        result = _invoke_help()
+        assert "--scan-projects" in result.output
+
+    def test_skip_rollup_option_in_help(self):
+        result = _invoke_help()
+        assert "--skip-rollup" in result.output
+
+    def test_force_sync_option_in_help(self):
+        result = _invoke_help()
+        assert "--force-sync" in result.output
+
+    def test_force_report_option_in_help(self):
+        result = _invoke_help()
+        assert "--force-report" in result.output
 
 
 # ---------------------------------------------------------------------------
-# Error cases (no real server started)
+# New flag pass-through tests
 # ---------------------------------------------------------------------------
+
+
+class TestServerNewFlags:
+    def _cfg(self, tmp_path: Path):
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        out_dir = tmp_path / "_Matlock"
+        cfg_path = tmp_path / "config.yaml"
+        db_path = tmp_path / "matlock.db"
+        _write_config(cfg_path, vault, db_path, out_dir)
+        return cfg_path
+
+    def test_force_sync_passed_to_run_server(self, tmp_path: Path):
+        cfg_path = self._cfg(tmp_path)
+        calls: list = []
+
+        def fake_run_server(cfg, debounce_seconds=None, skip_rollup=False,
+                            force_sync=False, force_report=False):
+            calls.append({"force_sync": force_sync})
+
+        with patch("matlock.cli.run_server", side_effect=fake_run_server):
+            result = runner.invoke(app, ["--config", str(cfg_path), "server", "--force-sync"])
+
+        assert result.exit_code == 0
+        assert calls[0]["force_sync"] is True
+
+    def test_force_report_passed_to_run_server(self, tmp_path: Path):
+        cfg_path = self._cfg(tmp_path)
+        calls: list = []
+
+        def fake_run_server(cfg, debounce_seconds=None, skip_rollup=False,
+                            force_sync=False, force_report=False):
+            calls.append({"force_report": force_report})
+
+        with patch("matlock.cli.run_server", side_effect=fake_run_server):
+            result = runner.invoke(app, ["--config", str(cfg_path), "server", "--force-report"])
+
+        assert result.exit_code == 0
+        assert calls[0]["force_report"] is True
+
+    def test_skip_rollup_passed_to_run_server(self, tmp_path: Path):
+        cfg_path = self._cfg(tmp_path)
+        calls: list = []
+
+        def fake_run_server(cfg, debounce_seconds=None, skip_rollup=False,
+                            force_sync=False, force_report=False):
+            calls.append({"skip_rollup": skip_rollup})
+
+        with patch("matlock.cli.run_server", side_effect=fake_run_server):
+            result = runner.invoke(app, ["--config", str(cfg_path), "server", "--skip-rollup"])
+
+        assert result.exit_code == 0
+        assert calls[0]["skip_rollup"] is True
+
+    def test_scan_projects_runs_merge_then_reloads(self, tmp_path: Path):
+        cfg_path = self._cfg(tmp_path)
+        run_server_calls: list = []
+
+        def fake_run_server(cfg, **kwargs):
+            run_server_calls.append(cfg)
+
+        from matlock.stages.scan_projects import MergeResult
+
+        with patch("matlock.cli.run_server", side_effect=fake_run_server):
+            with patch("matlock.stages.scan_projects.scan_vault", return_value=([], [])):
+                with patch("matlock.stages.scan_projects.merge_into_config",
+                           return_value=MergeResult(
+                               super_projects_added=0, super_projects_updated=0,
+                               super_projects_deleted=0, projects_added=0,
+                               projects_updated=0, projects_deleted=0,
+                               backup_path=None,
+                           )) as mock_merge:
+                    result = runner.invoke(
+                        app,
+                        ["--config", str(cfg_path), "server", "--scan-projects"],
+                    )
+
+        assert result.exit_code == 0
+        assert mock_merge.call_count == 1
+        assert len(run_server_calls) == 1
+
+    def test_no_flags_defaults_are_false(self, tmp_path: Path):
+        cfg_path = self._cfg(tmp_path)
+        calls: list = []
+
+        def fake_run_server(cfg, debounce_seconds=None, skip_rollup=False,
+                            force_sync=False, force_report=False):
+            calls.append({
+                "skip_rollup": skip_rollup,
+                "force_sync": force_sync,
+                "force_report": force_report,
+            })
+
+        with patch("matlock.cli.run_server", side_effect=fake_run_server):
+            result = runner.invoke(app, ["--config", str(cfg_path), "server"])
+
+        assert result.exit_code == 0
+        assert calls[0] == {"skip_rollup": False, "force_sync": False, "force_report": False}
+
+
+# ---------------------------------------------------------------------------
+# Subprocess smoke
+# ---------------------------------------------------------------------------
+
+
+class TestServerSubprocess:
+    def test_subprocess_smoke(self):
+        proc = subprocess.run(
+            [sys.executable, "-m", "matlock.cli", "--help"],
+            capture_output=True,
+            text=True,
+        )
+        assert "Traceback" not in proc.stderr
 
 
 class TestServerErrors:
@@ -99,7 +223,7 @@ class TestServerCommand:
         cfg_path = self._cfg(tmp_path)
         calls: list = []
 
-        def fake_run_server(cfg, debounce_seconds=None):
+        def fake_run_server(cfg, debounce_seconds=None, **kwargs):
             calls.append({"cfg": cfg, "debounce": debounce_seconds})
 
         with patch("matlock.cli.run_server", side_effect=fake_run_server):
@@ -112,7 +236,7 @@ class TestServerCommand:
         cfg_path = self._cfg(tmp_path)
         calls: list = []
 
-        def fake_run_server(cfg, debounce_seconds=None):
+        def fake_run_server(cfg, debounce_seconds=None, **kwargs):
             calls.append(debounce_seconds)
 
         with patch("matlock.cli.run_server", side_effect=fake_run_server):
@@ -124,7 +248,7 @@ class TestServerCommand:
         cfg_path = self._cfg(tmp_path)
         calls: list = []
 
-        def fake_run_server(cfg, debounce_seconds=None):
+        def fake_run_server(cfg, debounce_seconds=None, **kwargs):
             calls.append(debounce_seconds)
 
         with patch("matlock.cli.run_server", side_effect=fake_run_server):

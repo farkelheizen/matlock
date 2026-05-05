@@ -1,0 +1,9 @@
+# 🌍 Super Projects
+
+**Generated:** {{ generated_at }} | [🏠 Back to Dashboard]({{ dashboard_link }})
+
+| Super Project | Current Streak | Health | Last Updated | Active | On Hold | Planned | Complete | Cancelled |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+{% for r in rows %}
+| [{{ r.sp_label }}]({{ r.sp_link }}) | {{ r.current_streak }} | {{ r.health }} | {{ r.last_updated }} | {{ r.active_count }} | {{ r.on_hold_count }} | {{ r.planned_count }} | {{ r.complete_count }} | {{ r.cancelled_count }} |
+{% endfor %}
