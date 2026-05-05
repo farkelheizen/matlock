@@ -1884,6 +1884,7 @@ def _render_project_page(
     def super_project_link(sp_id: str) -> str:
         return _rel(this_file, out_dir / _SUPER_PROJECTS_DIR / f"{sp_id}.md")
 
+    generated_at = datetime.datetime.now().strftime("%Y-%m-%d %-I:%M %p")
     content = env.get_template("project.md.j2").render(
         project=project_row,
         stats=stats,
@@ -1893,6 +1894,7 @@ def _render_project_page(
         source_files=file_paths,
         source_link=source_link,
         super_project_link=super_project_link,
+        generated_at=generated_at,
     )
     _write_file(conn, this_file, content, today_str)
 
@@ -1992,6 +1994,7 @@ def _render_unassigned_project_page(
     def super_project_link(sp_id: str) -> str:
         return _rel(this_file, out_dir / _SUPER_PROJECTS_DIR / f"{sp_id}.md")
 
+    generated_at = datetime.datetime.now().strftime("%Y-%m-%d %-I:%M %p")
     content = env.get_template("project.md.j2").render(
         project=project,
         stats=stats,
@@ -2001,6 +2004,7 @@ def _render_unassigned_project_page(
         source_files=file_paths,
         source_link=source_link,
         super_project_link=super_project_link,
+        generated_at=generated_at,
     )
     _write_file(conn, this_file, content, today_str)
 
