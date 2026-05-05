@@ -21,6 +21,7 @@ from watchdog.observers import Observer
 
 from matlock.config import MatlockConfig
 from matlock.db import get_connection, init_db
+from matlock.stages.map_projects import run_map_projects
 from matlock.stages.parse import run_parse
 from matlock.stages.report import run_report
 from matlock.stages.rollup import run_rollup
@@ -138,6 +139,7 @@ def _debouncer_thread(
             conn = get_connection(config.db_path)
             try:
                 init_db(conn)
+                run_map_projects(config, conn)
                 run_report(config, conn, target="all")
             finally:
                 conn.close()
@@ -184,6 +186,7 @@ def _scheduler_thread(
                 init_db(conn)
                 if not skip_rollup:
                     run_rollup(config, conn, rollup_date)
+                run_map_projects(config, conn)
                 run_report(config, conn, target="all")
             finally:
                 conn.close()
@@ -237,6 +240,7 @@ def run_server(
                 typer_echo("[startup] forced sync+parse complete")
             if force_report:
                 typer_echo("[startup] forced report starting")
+                run_map_projects(config, startup_conn)
                 run_report(config, startup_conn, target="all", force=True)
                 typer_echo("[startup] forced report complete")
         finally:

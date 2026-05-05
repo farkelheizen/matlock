@@ -200,21 +200,22 @@ class TestDebouncerThread:
             from matlock.stages.report import ReportResult
             return ReportResult(files_written=0, target="all")
 
-        with patch("matlock.server.run_report", side_effect=fake_report):
-            t = threading.Thread(
-                target=_debouncer_thread,
-                args=(config, 0, dirty, dirty_lock, dirty_event, stop_event),
-                daemon=True,
-            )
-            t.start()
-            # Signal that something is dirty
-            with dirty_lock:
-                dirty.add("proj1")
-                dirty_event.set()
-            # Give the debouncer time to fire (debounce=0s)
-            time.sleep(0.5)
-            stop_event.set()
-            t.join(timeout=3)
+        with patch("matlock.server.run_map_projects", return_value=SimpleNamespace()):
+            with patch("matlock.server.run_report", side_effect=fake_report):
+                t = threading.Thread(
+                    target=_debouncer_thread,
+                    args=(config, 0, dirty, dirty_lock, dirty_event, stop_event),
+                    daemon=True,
+                )
+                t.start()
+                # Signal that something is dirty
+                with dirty_lock:
+                    dirty.add("proj1")
+                    dirty_event.set()
+                # Give the debouncer time to fire (debounce=0s)
+                time.sleep(0.5)
+                stop_event.set()
+                t.join(timeout=3)
 
         assert len(report_calls) >= 1
 
@@ -230,18 +231,19 @@ class TestDebouncerThread:
         dirty_event.set()
         stop_event = threading.Event()
 
-        with patch("matlock.server.run_report") as mock_report:
-            from matlock.stages.report import ReportResult
-            mock_report.return_value = ReportResult(files_written=0, target="all")
-            t = threading.Thread(
-                target=_debouncer_thread,
-                args=(config, 0, dirty, dirty_lock, dirty_event, stop_event),
-                daemon=True,
-            )
-            t.start()
-            time.sleep(0.3)
-            stop_event.set()
-            t.join(timeout=3)
+        with patch("matlock.server.run_map_projects", return_value=SimpleNamespace()):
+            with patch("matlock.server.run_report") as mock_report:
+                from matlock.stages.report import ReportResult
+                mock_report.return_value = ReportResult(files_written=0, target="all")
+                t = threading.Thread(
+                    target=_debouncer_thread,
+                    args=(config, 0, dirty, dirty_lock, dirty_event, stop_event),
+                    daemon=True,
+                )
+                t.start()
+                time.sleep(0.3)
+                stop_event.set()
+                t.join(timeout=3)
 
         assert len(dirty) == 0
 
@@ -307,16 +309,17 @@ class TestSchedulerThread:
         # Patch _seconds_until_midnight to return near-zero so thread fires immediately
         with patch("matlock.server._seconds_until_midnight", return_value=0.05):
             with patch("matlock.server.run_rollup", side_effect=fake_rollup):
-                with patch("matlock.server.run_report", side_effect=fake_report):
-                    t = threading.Thread(
-                        target=_scheduler_thread,
-                        args=(config, stop_event),
-                        daemon=True,
-                    )
-                    t.start()
-                    time.sleep(0.5)
-                    stop_event.set()
-                    t.join(timeout=3)
+                with patch("matlock.server.run_map_projects", return_value=SimpleNamespace()):
+                    with patch("matlock.server.run_report", side_effect=fake_report):
+                        t = threading.Thread(
+                            target=_scheduler_thread,
+                            args=(config, stop_event),
+                            daemon=True,
+                        )
+                        t.start()
+                        time.sleep(0.5)
+                        stop_event.set()
+                        t.join(timeout=3)
 
         assert len(rollup_calls) >= 1
         assert len(report_calls) >= 1
@@ -432,16 +435,17 @@ class TestSchedulerThreadSkipRollup:
 
         with patch("matlock.server._seconds_until_midnight", return_value=0.05):
             with patch("matlock.server.run_rollup", side_effect=fake_rollup):
-                with patch("matlock.server.run_report", side_effect=fake_report):
-                    t = threading.Thread(
-                        target=_scheduler_thread,
-                        args=(config, stop_event, True),  # skip_rollup=True
-                        daemon=True,
-                    )
-                    t.start()
-                    time.sleep(0.5)
-                    stop_event.set()
-                    t.join(timeout=3)
+                with patch("matlock.server.run_map_projects", return_value=SimpleNamespace()):
+                    with patch("matlock.server.run_report", side_effect=fake_report):
+                        t = threading.Thread(
+                            target=_scheduler_thread,
+                            args=(config, stop_event, True),  # skip_rollup=True
+                            daemon=True,
+                        )
+                        t.start()
+                        time.sleep(0.5)
+                        stop_event.set()
+                        t.join(timeout=3)
 
         assert len(rollup_calls) == 0
         assert len(report_calls) >= 1
@@ -463,18 +467,19 @@ class TestSchedulerThreadSkipRollup:
             with patch("matlock.server.run_rollup", return_value=RollupResult(
                 rollup_date=datetime.date.today(), rows_written=0
             )) as mock_rollup:
-                with patch("matlock.server.run_report", return_value=ReportResult(
-                    files_written=0, target="all"
-                )):
-                    t = threading.Thread(
-                        target=_scheduler_thread,
-                        args=(config, stop_event, False),  # skip_rollup=False
-                        daemon=True,
-                    )
-                    t.start()
-                    time.sleep(0.5)
-                    stop_event.set()
-                    t.join(timeout=3)
+                with patch("matlock.server.run_map_projects", return_value=SimpleNamespace()):
+                    with patch("matlock.server.run_report", return_value=ReportResult(
+                        files_written=0, target="all"
+                    )):
+                        t = threading.Thread(
+                            target=_scheduler_thread,
+                            args=(config, stop_event, False),  # skip_rollup=False
+                            daemon=True,
+                        )
+                        t.start()
+                        time.sleep(0.5)
+                        stop_event.set()
+                        t.join(timeout=3)
 
         assert mock_rollup.call_count >= 1
 
@@ -545,14 +550,16 @@ class TestRunServerStartupFlags:
 
         with patch("matlock.server.Observer", return_value=self._make_fake_observer()):
             with patch("matlock.server.time.sleep", side_effect=self._patched_sleep(2)):
-                with patch("matlock.server.run_report",
-                           return_value=ReportResult(files_written=0, target="all")) as mock_report:
-                    try:
-                        run_server(config, debounce_seconds=1, force_report=True)
-                    except KeyboardInterrupt:
-                        pass
+                with patch("matlock.server.run_map_projects", return_value=SimpleNamespace()) as mock_map:
+                    with patch("matlock.server.run_report",
+                               return_value=ReportResult(files_written=0, target="all")) as mock_report:
+                        try:
+                            run_server(config, debounce_seconds=1, force_report=True)
+                        except KeyboardInterrupt:
+                            pass
 
         assert mock_report.call_count >= 1
+        assert mock_map.call_count >= 1
         # Verify force=True was passed
         call_kwargs = mock_report.call_args_list[0][1]
         assert call_kwargs.get("force") is True
