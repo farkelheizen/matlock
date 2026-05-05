@@ -217,13 +217,16 @@ Template files live at `matlock/templates/`.
 
 **Template:** `matlock/templates/daily_history.md.j2`
 **Output:** `_Matlock/History/<YYYY-MM-DD>.md`
-**Regenerated:** Once after each `rollup` run (effectively immutable after the next day).
+**Regenerated:** Once after each `rollup` run (effectively immutable after the next day). Can be accurately regenerated at any future date because `file_touch` and `daily_task` snapshot the events at rollup time.
 
 ### Template
 
 ```jinja
 # 📅 Daily History: {{ metric_date }}
-**Day of Week:** {{ day_of_week }}
+
+**Day of Week:** {{ day_of_week }} | **Generated:** {{ generated_at }} | [🏠 Home]({{ dashboard_link }}){% if prev_date %} | [⬅ {{ prev_date }}]({{ history_link(prev_date) }}){% endif %}{% if next_date %} | [{{ next_date }} ➡]({{ history_link(next_date) }}){% endif %}
+
+---
 
 ## 📈 Daily Totals
 | Metric | Count | Minutes |
@@ -232,16 +235,52 @@ Template files live at `matlock/templates/`.
 | **Tasks Created** | {{ totals.tasks_created_count }} | {{ totals.tasks_created_minutes }} |
 | **Files Modified** | {{ totals.files_modified_count }} | — |
 
-## 📊 Breakdown by Project
-{% for row in project_rows %}
-### {% if row.project %}[[{{ row.project.id }}]]{% else %}Unassigned{% endif %}
-- Tasks Completed: {{ row.tasks_completed_count }} ({{ row.tasks_completed_minutes }} mins)
-- End-of-Day Overdue: {{ row.tasks_past_due_count }}
-{% endfor %}
+## 🌍 Summary by Super-Project
+{% if super_project_summary %}
+| Super-Project | Created | Created (m) | Completed | Completed (m) |
+...
+{% endif %}
 
-## ⬅️ Navigation
-* **Previous Day:** [{{ prev_date }}]({{ history_link(prev_date) }}) | **Back to Dashboard:** [Home]({{ dashboard_link }})
+## 🚀 Summary by Project
+{% if project_rows %}
+| Project | Created | Created (m) | Completed | Completed (m) | Overdue (EoD) |
+...
+{% endif %}
+
+## 📄 Files Touched
+{% if file_touches %}
+| File | Event | Time |
+...
+{% else %}
+*No file-touch data available for this date.*
+{% endif %}
+
+## ✅ Tasks This Day
+{% if task_list %}
+| Task | Events | Estimate | Project |
+...
+{% else %}
+*No task-event data available for this date.*
+{% endif %}
 ```
+
+### Template Variables
+
+| Variable | Type | Source |
+|:---|:---|:---|
+| `metric_date` | str (YYYY-MM-DD) | `daily_metric.metric_date` |
+| `day_of_week` | str | Derived from `metric_date` |
+| `generated_at` | str (YYYY-MM-DD H:MM AM/PM) | `datetime.now()` at render time |
+| `totals` | SimpleNamespace | Aggregated from all `daily_metric` rows for the date |
+| `project_rows` | list[SimpleNamespace] | One row per project (plus Unassigned); includes `tasks_created_count/minutes`, `tasks_completed_count/minutes`, `tasks_past_due_count` |
+| `super_project_summary` | list[SimpleNamespace] | Aggregated from `daily_metric` via `project → super_project`; includes Unassigned row; sorted with Unassigned last |
+| `file_touches` | list[SimpleNamespace] | From `file_touch` table for the date; fields: `file_path`, `event_type`, `modified_text`, `source_link` |
+| `task_list` | list[SimpleNamespace] | From `daily_task` table for the date (tasks with both `created` and `completed` events collapsed); fields: `task_text`, `events_display`, `estimate_display`, `source_link`, `project_title`, `project_link` |
+| `prev_date` | str | Day before `metric_date` (always set; link only leads somewhere if that date has a history page) |
+| `next_date` | str \| None | First `metric_date > metric_date` from `daily_metric`; None if this is the most recent history page |
+| `project_link` | callable | `project_link(pid)` → relative path to `Projects/<pid>.md` |
+| `history_link` | callable | `history_link(date_str)` → relative path to `History/<date>.md` |
+| `dashboard_link` | str | Relative path to `Home.md` |
 
 ---
 

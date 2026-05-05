@@ -14,6 +14,8 @@ from matlock.stages.rollup import (
     _calc_metrics,
     _date_to_str,
     _estimate_minutes,
+    _populate_daily_tasks,
+    _populate_file_touch,
     run_rollup,
 )
 
@@ -56,6 +58,7 @@ def _seed_file(
     created: int | None = None,
     deleted: int = 0,
     is_generated: int = 0,
+    deleted_date: str | None = None,
 ) -> None:
     upsert_file(conn, {
         "file_path": file_path,
@@ -71,6 +74,11 @@ def _seed_file(
         "is_generated": is_generated,
         "needs_parsing": 0,
     })
+    if deleted_date is not None:
+        conn.execute(
+            "UPDATE file SET deleted_date = ? WHERE file_path = ?",
+            (deleted_date, file_path),
+        )
 
 
 def _seed_task(
@@ -578,3 +586,172 @@ class TestRunRollupIdempotency:
         run_rollup(_make_config(), conn, date_b)
         rows = conn.execute("SELECT * FROM daily_metric").fetchall()
         assert len(rows) == 2
+
+
+# ---------------------------------------------------------------------------
+# _populate_file_touch
+# ---------------------------------------------------------------------------
+
+
+class TestPopulateFileTouch:
+    def test_modified_file_creates_event(self):
+        conn = _conn()
+        _seed_file(conn, "a.md", modified_date=DATE_STR)
+        conn.commit()
+        _populate_file_touch(conn, DATE_STR)
+        rows = conn.execute(
+            "SELECT * FROM file_touch WHERE touch_date = ?", (DATE_STR,)
+        ).fetchall()
+        event_types = {r["event_type"] for r in rows}
+        assert "modified" in event_types
+
+    def test_created_file_creates_event(self):
+        conn = _conn()
+        _seed_file(conn, "new.md", modified_date=DATE_STR, created=_epoch_ms(DATE_STR))
+        conn.commit()
+        _populate_file_touch(conn, DATE_STR)
+        rows = conn.execute(
+            "SELECT * FROM file_touch WHERE event_type = 'created' AND touch_date = ?",
+            (DATE_STR,),
+        ).fetchall()
+        assert len(rows) == 1
+        assert rows[0]["file_path"] == "new.md"
+
+    def test_deleted_file_creates_event(self):
+        conn = _conn()
+        _seed_file(conn, "gone.md", modified_date=DATE_STR, deleted=1, deleted_date=DATE_STR)
+        conn.commit()
+        _populate_file_touch(conn, DATE_STR)
+        rows = conn.execute(
+            "SELECT * FROM file_touch WHERE event_type = 'deleted' AND touch_date = ?",
+            (DATE_STR,),
+        ).fetchall()
+        assert len(rows) == 1
+        assert rows[0]["modified"] is None  # deletion events have no modified time
+
+    def test_generated_file_excluded(self):
+        conn = _conn()
+        _seed_file(conn, "_Matlock/Home.md", modified_date=DATE_STR, is_generated=1)
+        conn.commit()
+        _populate_file_touch(conn, DATE_STR)
+        rows = conn.execute("SELECT * FROM file_touch").fetchall()
+        assert rows == []
+
+    def test_file_from_different_date_excluded(self):
+        conn = _conn()
+        _seed_file(conn, "old.md", modified_date="2026-01-01")
+        conn.commit()
+        _populate_file_touch(conn, DATE_STR)
+        rows = conn.execute("SELECT * FROM file_touch").fetchall()
+        # The created epoch also maps to "2026-01-01", not DATE_STR
+        assert rows == []
+
+    def test_idempotent_on_rerun(self):
+        conn = _conn()
+        _seed_file(conn, "a.md", modified_date=DATE_STR)
+        conn.commit()
+        _populate_file_touch(conn, DATE_STR)
+        _populate_file_touch(conn, DATE_STR)
+        conn.commit()
+        rows = conn.execute(
+            "SELECT * FROM file_touch WHERE file_path = 'a.md' AND event_type = 'modified'"
+        ).fetchall()
+        assert len(rows) == 1
+
+
+# ---------------------------------------------------------------------------
+# _populate_daily_tasks
+# ---------------------------------------------------------------------------
+
+
+class TestPopulateDailyTasks:
+    def test_created_task_snapshot(self):
+        conn = _conn()
+        _seed_file(conn, "a.md")
+        _seed_task(conn, "t1", "a.md", created_date=DATE_STR, estimate_seconds=3600)
+        conn.commit()
+        _populate_daily_tasks(conn, DATE_STR)
+        rows = conn.execute(
+            "SELECT * FROM daily_task WHERE event_type = 'created' AND event_date = ?",
+            (DATE_STR,),
+        ).fetchall()
+        assert len(rows) == 1
+        assert rows[0]["task_id"] == "t1"
+        assert rows[0]["task_text"] == "Task text"
+
+    def test_completed_task_snapshot(self):
+        conn = _conn()
+        _seed_file(conn, "a.md")
+        _seed_task(conn, "t1", "a.md", checked=1, act_comp_date=DATE_STR)
+        conn.commit()
+        _populate_daily_tasks(conn, DATE_STR)
+        rows = conn.execute(
+            "SELECT * FROM daily_task WHERE event_type = 'completed' AND event_date = ?",
+            (DATE_STR,),
+        ).fetchall()
+        assert len(rows) == 1
+        assert rows[0]["task_id"] == "t1"
+
+    def test_task_created_and_completed_same_day(self):
+        conn = _conn()
+        _seed_file(conn, "a.md")
+        _seed_task(conn, "t1", "a.md", checked=1, created_date=DATE_STR, act_comp_date=DATE_STR)
+        conn.commit()
+        _populate_daily_tasks(conn, DATE_STR)
+        rows = conn.execute(
+            "SELECT * FROM daily_task WHERE task_id = 't1' AND event_date = ?",
+            (DATE_STR,),
+        ).fetchall()
+        assert len(rows) == 2
+        event_types = {r["event_type"] for r in rows}
+        assert event_types == {"created", "completed"}
+
+    def test_unchecked_task_not_in_completed(self):
+        conn = _conn()
+        _seed_file(conn, "a.md")
+        # act_comp_date set but checked=0 — should not be in completed
+        _seed_task(conn, "t1", "a.md", checked=0, act_comp_date=DATE_STR)
+        conn.commit()
+        _populate_daily_tasks(conn, DATE_STR)
+        rows = conn.execute(
+            "SELECT * FROM daily_task WHERE event_type = 'completed'"
+        ).fetchall()
+        assert rows == []
+
+    def test_task_from_different_date_excluded(self):
+        conn = _conn()
+        _seed_file(conn, "a.md")
+        _seed_task(conn, "t1", "a.md", created_date="2026-01-01")
+        conn.commit()
+        _populate_daily_tasks(conn, DATE_STR)
+        rows = conn.execute("SELECT * FROM daily_task").fetchall()
+        assert rows == []
+
+    def test_idempotent_on_rerun(self):
+        conn = _conn()
+        _seed_file(conn, "a.md")
+        _seed_task(conn, "t1", "a.md", created_date=DATE_STR)
+        conn.commit()
+        _populate_daily_tasks(conn, DATE_STR)
+        _populate_daily_tasks(conn, DATE_STR)
+        conn.commit()
+        rows = conn.execute(
+            "SELECT * FROM daily_task WHERE task_id = 't1' AND event_type = 'created'"
+        ).fetchall()
+        assert len(rows) == 1
+
+    def test_run_rollup_populates_file_touch_and_daily_task(self):
+        """Integration: run_rollup populates both snapshot tables."""
+        conn = _conn()
+        _seed_file(conn, "a.md", modified_date=DATE_STR)
+        _seed_task(conn, "t1", "a.md", created_date=DATE_STR)
+        conn.commit()
+        run_rollup(_make_config(), conn, DATE)
+        ft_rows = conn.execute(
+            "SELECT * FROM file_touch WHERE touch_date = ?", (DATE_STR,)
+        ).fetchall()
+        dt_rows = conn.execute(
+            "SELECT * FROM daily_task WHERE event_date = ?", (DATE_STR,)
+        ).fetchall()
+        assert len(ft_rows) > 0
+        assert len(dt_rows) > 0

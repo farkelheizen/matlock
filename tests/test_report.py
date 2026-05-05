@@ -98,11 +98,11 @@ def _seed_task(
     })
 
 
-def _seed_metric(conn, metric_date: str, project_id: str | None, *, completed: int = 0) -> None:
+def _seed_metric(conn, metric_date: str, project_id: str | None, *, completed: int = 0, created: int = 0) -> None:
     upsert_daily_metric(conn, {
         "metric_date": metric_date,
         "project_id": project_id,
-        "tasks_created_count": 0,
+        "tasks_created_count": created,
         "tasks_created_minutes": 0,
         "tasks_completed_count": completed,
         "tasks_completed_minutes": 0,
@@ -282,18 +282,18 @@ class TestRunReportBasic:
         assert row["is_generated"] == 1
 
     def test_files_written_count_empty_db(self, tmp_path: Path):
-        """Empty DB: dashboard + 5 task view pages (no projects, no history)."""
+        """Empty DB: dashboard + 5 task view pages + warnings + 2 index pages + today's history."""
         conn = _conn()
         cfg = _make_config(tmp_path)
         result = run_report(cfg, conn)
-        assert result.files_written == 9  # dashboard + 5 task view pages + warnings + 2 index pages
+        assert result.files_written == 10  # 9 standard pages + today's history page
 
     def test_idempotent_second_run(self, tmp_path: Path):
         conn = _conn()
         cfg = _make_config(tmp_path)
         run_report(cfg, conn)
         result2 = run_report(cfg, conn)
-        assert result2.files_written == 9
+        assert result2.files_written == 10
         assert (cfg.output_directory / "Home.md").exists()
 
 
@@ -334,7 +334,8 @@ class TestRunReportTargetFilter:
         result = run_report(cfg, conn, target="history")
         assert (cfg.output_directory / _history_subpath("2026-04-20")).exists()
         assert not (cfg.output_directory / "Home.md").exists()
-        assert result.files_written == 1
+        # 2026-04-20 + today both generated
+        assert result.files_written == 2
 
     def test_target_all_writes_all(self, tmp_path: Path):
         conn, cfg = self._setup(tmp_path)
@@ -523,11 +524,13 @@ class TestRunReportHistoryPage:
         assert row["is_generated"] == 1
 
     def test_no_history_if_no_daily_metrics(self, tmp_path: Path):
+        """Even with no prior daily_metric rows, today's history page is always generated."""
         conn = _conn()
         cfg = _make_config(tmp_path)
         result = run_report(cfg, conn, target="history")
-        assert result.files_written == 0
-        assert not (cfg.output_directory / "History").exists()
+        today = datetime.date.today().isoformat()
+        assert result.files_written == 1
+        assert (cfg.output_directory / _history_subpath(today)).exists()
 
     def test_history_breakdown_shows_unassigned(self, tmp_path: Path):
         conn = _conn()
@@ -545,6 +548,111 @@ class TestRunReportHistoryPage:
         run_report(cfg, conn, target="history")
         content = (cfg.output_directory / _history_subpath("2026-04-20")).read_text()
         assert "p1" in content
+
+    def test_history_shows_created_counts_in_project_table(self, tmp_path: Path):
+        conn = _conn()
+        _seed_project(conn, "p1", "Work")
+        _seed_metric(conn, "2026-04-20", "p1", completed=1, created=3)
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="history")
+        content = (cfg.output_directory / _history_subpath("2026-04-20")).read_text()
+        assert "Created" in content
+
+    def test_history_shows_prev_date_link(self, tmp_path: Path):
+        conn = _conn()
+        _seed_metric(conn, "2026-04-20", None, completed=1)
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="history")
+        content = (cfg.output_directory / _history_subpath("2026-04-20")).read_text()
+        assert "2026-04-19" in content
+
+    def test_history_shows_next_date_link(self, tmp_path: Path):
+        conn = _conn()
+        _seed_metric(conn, "2026-04-20", None, completed=1)
+        _seed_metric(conn, "2026-04-21", None, completed=1)
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="history")
+        content = (cfg.output_directory / _history_subpath("2026-04-20")).read_text()
+        assert "2026-04-21" in content
+
+    def test_history_no_next_date_when_last_date(self, tmp_path: Path):
+        """Today's history page has no next_date, so ➡ should not appear."""
+        conn = _conn()
+        today = datetime.date.today().isoformat()
+        _seed_metric(conn, today, None, completed=1)
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="history")
+        content = (cfg.output_directory / _history_subpath(today)).read_text()
+        # today is the last date, so next_date is None — ➡ should not appear
+        assert "➡" not in content
+
+    def test_history_file_touches_section_empty_fallback(self, tmp_path: Path):
+        conn = _conn()
+        _seed_metric(conn, "2026-04-20", None, completed=1)
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="history")
+        content = (cfg.output_directory / _history_subpath("2026-04-20")).read_text()
+        assert "Files Touched" in content
+        assert "No file-touch data available" in content
+
+    def test_history_file_touches_shows_when_data_present(self, tmp_path: Path):
+        conn = _conn()
+        _seed_metric(conn, "2026-04-20", None, completed=0)
+        conn.execute(
+            "INSERT INTO file_touch (file_path, touch_date, event_type, modified)"
+            " VALUES (?, ?, ?, ?)",
+            ("Notes/work.md", "2026-04-20", "modified", 1745193600000),
+        )
+        conn.commit()
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="history")
+        content = (cfg.output_directory / _history_subpath("2026-04-20")).read_text()
+        assert "work.md" in content
+        assert "modified" in content
+
+    def test_history_tasks_section_empty_fallback(self, tmp_path: Path):
+        conn = _conn()
+        _seed_metric(conn, "2026-04-20", None, completed=1)
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="history")
+        content = (cfg.output_directory / _history_subpath("2026-04-20")).read_text()
+        assert "Tasks This Day" in content
+        assert "No task-event data available" in content
+
+    def test_history_tasks_shows_when_data_present(self, tmp_path: Path):
+        conn = _conn()
+        _seed_metric(conn, "2026-04-20", None, completed=1)
+        conn.execute(
+            "INSERT INTO daily_task (task_id, event_date, event_type, task_text, file_path, attributes)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
+            ("t-abc", "2026-04-20", "completed", "Write the report", "Notes/work.md", "{}"),
+        )
+        conn.commit()
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="history")
+        content = (cfg.output_directory / _history_subpath("2026-04-20")).read_text()
+        assert "Write the report" in content
+        assert "completed" in content
+
+    def test_history_super_project_summary_with_data(self, tmp_path: Path):
+        conn = _conn()
+        _seed_super_project(conn, "sp1", "Platform")
+        _seed_project(conn, "p1", "API", super_project_id="sp1")
+        _seed_metric(conn, "2026-04-20", "p1", completed=2, created=1)
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="history")
+        content = (cfg.output_directory / _history_subpath("2026-04-20")).read_text()
+        assert "Platform" in content
+        assert "Super-Project" in content
+
+    def test_history_home_link_present(self, tmp_path: Path):
+        conn = _conn()
+        _seed_metric(conn, "2026-04-20", None, completed=1)
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="history")
+        content = (cfg.output_directory / _history_subpath("2026-04-20")).read_text()
+        assert "Home" in content
+        assert "🏠" in content
 
 
 # ---------------------------------------------------------------------------

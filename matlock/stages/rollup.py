@@ -30,7 +30,7 @@ import sqlite3
 from collections import defaultdict
 
 from matlock.config import MatlockConfig
-from matlock.db import upsert_daily_metric
+from matlock.db import upsert_daily_metric, upsert_daily_task, upsert_file_touch
 
 
 # ---------------------------------------------------------------------------
@@ -196,6 +196,110 @@ def _calc_metrics(
 
 
 # ---------------------------------------------------------------------------
+# Snapshot helpers (file_touch, daily_task)
+# ---------------------------------------------------------------------------
+
+
+def _populate_file_touch(
+    conn: sqlite3.Connection,
+    rollup_date_str: str,
+) -> None:
+    """Snapshot file events for *rollup_date_str* into ``file_touch``.
+
+    Three event types:
+    - ``created``  — files whose creation date (derived from ``created`` epoch) equals the rollup date
+    - ``modified`` — non-deleted, non-generated files with ``modified_date`` equal to rollup date
+    - ``deleted``  — files marked deleted with ``deleted_date`` equal to rollup date
+
+    Idempotent: ``INSERT OR REPLACE`` via ``upsert_file_touch``.
+    """
+    # Created
+    for row in conn.execute(
+        "SELECT file_path, modified FROM file"
+        " WHERE date(created / 1000, 'unixepoch') = ? AND is_generated = 0",
+        (rollup_date_str,),
+    ).fetchall():
+        upsert_file_touch(conn, {
+            "file_path": row["file_path"],
+            "touch_date": rollup_date_str,
+            "event_type": "created",
+            "modified": row["modified"],
+        })
+
+    # Modified (non-deleted)
+    for row in conn.execute(
+        "SELECT file_path, modified FROM file"
+        " WHERE modified_date = ? AND deleted = 0 AND is_generated = 0",
+        (rollup_date_str,),
+    ).fetchall():
+        upsert_file_touch(conn, {
+            "file_path": row["file_path"],
+            "touch_date": rollup_date_str,
+            "event_type": "modified",
+            "modified": row["modified"],
+        })
+
+    # Deleted
+    for row in conn.execute(
+        "SELECT file_path FROM file"
+        " WHERE deleted_date = ? AND deleted = 1 AND is_generated = 0",
+        (rollup_date_str,),
+    ).fetchall():
+        upsert_file_touch(conn, {
+            "file_path": row["file_path"],
+            "touch_date": rollup_date_str,
+            "event_type": "deleted",
+            "modified": None,
+        })
+
+
+def _populate_daily_tasks(
+    conn: sqlite3.Connection,
+    rollup_date_str: str,
+) -> None:
+    """Snapshot task events for *rollup_date_str* into ``daily_task``.
+
+    Two event types:
+    - ``created``   — tasks with ``created_date`` equal to rollup date
+    - ``completed`` — tasks with ``act_comp_date`` equal to rollup date and ``checked = 1``
+
+    Denormalizes ``task_text``, ``file_path``, and ``attributes`` so the
+    snapshot survives future edits to the source vault.
+
+    Idempotent: ``INSERT OR REPLACE`` via ``upsert_daily_task``.
+    """
+    # Created
+    for row in conn.execute(
+        "SELECT task_id, task_text, file_path, attributes FROM task"
+        " WHERE created_date = ?",
+        (rollup_date_str,),
+    ).fetchall():
+        upsert_daily_task(conn, {
+            "task_id": row["task_id"],
+            "event_date": rollup_date_str,
+            "event_type": "created",
+            "task_text": row["task_text"],
+            "file_path": row["file_path"],
+            "attributes": row["attributes"],
+        })
+
+    # Completed
+    for row in conn.execute(
+        "SELECT task_id, task_text, file_path, attributes FROM task"
+        " WHERE act_comp_date = ? AND checked = 1",
+        (rollup_date_str,),
+    ).fetchall():
+        upsert_daily_task(conn, {
+            "task_id": row["task_id"],
+            "event_date": rollup_date_str,
+            "event_type": "completed",
+            "task_text": row["task_text"],
+            "file_path": row["file_path"],
+            "attributes": row["attributes"],
+        })
+
+
+# ---------------------------------------------------------------------------
 # Public stage entry point
 # ---------------------------------------------------------------------------
 
@@ -208,7 +312,8 @@ def run_rollup(
     """Calculate metrics for *rollup_date* and upsert into ``daily_metric``.
 
     Writes one row per project plus one NULL-project row for unassigned
-    tasks/files.  Commits once at the end.
+    tasks/files.  Also snapshots file-touch and task events for the date.
+    Commits once at the end.
     """
     rollup_date_str = _date_to_str(rollup_date)
     tomorrow_str = _date_to_str(rollup_date + datetime.timedelta(days=1))
@@ -241,6 +346,10 @@ def run_rollup(
     null_row = _calc_metrics(conn, rollup_date_str, tomorrow_str, None, unassigned_paths)
     upsert_daily_metric(conn, null_row)
     rows_written += 1
+
+    # Snapshot file-touch and task events for this date
+    _populate_file_touch(conn, rollup_date_str)
+    _populate_daily_tasks(conn, rollup_date_str)
 
     conn.commit()
     return RollupResult(rollup_date=rollup_date_str, rows_written=rows_written)

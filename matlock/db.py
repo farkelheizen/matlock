@@ -121,6 +121,24 @@ CREATE TABLE IF NOT EXISTS daily_metric (
     files_deleted_count        INTEGER,
     PRIMARY KEY (metric_date, project_id)
 );
+
+CREATE TABLE IF NOT EXISTS file_touch (
+    file_path  TEXT NOT NULL,
+    touch_date TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    modified   INTEGER,
+    PRIMARY KEY (file_path, touch_date, event_type)
+);
+
+CREATE TABLE IF NOT EXISTS daily_task (
+    task_id    TEXT NOT NULL,
+    event_date TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    task_text  TEXT,
+    file_path  TEXT,
+    attributes TEXT,
+    PRIMARY KEY (task_id, event_date, event_type)
+);
 """
 
 
@@ -144,6 +162,14 @@ def _migrate(conn: sqlite3.Connection) -> None:
     }
     if "status" not in existing_project_cols:
         conn.execute("ALTER TABLE project ADD COLUMN status TEXT")
+
+    existing_file_cols = {
+        row[1]
+        for row in conn.execute("PRAGMA table_info(file)").fetchall()
+    }
+    if "deleted_date" not in existing_file_cols:
+        conn.execute("ALTER TABLE file ADD COLUMN deleted_date TEXT")
+
     conn.commit()
 
 
@@ -195,10 +221,17 @@ def get_files_needing_parsing(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     ).fetchall()
 
 
-def mark_file_deleted(conn: sqlite3.Connection, file_path: str) -> None:
-    """Set ``deleted = 1`` for *file_path*."""
+def mark_file_deleted(
+    conn: sqlite3.Connection,
+    file_path: str,
+    deleted_date: str | None = None,
+) -> None:
+    """Set ``deleted = 1`` (and optionally ``deleted_date``) for *file_path*."""
+    import datetime as _dt
+    date_val = deleted_date or _dt.date.today().isoformat()
     conn.execute(
-        "UPDATE file SET deleted = 1 WHERE file_path = ?", (file_path,)
+        "UPDATE file SET deleted = 1, deleted_date = ? WHERE file_path = ?",
+        (date_val, file_path),
     )
 
 
@@ -365,3 +398,50 @@ def upsert_daily_metric(conn: sqlite3.Connection, row: dict) -> None:
             {"metric_date": row["metric_date"]},
         )
     conn.execute(_UPSERT_DAILY_METRIC, row)
+
+
+# ---------------------------------------------------------------------------
+# file_touch table helpers
+# ---------------------------------------------------------------------------
+
+_FILE_TOUCH_COLUMNS = ("file_path", "touch_date", "event_type", "modified")
+
+_UPSERT_FILE_TOUCH = (
+    "INSERT OR REPLACE INTO file_touch ("
+    + ", ".join(_FILE_TOUCH_COLUMNS)
+    + ") VALUES ("
+    + ", ".join(f":{c}" for c in _FILE_TOUCH_COLUMNS)
+    + ")"
+)
+
+
+def upsert_file_touch(conn: sqlite3.Connection, row: dict) -> None:
+    """Insert or replace a row in the ``file_touch`` table."""
+    conn.execute(_UPSERT_FILE_TOUCH, row)
+
+
+# ---------------------------------------------------------------------------
+# daily_task table helpers
+# ---------------------------------------------------------------------------
+
+_DAILY_TASK_COLUMNS = (
+    "task_id",
+    "event_date",
+    "event_type",
+    "task_text",
+    "file_path",
+    "attributes",
+)
+
+_UPSERT_DAILY_TASK = (
+    "INSERT OR REPLACE INTO daily_task ("
+    + ", ".join(_DAILY_TASK_COLUMNS)
+    + ") VALUES ("
+    + ", ".join(f":{c}" for c in _DAILY_TASK_COLUMNS)
+    + ")"
+)
+
+
+def upsert_daily_task(conn: sqlite3.Connection, row: dict) -> None:
+    """Insert or replace a row in the ``daily_task`` table."""
+    conn.execute(_UPSERT_DAILY_TASK, row)

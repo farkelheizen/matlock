@@ -2,10 +2,10 @@
 
 Use this file to identify the active implementation plan before starting work.
 
-- Active plan: `docs/copilot/plans/20260430-server-run-all-parity.md` ✅ Completed
-- Current step: complete
+- Active plan: `docs/copilot/plans/20260505-daily-history-persistence.md` ✅ Completed
+- Current step: complete (all 5 steps done)
 - Next plan: none
-- Last updated: 2026-04-30
+- Last updated: 2026-05-05
 - Owner: Copilot
 
 ## Update Rules

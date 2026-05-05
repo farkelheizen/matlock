@@ -6,6 +6,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- **`file_touch` table** — Immutable per-day file-event snapshot (created/modified/deleted) populated by the `rollup` stage. Enables accurate history page regeneration at any future date.
+- **`daily_task` table** — Immutable per-day task-event snapshot (created/completed) populated by the `rollup` stage. Denormalizes `task_text`, `file_path`, and `attributes` at rollup time.
+- **`deleted_date` column on `file` table** — YYYY-MM-DD when `sync` first detected a file deletion. Auto-migrated on next `init_db` call.
+- **Enriched daily history page** — `_Matlock/History/<date>.md` now includes:
+  - Header: generated-at timestamp, home link, previous/next day navigation
+  - Summary by super-project table
+  - Summary by project table (now tabular, includes created + completed counts)
+  - Files Touched table (descending by time; deleted events show "—" for time)
+  - Tasks This Day table (with event type, estimate, and project link)
+  - Graceful fallback text for dates without snapshot data (pre-migration history pages)
+
+### Changed
+
+- `rollup` stage now populates `file_touch` and `daily_task` after writing `daily_metric` rows (idempotent via `INSERT OR REPLACE`).
+- `db.mark_file_deleted` now sets `deleted_date = today` in addition to `deleted = 1`.
+
+---
+
 ## [0.2.0] — 2026-04-30
 
 ### Added

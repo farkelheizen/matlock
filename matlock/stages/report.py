@@ -24,6 +24,7 @@ import jinja2
 
 from matlock.config import MatlockConfig
 from matlock.db import upsert_file
+from matlock.stages.rollup import run_rollup
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -189,7 +190,7 @@ def run_report(
                     conn, out_dir / _SUPER_PROJECTS_DIR, current_sp_ids
                 )
         if target in ("all", "history"):
-            files_written += _render_history(env, conn, out_dir, base_dir, today_str)
+            files_written += _render_history(env, conn, out_dir, base_dir, today_str, config)
 
         if force:
             # Full purge: delete every generated file not produced by this run
@@ -1808,6 +1809,8 @@ def _compute_expected_paths(
     if target in ("all", "history"):
         for r in conn.execute("SELECT DISTINCT metric_date FROM daily_metric").fetchall():
             expected.add(out_dir / _history_subpath(r["metric_date"]))
+        # today is always generated
+        expected.add(out_dir / _history_subpath(datetime.date.today().isoformat()))
     return expected
 
 
@@ -1920,13 +1923,20 @@ def _render_history(
     out_dir: Path,
     base_dir: Path,
     today_str: str,
+    config: MatlockConfig,
 ) -> int:
-    dates = conn.execute(
+    dates_rows = conn.execute(
         "SELECT DISTINCT metric_date FROM daily_metric ORDER BY metric_date"
     ).fetchall()
+    dates = [r["metric_date"] for r in dates_rows]
+
+    # Always include today — run rollup for today if not already present
+    if today_str not in dates:
+        run_rollup(config, conn, datetime.date.today())
+        dates.append(today_str)
+
     count = 0
-    for date_row in dates:
-        metric_date = date_row["metric_date"]
+    for metric_date in dates:
         _render_history_page(env, conn, out_dir, base_dir, metric_date, today_str)
         count += 1
     return count
@@ -1958,7 +1968,7 @@ def _render_history_page(
         files_modified_count=sum(r["files_modified_count"] or 0 for r in dm_rows),
     )
 
-    # Per-project breakdown rows
+    # Per-project breakdown rows (enhanced with created counts; omit all-zero rows)
     project_rows: list[SimpleNamespace] = []
     for r in dm_rows:
         if r["project_id"] is not None:
@@ -1972,16 +1982,165 @@ def _render_history_page(
             )
         else:
             proj = None
+        created_count = r["tasks_created_count"] or 0
+        created_mins = r["tasks_created_minutes"] or 0
+        completed_count = r["tasks_completed_count"] or 0
+        completed_mins = r["tasks_completed_minutes"] or 0
+        past_due = r["tasks_past_due_count"] or 0
+        if not (created_count or created_mins or completed_count or completed_mins or past_due):
+            continue
         project_rows.append(
             SimpleNamespace(
                 project=proj,
-                tasks_completed_count=r["tasks_completed_count"] or 0,
-                tasks_completed_minutes=r["tasks_completed_minutes"] or 0,
-                tasks_past_due_count=r["tasks_past_due_count"] or 0,
+                tasks_created_count=created_count,
+                tasks_created_minutes=created_mins,
+                tasks_completed_count=completed_count,
+                tasks_completed_minutes=completed_mins,
+                tasks_past_due_count=past_due,
             )
         )
 
+    # Super-project summary (aggregate daily_metric via project → super_project join)
+    sp_agg: dict[str | None, dict] = {}  # super_project_id → aggregated counts
+    for r in dm_rows:
+        pid = r["project_id"]
+        if pid is not None:
+            sp_row = conn.execute(
+                "SELECT sp.super_project_id, sp.title FROM super_project sp"
+                " JOIN project p ON p.super_project_id = sp.super_project_id"
+                " WHERE p.project_id = ?",
+                (pid,),
+            ).fetchone()
+            sp_id = sp_row["super_project_id"] if sp_row else None
+            sp_title = sp_row["title"] if sp_row else None
+        else:
+            sp_id = None
+            sp_title = None
+
+        key = sp_id  # None = Unassigned
+        if key not in sp_agg:
+            sp_agg[key] = {
+                "sp_id": sp_id,
+                "sp_title": sp_title,
+                "tasks_created_count": 0,
+                "tasks_created_minutes": 0,
+                "tasks_completed_count": 0,
+                "tasks_completed_minutes": 0,
+            }
+        sp_agg[key]["tasks_created_count"] += r["tasks_created_count"] or 0
+        sp_agg[key]["tasks_created_minutes"] += r["tasks_created_minutes"] or 0
+        sp_agg[key]["tasks_completed_count"] += r["tasks_completed_count"] or 0
+        sp_agg[key]["tasks_completed_minutes"] += r["tasks_completed_minutes"] or 0
+
     out_path = out_dir / _history_subpath(metric_date)
+    super_project_summary: list[SimpleNamespace] = []
+    for key, agg in sp_agg.items():
+        sp_link = (
+            _rel(out_path, out_dir / _SUPER_PROJECTS_DIR / f"{agg['sp_id']}.md")
+            if agg["sp_id"]
+            else None
+        )
+        super_project_title = agg["sp_title"] or (agg["sp_id"] or "Unassigned")
+        super_project_summary.append(
+            SimpleNamespace(
+                super_project_title=super_project_title,
+                sp_link=sp_link,
+                tasks_created_count=agg["tasks_created_count"],
+                tasks_created_minutes=agg["tasks_created_minutes"],
+                tasks_completed_count=agg["tasks_completed_count"],
+                tasks_completed_minutes=agg["tasks_completed_minutes"],
+            )
+        )
+    # Filter out super-projects with all-zero counts, then sort
+    super_project_summary = [
+        sp for sp in super_project_summary
+        if sp.tasks_created_count or sp.tasks_created_minutes
+        or sp.tasks_completed_count or sp.tasks_completed_minutes
+    ]
+    super_project_summary.sort(
+        key=lambda x: (x.super_project_title == "Unassigned", x.super_project_title.lower())
+    )
+
+    # File touch list for this date
+    ft_rows = conn.execute(
+        "SELECT file_path, event_type, modified FROM file_touch"
+        " WHERE touch_date = ? ORDER BY modified DESC, file_path ASC",
+        (metric_date,),
+    ).fetchall()
+    file_touches: list[SimpleNamespace] = []
+    for ft in ft_rows:
+        if ft["event_type"] != "deleted" and isinstance(ft["modified"], int) and ft["modified"] > 0:
+            mod_dt = datetime.datetime.fromtimestamp(ft["modified"] / 1000)
+            modified_text = mod_dt.strftime("%Y-%m-%d %-I:%M %p")
+        else:
+            modified_text = "—"
+        file_touches.append(
+            SimpleNamespace(
+                file_path=ft["file_path"],
+                event_type=ft["event_type"],
+                modified_text=modified_text,
+                source_link=_rel(out_path, base_dir / ft["file_path"]),
+            )
+        )
+
+    # Task list for this date (collapse created+completed per task_id)
+    dt_rows = conn.execute(
+        "SELECT task_id, event_type, task_text, file_path, attributes"
+        " FROM daily_task WHERE event_date = ? ORDER BY task_id, event_type",
+        (metric_date,),
+    ).fetchall()
+    task_map: dict[str, dict] = {}
+    for dt in dt_rows:
+        tid = dt["task_id"]
+        if tid not in task_map:
+            task_map[tid] = {
+                "task_text": dt["task_text"] or "",
+                "file_path": dt["file_path"] or "",
+                "attributes": dt["attributes"],
+                "events": [],
+            }
+        task_map[tid]["events"].append(dt["event_type"])
+
+    task_list: list[SimpleNamespace] = []
+    for tid, t in task_map.items():
+        events_display = " + ".join(sorted(set(t["events"])))
+        estimate_mins = _estimate_minutes_from_attributes(t["attributes"])
+        estimate_display = f"{estimate_mins}m" if estimate_mins else "—"
+
+        # Find project for this file
+        proj_link_row = conn.execute(
+            "SELECT fp.project_id FROM file_project fp"
+            " WHERE fp.file_path = ? LIMIT 1",
+            (t["file_path"],),
+        ).fetchone()
+        proj_title = None
+        proj_link = None
+        if proj_link_row:
+            proj_id = proj_link_row["project_id"]
+            proj_title_row = conn.execute(
+                "SELECT title FROM project WHERE project_id = ?", (proj_id,)
+            ).fetchone()
+            proj_title = (proj_title_row["title"] if proj_title_row else proj_id) or proj_id
+            proj_link = _rel(out_path, out_dir / "Projects" / f"{proj_id}.md")
+
+        task_list.append(
+            SimpleNamespace(
+                task_text=t["task_text"],
+                file_path=t["file_path"],
+                events_display=events_display,
+                estimate_display=estimate_display,
+                source_link=_rel(out_path, base_dir / t["file_path"]) if t["file_path"] else None,
+                project_title=proj_title,
+                project_link=proj_link,
+            )
+        )
+
+    # Next date (first metric_date > metric_date in daily_metric)
+    next_row = conn.execute(
+        "SELECT MIN(metric_date) AS next_d FROM daily_metric WHERE metric_date > ?",
+        (metric_date,),
+    ).fetchone()
+    next_date = next_row["next_d"] if next_row else None
 
     def project_link(pid: str) -> str:
         return _rel(out_path, out_dir / "Projects" / f"{pid}.md")
@@ -1990,13 +2149,19 @@ def _render_history_page(
         return _rel(out_path, out_dir / _history_subpath(date_str))
 
     dashboard_link = _rel(out_path, out_dir / _HOME_PAGE)
+    generated_at = datetime.datetime.now().strftime("%Y-%m-%d %-I:%M %p")
 
     content = env.get_template("daily_history.md.j2").render(
         metric_date=metric_date,
         day_of_week=day_of_week,
+        generated_at=generated_at,
         totals=totals,
         project_rows=project_rows,
+        super_project_summary=super_project_summary,
+        file_touches=file_touches,
+        task_list=task_list,
         prev_date=prev_date,
+        next_date=next_date,
         project_link=project_link,
         history_link=history_link,
         dashboard_link=dashboard_link,
