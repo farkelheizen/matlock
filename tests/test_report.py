@@ -571,7 +571,7 @@ class TestDashboardContent:
         content = (cfg.output_directory / "Home.md").read_text()
 
         assert "Recently Changed Files" in content
-        assert "2026-04-27 00:00" in content
+        assert "2026-04-27 12:00 AM" in content
         assert "[beta.md](../vault/notes/beta.md)" in content
         assert "[alpha.md](../vault/notes/alpha.md)" in content
 

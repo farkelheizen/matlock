@@ -527,7 +527,7 @@ def _render_due_today(
     _attach_task_links(tasks, this_file, base_dir, out_dir)
     tiers = _build_tiers(tasks)
     any_tasks = any(tier["tasks"] for tier in tiers)
-    generated_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    generated_at = datetime.datetime.now().strftime("%Y-%m-%d %-I:%M %p")
     content = env.get_template("due_today.md.j2").render(
         today=today_str,
         generated_at=generated_at,
@@ -551,7 +551,7 @@ def _render_past_due(
     _attach_task_links(tasks, this_file, base_dir, out_dir)
     tiers = _build_tiers(tasks)
     any_tasks = any(tier["tasks"] for tier in tiers)
-    generated_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    generated_at = datetime.datetime.now().strftime("%Y-%m-%d %-I:%M %p")
     content = env.get_template("past_due.md.j2").render(
         today=today_str,
         generated_at=generated_at,
@@ -576,7 +576,7 @@ def _render_due_soon(
     tiers = _build_tiers(tasks)
     any_tasks = any(tier["tasks"] for tier in tiers)
     soon_date = (datetime.date.fromisoformat(today_str) + datetime.timedelta(days=7)).isoformat()
-    generated_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    generated_at = datetime.datetime.now().strftime("%Y-%m-%d %-I:%M %p")
     content = env.get_template("due_soon.md.j2").render(
         today=today_str,
         soon_date=soon_date,
@@ -601,7 +601,7 @@ def _render_future_due(
     _attach_task_links(tasks, this_file, base_dir, out_dir)
     tiers = _build_tiers(tasks)
     any_tasks = any(tier["tasks"] for tier in tiers)
-    generated_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    generated_at = datetime.datetime.now().strftime("%Y-%m-%d %-I:%M %p")
     content = env.get_template("future_due.md.j2").render(
         today=today_str,
         generated_at=generated_at,
@@ -625,7 +625,7 @@ def _render_not_due(
     _attach_task_links(tasks, this_file, base_dir, out_dir)
     tiers = _build_tiers(tasks)
     any_tasks = any(tier["tasks"] for tier in tiers)
-    generated_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    generated_at = datetime.datetime.now().strftime("%Y-%m-%d %-I:%M %p")
     content = env.get_template("not_due.md.j2").render(
         today=today_str,
         generated_at=generated_at,
@@ -706,9 +706,9 @@ def _get_recently_changed_tracked_files(
         modified_ms = row["modified"]
         if isinstance(modified_ms, int) and modified_ms > 0:
             changed_at = datetime.datetime.fromtimestamp(modified_ms / 1000)
-            changed_at_text = changed_at.strftime("%Y-%m-%d %H:%M")
+            changed_at_text = changed_at.strftime("%Y-%m-%d %-I:%M %p")
         elif row["modified_date"]:
-            changed_at_text = f"{row['modified_date']} 00:00"
+            changed_at_text = f"{row['modified_date']} 12:00 AM"
         else:
             changed_at_text = "Unknown"
 
@@ -955,9 +955,9 @@ def _build_active_super_projects_table(
             last_updated_text = "Unknown"
         elif isinstance(last_updated_row["modified"], int) and last_updated_row["modified"] > 0:
             changed_at = datetime.datetime.fromtimestamp(last_updated_row["modified"] / 1000)
-            last_updated_text = changed_at.strftime("%Y-%m-%d %H:%M")
+            last_updated_text = changed_at.strftime("%Y-%m-%d %-I:%M %p")
         elif last_updated_row["modified_date"]:
-            last_updated_text = f"{last_updated_row['modified_date']} 00:00"
+            last_updated_text = f"{last_updated_row['modified_date']} 12:00 AM"
         else:
             last_updated_text = "Unknown"
 
@@ -1029,7 +1029,7 @@ def _render_dashboard(
     def history_link(metric_date: str) -> str:
         return _rel(this_file, out_dir / _history_subpath(metric_date))
 
-    generated_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    generated_at = datetime.datetime.now().strftime("%Y-%m-%d %-I:%M %p")
     content = env.get_template("daily_dashboard.md.j2").render(
         generated_at=generated_at,
         current_streak=current_streak,
