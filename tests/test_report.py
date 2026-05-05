@@ -286,14 +286,14 @@ class TestRunReportBasic:
         conn = _conn()
         cfg = _make_config(tmp_path)
         result = run_report(cfg, conn)
-        assert result.files_written == 7  # dashboard + 5 task view pages + warnings
+        assert result.files_written == 9  # dashboard + 5 task view pages + warnings + 2 index pages
 
     def test_idempotent_second_run(self, tmp_path: Path):
         conn = _conn()
         cfg = _make_config(tmp_path)
         run_report(cfg, conn)
         result2 = run_report(cfg, conn)
-        assert result2.files_written == 7
+        assert result2.files_written == 9
         assert (cfg.output_directory / "Home.md").exists()
 
 
@@ -321,7 +321,7 @@ class TestRunReportTargetFilter:
         assert (cfg.output_directory / "Not Due.md").exists()
         assert not (cfg.output_directory / "Projects").exists()
         assert not (cfg.output_directory / "History").exists()
-        assert result.files_written == 7
+        assert result.files_written == 9
 
     def test_target_projects_writes_project_page(self, tmp_path: Path):
         conn, cfg = self._setup(tmp_path)
@@ -676,6 +676,20 @@ class TestDashboardContent:
         content = (cfg.output_directory / "Home.md").read_text()
         assert "Warnings.md" in content
 
+    def test_dashboard_has_super_projects_index_link(self, tmp_path: Path):
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="dashboard")
+        content = (cfg.output_directory / "Home.md").read_text()
+        assert "Super%20Projects.md" in content
+
+    def test_dashboard_has_projects_index_link(self, tmp_path: Path):
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="dashboard")
+        content = (cfg.output_directory / "Home.md").read_text()
+        assert "Projects.md" in content
+
 
 # ---------------------------------------------------------------------------
 # Warnings page
@@ -768,6 +782,122 @@ class TestWarningsPage:
         assert "No tasks with parse errors" in content
         assert "All projects are assigned to a super-project" in content
         assert "All projects have at least one associated file" in content
+
+
+
+# ---------------------------------------------------------------------------
+# Super Projects index page
+# ---------------------------------------------------------------------------
+
+
+class TestSuperProjectsIndexPage:
+    def test_super_projects_index_page_created(self, tmp_path: Path):
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="dashboard")
+        assert (cfg.output_directory / "Super Projects.md").exists()
+
+    def test_super_projects_index_has_header(self, tmp_path: Path):
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="dashboard")
+        content = (cfg.output_directory / "Super Projects.md").read_text()
+        assert "Generated:" in content
+        assert "Back to Dashboard" in content
+
+    def test_super_projects_index_empty_db_renders_table(self, tmp_path: Path):
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="dashboard")
+        content = (cfg.output_directory / "Super Projects.md").read_text()
+        assert "Super Project" in content
+
+    def test_super_projects_index_lists_super_project(self, tmp_path: Path):
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        _seed_super_project(conn, "sp1", "Alpha SP")
+        _seed_project(conn, "p1", "P One", super_project_id="sp1", status="In Progress")
+        run_report(cfg, conn, target="dashboard")
+        content = (cfg.output_directory / "Super Projects.md").read_text()
+        assert "Alpha SP" in content
+
+    def test_super_projects_index_active_count(self, tmp_path: Path):
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        _seed_super_project(conn, "sp1", "Alpha SP")
+        _seed_project(conn, "p1", "Active", super_project_id="sp1", status="In Progress")
+        _seed_project(conn, "p2", "Done", super_project_id="sp1", status="Complete")
+        run_report(cfg, conn, target="dashboard")
+        content = (cfg.output_directory / "Super Projects.md").read_text()
+        # SP row should appear with sp1 link
+        assert "sp1.md" in content
+
+    def test_super_projects_index_no_health_when_no_active(self, tmp_path: Path):
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        _seed_super_project(conn, "sp1", "Idle SP")
+        _seed_project(conn, "p1", "Done", super_project_id="sp1", status="Complete")
+        run_report(cfg, conn, target="dashboard")
+        content = (cfg.output_directory / "Super Projects.md").read_text()
+        # Health column should be blank for this SP (no active projects)
+        # Row contains the sp label and empty health cell
+        assert "Idle SP" in content
+
+
+# ---------------------------------------------------------------------------
+# Projects index page
+# ---------------------------------------------------------------------------
+
+
+class TestProjectsIndexPage:
+    def test_projects_index_page_created(self, tmp_path: Path):
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="dashboard")
+        assert (cfg.output_directory / "Projects.md").exists()
+
+    def test_projects_index_has_header(self, tmp_path: Path):
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="dashboard")
+        content = (cfg.output_directory / "Projects.md").read_text()
+        assert "Generated:" in content
+        assert "Back to Dashboard" in content
+
+    def test_projects_index_empty_db_renders_table(self, tmp_path: Path):
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="dashboard")
+        content = (cfg.output_directory / "Projects.md").read_text()
+        assert "Project" in content
+
+    def test_projects_index_lists_project(self, tmp_path: Path):
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        _seed_project(conn, "p1", "My Project", status="In Progress")
+        run_report(cfg, conn, target="dashboard")
+        content = (cfg.output_directory / "Projects.md").read_text()
+        assert "My Project" in content
+        assert "In Progress" in content
+
+    def test_projects_index_sorted_by_status_order(self, tmp_path: Path):
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        _seed_project(conn, "p_complete", "ZZZ Done", status="Complete")
+        _seed_project(conn, "p_active", "AAA Active", status="In Progress")
+        run_report(cfg, conn, target="dashboard")
+        content = (cfg.output_directory / "Projects.md").read_text()
+        # In Progress should appear before Complete
+        assert content.index("AAA Active") < content.index("ZZZ Done")
+
+    def test_projects_index_has_health_column(self, tmp_path: Path):
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        _seed_project(conn, "p1", "P One", status="In Progress")
+        run_report(cfg, conn, target="dashboard")
+        content = (cfg.output_directory / "Projects.md").read_text()
+        # Health column header should be present
+        assert "Health" in content
 
 
 # ---------------------------------------------------------------------------
@@ -1061,6 +1191,18 @@ class TestComputeExpectedPaths:
         out = tmp_path / "_Matlock"
         paths = _compute_expected_paths(conn, out, "history")
         assert out / _history_subpath("2026-04-20") in paths
+
+    def test_dashboard_target_includes_super_projects_index(self, tmp_path: Path):
+        conn = _conn()
+        out = tmp_path / "_Matlock"
+        paths = _compute_expected_paths(conn, out, "dashboard")
+        assert out / "Super Projects.md" in paths
+
+    def test_dashboard_target_includes_projects_index(self, tmp_path: Path):
+        conn = _conn()
+        out = tmp_path / "_Matlock"
+        paths = _compute_expected_paths(conn, out, "dashboard")
+        assert out / "Projects.md" in paths
 
 
 # ---------------------------------------------------------------------------

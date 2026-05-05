@@ -1,0 +1,9 @@
+# 🚀 Projects
+
+**Generated:** {{ generated_at }} | [🏠 Back to Dashboard]({{ dashboard_link }})
+
+| Project | Status | Current Streak | Health | Last Updated | Due Today | Past Due | Due Soon | Future Due | Not Due |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+{% for r in rows %}
+| [{{ r.project_label }}]({{ r.project_link }}) | {{ r.status }} | {{ r.current_streak }} | {{ r.health }} | {{ r.last_updated }} | {{ r.due_today_display }} | {{ r.past_due_display }} | {{ r.due_soon_display }} | {{ r.future_due_display }} | {{ r.not_due_display }} |
+{% endfor %}

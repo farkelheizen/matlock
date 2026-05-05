@@ -51,6 +51,8 @@ _DUE_SOON_PAGE = "Due Soon.md"
 _FUTURE_DUE_PAGE = "Future Due.md"
 _NOT_DUE_PAGE = "Not Due.md"
 _WARNINGS_PAGE = "Warnings.md"
+_SUPER_PROJECTS_INDEX_PAGE = "Super Projects.md"
+_PROJECTS_INDEX_PAGE = "Projects.md"
 _SUPER_PROJECTS_DIR = "Super Projects"
 
 
@@ -167,6 +169,8 @@ def run_report(
             files_written += _render_future_due(env, conn, out_dir, base_dir, today_str)
             files_written += _render_not_due(env, conn, out_dir, base_dir, today_str)
             files_written += _render_warnings(env, conn, out_dir, today_str)
+            files_written += _render_super_projects_index(env, conn, out_dir, today_str)
+            files_written += _render_projects_index(env, conn, out_dir, today_str)
         if target in ("all", "projects"):
             files_written += _render_all_projects(env, conn, out_dir, base_dir, today_str)
             files_written += _render_all_super_projects(env, conn, out_dir, base_dir, today_str)
@@ -1148,6 +1152,8 @@ def _render_dashboard(
     content = env.get_template("daily_dashboard.md.j2").render(
         generated_at=generated_at,
         warnings_link=_rel(this_file, out_dir / _WARNINGS_PAGE),
+        super_projects_index_link=_rel(this_file, out_dir / _SUPER_PROJECTS_INDEX_PAGE),
+        projects_index_link=_rel(this_file, out_dir / _PROJECTS_INDEX_PAGE),
         current_streak=current_streak,
         longest_streak=longest_streak,
         longest_streak_end=longest_streak_end,
@@ -1279,6 +1285,284 @@ def _render_warnings(
         projects_no_files=projects_no_files,
         orphaned_files=orphaned_files,
         orphaned_tasks=orphaned_tasks,
+    )
+    _write_file(conn, this_file, content, today_str)
+    return 1
+
+
+# ---------------------------------------------------------------------------
+# Super Projects index renderer
+# ---------------------------------------------------------------------------
+
+_STATUS_SORT_ORDER = {
+    "In Progress": 0,
+    "On Hold": 1,
+    "Planned": 2,
+    "Complete": 3,
+    "Cancelled": 4,
+}
+_ALL_PROJECT_STATUSES = list(_STATUS_SORT_ORDER.keys())
+
+
+def _render_super_projects_index(
+    env: jinja2.Environment,
+    conn: sqlite3.Connection,
+    out_dir: Path,
+    today_str: str,
+) -> int:
+    this_file = out_dir / _SUPER_PROJECTS_INDEX_PAGE
+    generated_at = datetime.datetime.now().strftime("%Y-%m-%d %-I:%M %p")
+    soon_date = (datetime.date.fromisoformat(today_str) + datetime.timedelta(days=7)).isoformat()
+
+    sp_rows = conn.execute(
+        "SELECT super_project_id, title FROM super_project ORDER BY super_project_id"
+    ).fetchall()
+
+    rows: list[SimpleNamespace] = []
+    for sp in sp_rows:
+        sp_id = sp["super_project_id"]
+        sp_title_raw = (sp["title"] or "").strip()
+        sp_display_title = sp_title_raw or sp_id
+
+        # Count projects per status
+        status_counts: dict[str, int] = {s: 0 for s in _ALL_PROJECT_STATUSES}
+        project_rows = conn.execute(
+            "SELECT project_id, status FROM project WHERE super_project_id = ? ORDER BY project_id",
+            (sp_id,),
+        ).fetchall()
+        for proj in project_rows:
+            s = proj["status"]
+            if s in status_counts:
+                status_counts[s] += 1
+
+        # Active (In Progress) project ids for health + streak
+        active_project_ids = [
+            proj["project_id"] for proj in project_rows if proj["status"] == "In Progress"
+        ]
+        has_active = bool(active_project_ids)
+
+        # Last updated across all non-generated, non-deleted files belonging to this SP
+        all_project_ids = [proj["project_id"] for proj in project_rows]
+        if all_project_ids:
+            placeholders = ",".join("?" * len(all_project_ids))
+            last_updated_row = conn.execute(
+                "SELECT f.modified, f.modified_date"
+                " FROM file f"
+                " WHERE f.deleted = 0 AND f.is_generated = 0"
+                " AND EXISTS ("
+                "   SELECT 1 FROM file_project fp"
+                "   WHERE fp.file_path = f.file_path"
+                f"     AND fp.project_id IN ({placeholders})"
+                " )"
+                " ORDER BY"
+                " CASE WHEN f.modified IS NULL OR f.modified <= 0 THEN 0 ELSE 1 END DESC,"
+                " f.modified DESC,"
+                " f.modified_date DESC,"
+                " f.file_path ASC"
+                " LIMIT 1",
+                all_project_ids,
+            ).fetchone()
+        else:
+            last_updated_row = None
+
+        current_streak = (
+            _calc_current_streak_for_projects(conn, active_project_ids) if has_active else 0
+        )
+
+        # Health — only computed when there are active projects
+        if has_active:
+            placeholders = ",".join("?" * len(active_project_ids))
+            task_rows = conn.execute(
+                "SELECT t.due_date, t.attributes"
+                " FROM task t"
+                " JOIN file f ON t.file_path = f.file_path"
+                " WHERE t.checked = 0 AND f.deleted = 0"
+                " AND EXISTS ("
+                "   SELECT 1 FROM file_project fp"
+                "   WHERE fp.file_path = t.file_path"
+                f"     AND fp.project_id IN ({placeholders})"
+                " )",
+                active_project_ids,
+            ).fetchall()
+            buckets: dict[str, dict[str, int]] = {
+                "due_today": {"count": 0, "minutes": 0},
+                "past_due": {"count": 0, "minutes": 0},
+                "due_soon": {"count": 0, "minutes": 0},
+                "future_due": {"count": 0, "minutes": 0},
+                "not_due": {"count": 0, "minutes": 0},
+            }
+            for task in task_rows:
+                due_date = task["due_date"]
+                est = _estimate_minutes_from_attributes(task["attributes"])
+                if due_date is None:
+                    bucket_key = "not_due"
+                elif due_date < today_str:
+                    bucket_key = "past_due"
+                elif due_date == today_str:
+                    bucket_key = "due_today"
+                elif due_date <= soon_date:
+                    bucket_key = "due_soon"
+                else:
+                    bucket_key = "future_due"
+                buckets[bucket_key]["count"] += 1
+                buckets[bucket_key]["minutes"] += est
+
+            total_open = sum(v["count"] for v in buckets.values())
+            health_ns = _calc_super_project_health(
+                current_streak=current_streak,
+                past_due_count=buckets["past_due"]["count"],
+                past_due_minutes=buckets["past_due"]["minutes"],
+                total_open_count=total_open,
+                due_today_count=buckets["due_today"]["count"],
+                due_soon_count=buckets["due_soon"]["count"],
+            )
+            health_display = health_ns.display
+        else:
+            health_display = ""
+
+        rows.append(
+            SimpleNamespace(
+                sp_label=sp_display_title,
+                sp_link=_rel(this_file, out_dir / _SUPER_PROJECTS_DIR / f"{sp_id}.md"),
+                current_streak=current_streak,
+                health=health_display,
+                last_updated=_format_last_updated_row(last_updated_row),
+                active_count=status_counts["In Progress"],
+                on_hold_count=status_counts["On Hold"],
+                planned_count=status_counts["Planned"],
+                complete_count=status_counts["Complete"],
+                cancelled_count=status_counts["Cancelled"],
+                _has_active=has_active,
+                _sp_display_title=sp_display_title,
+            )
+        )
+
+    # Sort: SPs with ≥1 In Progress first, then by display title
+    rows.sort(key=lambda r: (0 if r._has_active else 1, r._sp_display_title.lower()))
+
+    content = env.get_template("super_projects_index.md.j2").render(
+        generated_at=generated_at,
+        dashboard_link=_rel(this_file, out_dir / _HOME_PAGE),
+        rows=rows,
+    )
+    _write_file(conn, this_file, content, today_str)
+    return 1
+
+
+# ---------------------------------------------------------------------------
+# Projects index renderer
+# ---------------------------------------------------------------------------
+
+
+def _render_projects_index(
+    env: jinja2.Environment,
+    conn: sqlite3.Connection,
+    out_dir: Path,
+    today_str: str,
+) -> int:
+    this_file = out_dir / _PROJECTS_INDEX_PAGE
+    generated_at = datetime.datetime.now().strftime("%Y-%m-%d %-I:%M %p")
+    soon_date = (datetime.date.fromisoformat(today_str) + datetime.timedelta(days=7)).isoformat()
+
+    project_rows = conn.execute(
+        "SELECT project_id, title, status FROM project ORDER BY project_id"
+    ).fetchall()
+
+    rows: list[SimpleNamespace] = []
+    for proj in project_rows:
+        project_id = proj["project_id"]
+        title_raw = (proj["title"] or "").strip()
+        display_title = title_raw or project_id
+        status = proj["status"] or "Planned"
+
+        task_rows = conn.execute(
+            "SELECT t.due_date, t.attributes"
+            " FROM task t"
+            " JOIN file f ON t.file_path = f.file_path"
+            " WHERE t.checked = 0 AND f.deleted = 0"
+            " AND EXISTS ("
+            "   SELECT 1 FROM file_project fp"
+            "   WHERE fp.file_path = t.file_path"
+            "     AND fp.project_id = ?"
+            " )",
+            (project_id,),
+        ).fetchall()
+
+        buckets: dict[str, dict[str, int]] = {
+            "due_today": {"count": 0, "minutes": 0},
+            "past_due": {"count": 0, "minutes": 0},
+            "due_soon": {"count": 0, "minutes": 0},
+            "future_due": {"count": 0, "minutes": 0},
+            "not_due": {"count": 0, "minutes": 0},
+        }
+        for task in task_rows:
+            due_date = task["due_date"]
+            est = _estimate_minutes_from_attributes(task["attributes"])
+            if due_date is None:
+                bucket_key = "not_due"
+            elif due_date < today_str:
+                bucket_key = "past_due"
+            elif due_date == today_str:
+                bucket_key = "due_today"
+            elif due_date <= soon_date:
+                bucket_key = "due_soon"
+            else:
+                bucket_key = "future_due"
+            buckets[bucket_key]["count"] += 1
+            buckets[bucket_key]["minutes"] += est
+
+        last_updated_row = conn.execute(
+            "SELECT f.modified, f.modified_date"
+            " FROM file f"
+            " JOIN file_project fp ON fp.file_path = f.file_path"
+            " WHERE fp.project_id = ? AND f.deleted = 0 AND f.is_generated = 0"
+            " ORDER BY"
+            " CASE WHEN f.modified IS NULL OR f.modified <= 0 THEN 0 ELSE 1 END DESC,"
+            " f.modified DESC,"
+            " f.modified_date DESC,"
+            " f.file_path ASC"
+            " LIMIT 1",
+            (project_id,),
+        ).fetchone()
+
+        current_streak = _calc_current_streak_for_projects(conn, [project_id])
+        total_open = sum(v["count"] for v in buckets.values())
+        health_ns = _calc_super_project_health(
+            current_streak=current_streak,
+            past_due_count=buckets["past_due"]["count"],
+            past_due_minutes=buckets["past_due"]["minutes"],
+            total_open_count=total_open,
+            due_today_count=buckets["due_today"]["count"],
+            due_soon_count=buckets["due_soon"]["count"],
+        )
+
+        rows.append(
+            SimpleNamespace(
+                project_label=display_title,
+                project_link=_rel(this_file, out_dir / "Projects" / f"{project_id}.md"),
+                status=status,
+                current_streak=current_streak,
+                health=health_ns.display,
+                last_updated=_format_last_updated_row(last_updated_row),
+                due_today_display=(
+                    f"{buckets['due_today']['count']:,} ({buckets['due_today']['minutes']}m)"
+                ),
+                past_due_display=f"{buckets['past_due']['count']:,}",
+                due_soon_display=f"{buckets['due_soon']['count']:,}",
+                future_due_display=f"{buckets['future_due']['count']:,}",
+                not_due_display=f"{buckets['not_due']['count']:,}",
+                _status_order=_STATUS_SORT_ORDER.get(status, 99),
+                _display_title=display_title,
+            )
+        )
+
+    # Sort: by status order, then by display title
+    rows.sort(key=lambda r: (r._status_order, r._display_title.lower()))
+
+    content = env.get_template("projects_index.md.j2").render(
+        generated_at=generated_at,
+        dashboard_link=_rel(this_file, out_dir / _HOME_PAGE),
+        rows=rows,
     )
     _write_file(conn, this_file, content, today_str)
     return 1
@@ -1488,6 +1772,8 @@ def _compute_expected_paths(
         expected.add(out_dir / _FUTURE_DUE_PAGE)
         expected.add(out_dir / _NOT_DUE_PAGE)
         expected.add(out_dir / _WARNINGS_PAGE)
+        expected.add(out_dir / _SUPER_PROJECTS_INDEX_PAGE)
+        expected.add(out_dir / _PROJECTS_INDEX_PAGE)
     if target in ("all", "projects"):
         for r in conn.execute("SELECT project_id FROM project").fetchall():
             expected.add(out_dir / "Projects" / f"{r['project_id']}.md")
