@@ -40,6 +40,7 @@ _PRIORITY_MAP: dict[str, str] = {"low": "Low", "medium": "Medium", "high": "High
 _VALID_STATUSES: frozenset[str] = frozenset(
     {"Planned", "In Progress", "On Hold", "Complete", "Cancelled"}
 )
+_STATUS_NORM: dict[str, str] = {s.lower(): s for s in _VALID_STATUSES}
 
 # Matches [Pp]rojects/<name>/<name>.md exactly at the path root.
 # The \1 backreference ensures the directory name equals the file stem.
@@ -258,13 +259,17 @@ def _scan_file(
     status: str | None = None
     sval = meta.get("status")
     if sval is not None:
-        if isinstance(sval, str) and sval in _VALID_STATUSES:
-            status = sval
+        if isinstance(sval, str):
+            canonical = _STATUS_NORM.get(sval.lower())
+            if canonical:
+                status = canonical
+            else:
+                warnings.append(
+                    f"Invalid status {sval!r} — expected one of: "
+                    + str(sorted(_VALID_STATUSES))
+                )
         else:
-            warnings.append(
-                f"Invalid status {sval!r} — expected one of: "
-                + str(sorted(_VALID_STATUSES))
-            )
+            warnings.append(f"Invalid status value {sval!r} — expected a string")
 
     # --- resources (from 'resources' and 'related' frontmatter attributes) ---
     resources: list[ResourceConfig] = []
