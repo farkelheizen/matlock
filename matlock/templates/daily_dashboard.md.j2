@@ -1,6 +1,11 @@
 # 🎯 Matlock Daily Dashboard
 **Date Generated:** {{ generated_at }}
 
+## 🔗 Quick Links
+- [⚠️ Warnings]({{ warnings_link }})
+- [🌍 Super Projects]({{ super_projects_index_link }})
+- [🚀 Projects]({{ projects_index_link }})
+
 ## 🔥 Momentum & Streaks
 * **Current Streak:** {{ current_streak }} Days
 * **Longest Streak:** {{ longest_streak }} Days{% if longest_streak_end %} (Ended: {{ longest_streak_end }}){% endif %}
@@ -45,16 +50,3 @@
 {% else %}
 *No tracked files found.*
 {% endif %}
-
-## 🔗 Quick Links
-- [⚠️ Warnings]({{ warnings_link }})
-- [🌍 Super Projects]({{ super_projects_index_link }})
-- [🚀 Projects]({{ projects_index_link }})
-
-## 🧭 Active Projects Hub
-{% for sp in super_projects %}
-- 🌍 [{{ sp.title or sp.id }}]({{ super_project_link(sp.id) }})
-{% endfor %}
-{% for p in projects %}
-- 🚀 [{{ p.title }}]({{ project_link(p.id) }})
-{% endfor %}
