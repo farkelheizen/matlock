@@ -1,0 +1,51 @@
+# ⚠️ Warnings
+**Generated:** {{ generated_at }} | [🏠 Back to Dashboard]({{ dashboard_link }})
+
+---
+
+## 🔴 Tasks with Parse Errors
+{% if tasks_with_errors %}
+| Task | File | Errors |
+|:-----|:-----|:-------|
+{% for t in tasks_with_errors %}
+| {{ t.task_text }} | {{ t.file_path }} | {{ t.errors | join("; ") }} |
+{% endfor %}
+{% else %}
+*No tasks with parse errors.*
+{% endif %}
+
+## 🔗 Projects without a Super-Project
+{% if projects_no_super %}
+| Project |
+|:--------|
+{% for p in projects_no_super %}
+| [{{ p.title }}]({{ p.project_link }}) |
+{% endfor %}
+{% else %}
+*All projects are assigned to a super-project.*
+{% endif %}
+
+## 📁 Projects with No Associated Files
+{% if projects_no_files %}
+| Project |
+|:--------|
+{% for p in projects_no_files %}
+| [{{ p.title }}]({{ p.project_link }}) |
+{% endfor %}
+{% else %}
+*All projects have at least one associated file.*
+{% endif %}
+
+## 👻 Orphaned Files
+{% if orphaned_files %}
+*{{ orphaned_files | length }} tracked file(s) not linked to any project.*
+{% else %}
+*No orphaned files.*
+{% endif %}
+
+## 🔍 Orphaned Tasks
+{% if orphaned_tasks %}
+*{{ orphaned_tasks | length }} task(s) in files not linked to any project.*
+{% else %}
+*No orphaned tasks.*
+{% endif %}

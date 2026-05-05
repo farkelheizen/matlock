@@ -286,14 +286,14 @@ class TestRunReportBasic:
         conn = _conn()
         cfg = _make_config(tmp_path)
         result = run_report(cfg, conn)
-        assert result.files_written == 6  # dashboard + 5 task view pages
+        assert result.files_written == 7  # dashboard + 5 task view pages + warnings
 
     def test_idempotent_second_run(self, tmp_path: Path):
         conn = _conn()
         cfg = _make_config(tmp_path)
         run_report(cfg, conn)
         result2 = run_report(cfg, conn)
-        assert result2.files_written == 6
+        assert result2.files_written == 7
         assert (cfg.output_directory / "Home.md").exists()
 
 
@@ -321,7 +321,7 @@ class TestRunReportTargetFilter:
         assert (cfg.output_directory / "Not Due.md").exists()
         assert not (cfg.output_directory / "Projects").exists()
         assert not (cfg.output_directory / "History").exists()
-        assert result.files_written == 6
+        assert result.files_written == 7
 
     def test_target_projects_writes_project_page(self, tmp_path: Path):
         conn, cfg = self._setup(tmp_path)
@@ -668,6 +668,106 @@ class TestDashboardContent:
         assert "[three.md](../vault/notes/three.md)" in content
         assert "[two.md](../vault/notes/two.md)" in content
         assert "[one.md](../vault/notes/one.md)" not in content
+
+    def test_dashboard_has_warnings_link(self, tmp_path: Path):
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="dashboard")
+        content = (cfg.output_directory / "Home.md").read_text()
+        assert "Warnings.md" in content
+
+
+# ---------------------------------------------------------------------------
+# Warnings page
+# ---------------------------------------------------------------------------
+
+
+class TestWarningsPage:
+    def test_warnings_page_created(self, tmp_path: Path):
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="dashboard")
+        assert (cfg.output_directory / "Warnings.md").exists()
+
+    def test_warnings_page_has_header(self, tmp_path: Path):
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="dashboard")
+        content = (cfg.output_directory / "Warnings.md").read_text()
+        assert "**Generated:**" in content
+        assert "[🏠 Back to Dashboard](Home.md)" in content
+
+    def test_warnings_tasks_with_errors(self, tmp_path: Path):
+        conn = _conn()
+        _seed_file(conn, "work.md")
+        upsert_task(conn, {
+            "task_id": "bad-task-1",
+            "file_path": "work.md",
+            "parent_task_id": None,
+            "created_date": "2026-05-01",
+            "due_date": None,
+            "est_comp_date": None,
+            "act_comp_date": None,
+            "checked": 0,
+            "task_text": "Bad Task",
+            "overflow": 0,
+            "headers": None,
+            "attributes": None,
+            "errors": '["Invalid date value"]',
+            "twin_index": 0,
+        })
+        conn.commit()
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="dashboard")
+        content = (cfg.output_directory / "Warnings.md").read_text()
+        assert "Bad Task" in content
+        assert "Invalid date value" in content
+
+    def test_warnings_projects_no_super(self, tmp_path: Path):
+        conn = _conn()
+        _seed_project(conn, "lone-wolf", "Lone Wolf")
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="dashboard")
+        content = (cfg.output_directory / "Warnings.md").read_text()
+        assert "Lone Wolf" in content
+        assert "Projects without a Super-Project" in content
+
+    def test_warnings_projects_no_files(self, tmp_path: Path):
+        conn = _conn()
+        _seed_project(conn, "empty-proj", "Empty Project")
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="dashboard")
+        content = (cfg.output_directory / "Warnings.md").read_text()
+        assert "Empty Project" in content
+        assert "Projects with No Associated Files" in content
+
+    def test_warnings_orphaned_files(self, tmp_path: Path):
+        conn = _conn()
+        _seed_file(conn, "notes/orphan.md")
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="dashboard")
+        content = (cfg.output_directory / "Warnings.md").read_text()
+        assert "1 tracked file(s) not linked to any project" in content
+        assert "Orphaned Files" in content
+
+    def test_warnings_orphaned_tasks(self, tmp_path: Path):
+        conn = _conn()
+        _seed_file(conn, "notes/unlinked.md")
+        _seed_task(conn, "ot1", "notes/unlinked.md")
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="dashboard")
+        content = (cfg.output_directory / "Warnings.md").read_text()
+        assert "1 task(s) in files not linked to any project" in content
+        assert "Orphaned Tasks" in content
+
+    def test_warnings_empty_sections_show_ok_messages(self, tmp_path: Path):
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        run_report(cfg, conn, target="dashboard")
+        content = (cfg.output_directory / "Warnings.md").read_text()
+        assert "No tasks with parse errors" in content
+        assert "All projects are assigned to a super-project" in content
+        assert "All projects have at least one associated file" in content
 
 
 # ---------------------------------------------------------------------------

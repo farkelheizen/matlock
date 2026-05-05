@@ -50,6 +50,7 @@ _PAST_DUE_PAGE = "Past Due.md"
 _DUE_SOON_PAGE = "Due Soon.md"
 _FUTURE_DUE_PAGE = "Future Due.md"
 _NOT_DUE_PAGE = "Not Due.md"
+_WARNINGS_PAGE = "Warnings.md"
 _SUPER_PROJECTS_DIR = "Super Projects"
 
 
@@ -165,6 +166,7 @@ def run_report(
             files_written += _render_due_soon(env, conn, out_dir, base_dir, today_str)
             files_written += _render_future_due(env, conn, out_dir, base_dir, today_str)
             files_written += _render_not_due(env, conn, out_dir, base_dir, today_str)
+            files_written += _render_warnings(env, conn, out_dir, today_str)
         if target in ("all", "projects"):
             files_written += _render_all_projects(env, conn, out_dir, base_dir, today_str)
             files_written += _render_all_super_projects(env, conn, out_dir, base_dir, today_str)
@@ -1145,6 +1147,7 @@ def _render_dashboard(
     generated_at = datetime.datetime.now().strftime("%Y-%m-%d %-I:%M %p")
     content = env.get_template("daily_dashboard.md.j2").render(
         generated_at=generated_at,
+        warnings_link=_rel(this_file, out_dir / _WARNINGS_PAGE),
         current_streak=current_streak,
         longest_streak=longest_streak,
         longest_streak_end=longest_streak_end,
@@ -1168,6 +1171,114 @@ def _render_dashboard(
         due_soon_link=_rel(this_file, out_dir / _DUE_SOON_PAGE),
         future_due_link=_rel(this_file, out_dir / _FUTURE_DUE_PAGE),
         not_due_link=_rel(this_file, out_dir / _NOT_DUE_PAGE),
+    )
+    _write_file(conn, this_file, content, today_str)
+    return 1
+
+
+# ---------------------------------------------------------------------------
+# Warnings renderer
+# ---------------------------------------------------------------------------
+
+
+def _render_warnings(
+    env: jinja2.Environment,
+    conn: sqlite3.Connection,
+    out_dir: Path,
+    today_str: str,
+) -> int:
+    this_file = out_dir / _WARNINGS_PAGE
+    generated_at = datetime.datetime.now().strftime("%Y-%m-%d %-I:%M %p")
+
+    # Tasks with parse errors
+    task_error_rows = conn.execute(
+        "SELECT task_id, task_text, file_path, errors FROM task"
+        " WHERE errors IS NOT NULL AND errors != '[]'"
+        " ORDER BY file_path, task_id"
+    ).fetchall()
+    tasks_with_errors: list[SimpleNamespace] = []
+    for r in task_error_rows:
+        try:
+            errs = json.loads(r["errors"] or "[]")
+        except Exception:
+            errs = [str(r["errors"])]
+        tasks_with_errors.append(
+            SimpleNamespace(
+                task_text=r["task_text"] or "(empty)",
+                file_path=r["file_path"],
+                errors=errs,
+            )
+        )
+
+    # Projects without a super-project
+    projects_no_super = conn.execute(
+        "SELECT project_id, title FROM project"
+        " WHERE super_project_id IS NULL"
+        " ORDER BY project_id"
+    ).fetchall()
+    projects_no_super_rows: list[SimpleNamespace] = []
+    for r in projects_no_super:
+        projects_no_super_rows.append(
+            SimpleNamespace(
+                project_id=r["project_id"],
+                title=(r["title"] or "").strip() or r["project_id"],
+                project_link=_rel(this_file, out_dir / "Projects" / f"{r['project_id']}.md"),
+            )
+        )
+
+    # Projects with no associated files
+    projects_no_files_rows_raw = conn.execute(
+        "SELECT p.project_id, p.title FROM project p"
+        " WHERE NOT EXISTS ("
+        "   SELECT 1 FROM file_project fp WHERE fp.project_id = p.project_id"
+        " )"
+        " ORDER BY p.project_id"
+    ).fetchall()
+    projects_no_files: list[SimpleNamespace] = []
+    for r in projects_no_files_rows_raw:
+        projects_no_files.append(
+            SimpleNamespace(
+                project_id=r["project_id"],
+                title=(r["title"] or "").strip() or r["project_id"],
+                project_link=_rel(this_file, out_dir / "Projects" / f"{r['project_id']}.md"),
+            )
+        )
+
+    # Orphaned files (tracked, not deleted, not generated, not linked to any project)
+    orphaned_file_rows = conn.execute(
+        "SELECT file_path FROM file"
+        " WHERE deleted = 0 AND is_generated = 0"
+        " AND NOT EXISTS ("
+        "   SELECT 1 FROM file_project fp WHERE fp.file_path = file.file_path"
+        " )"
+        " ORDER BY file_path"
+    ).fetchall()
+    orphaned_files = [r["file_path"] for r in orphaned_file_rows]
+
+    # Orphaned tasks (tasks whose file is not linked to any project)
+    orphaned_task_rows = conn.execute(
+        "SELECT t.task_id, t.task_text, t.file_path FROM task t"
+        " WHERE NOT EXISTS ("
+        "   SELECT 1 FROM file_project fp WHERE fp.file_path = t.file_path"
+        " )"
+        " ORDER BY t.file_path, t.task_id"
+    ).fetchall()
+    orphaned_tasks: list[SimpleNamespace] = [
+        SimpleNamespace(
+            task_text=r["task_text"] or "(empty)",
+            file_path=r["file_path"],
+        )
+        for r in orphaned_task_rows
+    ]
+
+    content = env.get_template("warnings.md.j2").render(
+        generated_at=generated_at,
+        dashboard_link=_rel(this_file, out_dir / _HOME_PAGE),
+        tasks_with_errors=tasks_with_errors,
+        projects_no_super=projects_no_super_rows,
+        projects_no_files=projects_no_files,
+        orphaned_files=orphaned_files,
+        orphaned_tasks=orphaned_tasks,
     )
     _write_file(conn, this_file, content, today_str)
     return 1
@@ -1376,6 +1487,7 @@ def _compute_expected_paths(
         expected.add(out_dir / _DUE_SOON_PAGE)
         expected.add(out_dir / _FUTURE_DUE_PAGE)
         expected.add(out_dir / _NOT_DUE_PAGE)
+        expected.add(out_dir / _WARNINGS_PAGE)
     if target in ("all", "projects"):
         for r in conn.execute("SELECT project_id FROM project").fetchall():
             expected.add(out_dir / "Projects" / f"{r['project_id']}.md")
