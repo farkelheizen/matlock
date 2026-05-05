@@ -437,16 +437,46 @@ class TestRunReportSuperProjectPage:
         content = (cfg.output_directory / "Super Projects" / "sp1.md").read_text()
         assert "Big Initiative" in content
 
-    def test_super_project_table_rows_render_with_line_breaks(self, tmp_path: Path):
+    def test_super_project_status_tables_render(self, tmp_path: Path):
         conn = _conn()
         _seed_super_project(conn, "sp1", "Big Initiative")
-        _seed_project(conn, "p1", "First Child", super_project_id="sp1")
-        _seed_project(conn, "p2", "Second Child", super_project_id="sp1")
+        _seed_project(conn, "p_active", "Active Child", super_project_id="sp1", status="In Progress")
+        _seed_project(conn, "p_hold", "On Hold Child", super_project_id="sp1", status="On Hold")
+        _seed_project(conn, "p_cancel", "Cancelled Child", super_project_id="sp1", status="Cancelled")
+        _seed_project(conn, "p_done", "Done Child", super_project_id="sp1", status="Complete")
+
+        _seed_file(conn, "/vault/active.md", modified_date="2026-04-27")
+        _seed_file(conn, "/vault/hold.md", modified_date="2026-04-27")
+        _seed_file(conn, "/vault/cancel.md", modified_date="2026-04-27")
+        _seed_file(conn, "/vault/done.md", modified_date="2026-04-27")
+        _link(conn, "/vault/active.md", "p_active")
+        _link(conn, "/vault/hold.md", "p_hold")
+        _link(conn, "/vault/cancel.md", "p_cancel")
+        _link(conn, "/vault/done.md", "p_done")
+
+        today = datetime.date.today().isoformat()
+        _seed_task_full(conn, "sp_active_due", "/vault/active.md", due_date=today, estimate_secs=1200)
+
         cfg = _make_config(tmp_path)
         run_report(cfg, conn, target="projects")
         content = (cfg.output_directory / "Super Projects" / "sp1.md").read_text()
-        assert "| :--- | :--- | :--- | :--- | :--- | :--- |\n| **[First Child]" in content
-        assert "| **[First Child]" in content and "| **[Second Child]" in content
+
+        assert "## 🚀 Active Projects" in content
+        assert "## ⏸️ On-Hold Projects" in content
+        assert "## ❌ Cancelled Projects" in content
+        assert "## ✅ Completed Projects" in content
+
+        assert "| [Active Child](../Projects/p_active.md) |" in content
+        assert "| [On Hold Child](../Projects/p_hold.md) |" in content
+        assert "| [Cancelled Child](../Projects/p_cancel.md) |" in content
+        assert "| [Done Child](../Projects/p_done.md) |" in content
+
+        assert "| Project | Current Streak | Health | Last Updated | Due Today (count + est)" in content
+        assert "| Project | Current Streak | Last Updated | Due Today (count + est)" in content
+        assert "2026-04-27 12:00 AM" in content
+        assert "**Generated:**" in content
+        assert "| [🏠 Back to Dashboard](../Home.md)" in content
+        assert "Critical Aggregated Tasks" not in content
 
 
 # ---------------------------------------------------------------------------
