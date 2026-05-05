@@ -2,10 +2,24 @@
 name = "matlock"
 version = "0.3.0"
 description = "Pipeline-driven task extractor and report generator for Markdown second brains"
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 authors = [
-    {name = "farkelheizen",email = "billspratley@gmail.com"}
+    {name = "William Spratley"}
 ]
 requires-python = ">=3.11,<4.0"
+keywords = ["markdown", "obsidian", "tasks", "productivity", "reports"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Office/Business :: Scheduling",
+    "Topic :: Text Processing :: Markup :: Markdown"
+]
 dependencies = [
     "marko (>=2.2.2,<3.0.0)",
     "pytimeparse (>=1.1.8,<2.0.0)",
@@ -16,6 +30,11 @@ dependencies = [
     "jinja2 (>=3.1.6,<4.0.0)",
     "watchdog (>=6.0.0,<7.0.0)"
 ]
+
+[project.urls]
+Homepage = "https://github.com/farkelheizen/matlock"
+Repository = "https://github.com/farkelheizen/matlock.git"
+Issues = "https://github.com/farkelheizen/matlock/issues"
 
 [project.scripts]
 matlock = "matlock.cli:app"

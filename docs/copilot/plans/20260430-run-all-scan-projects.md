@@ -154,4 +154,4 @@ Record results:
   - Focused: `poetry run pytest tests/test_cli_run_all.py -q` → 31 passed
   - Regression: `poetry run pytest tests/test_cli_scan_projects.py -q` → 19 passed
   - Full suite: `poetry run pytest -q` → 598 passed
-  - Manual smoke: `poetry run matlock --config /Volumes/Lab1/Obsidian/Bill2-Matlock/config/matlock.yaml run-all --scan-projects` completed successfully
+  - Manual smoke: `poetry run matlock --config /path/to/config.yaml run-all --scan-projects` completed successfully

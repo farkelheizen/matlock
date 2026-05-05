@@ -17,6 +17,8 @@ poetry install
 
 This registers the `matlock` command in the Poetry virtual environment.
 
+See [SECURITY.md](SECURITY.md) for recommended separation between the public code repository and private vault data.
+
 ## Quick Start
 
 ```bash
