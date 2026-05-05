@@ -25,6 +25,16 @@ htmlcov/
 .idea/
 .vscode/
 
+# Local Matlock vault artifacts
+config.yaml
+config.yaml.*.bak
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.log
+_Matlock/
+
 # Matlock 
 docs_local
 docs_local/

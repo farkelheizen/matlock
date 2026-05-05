@@ -8,6 +8,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `SECURITY.md` with guidance for keeping the public code repository separate from private vault data and generated outputs.
+
+### Changed
+
+- Public package metadata now declares Apache-2.0 license information, README metadata, project URLs, and keywords/classifiers for publishing.
+- `.gitignore` now excludes local deployment artifacts such as `config.yaml`, config backups, SQLite files, logs, and generated `_Matlock/` output.
+- Redacted a real local absolute config path from a tracked plan note to reduce accidental privacy leakage in the public repository.
+
 ---
 
 ## [0.3.0] — 2026-05-05
