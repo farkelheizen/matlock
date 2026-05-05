@@ -1417,8 +1417,10 @@ def _render_super_projects_index(
                 due_soon_count=buckets["due_soon"]["count"],
             )
             health_display = health_ns.display
+            health_score = health_ns.score
         else:
             health_display = ""
+            health_score = None
 
         rows.append(
             SimpleNamespace(
@@ -1434,11 +1436,19 @@ def _render_super_projects_index(
                 cancelled_count=status_counts["Cancelled"],
                 _has_active=has_active,
                 _sp_display_title=sp_display_title,
+                _health_score=health_score,
             )
         )
 
-    # Sort: SPs with ≥1 In Progress first, then by display title
-    rows.sort(key=lambda r: (0 if r._has_active else 1, r._sp_display_title.lower()))
+    # Sort: worst-to-best health first, then by display title.
+    # Super-projects without active projects have no health and are placed after scored rows.
+    rows.sort(
+        key=lambda r: (
+            1 if r._health_score is None else 0,
+            r._health_score if r._health_score is not None else 999,
+            r._sp_display_title.lower(),
+        )
+    )
 
     content = env.get_template("super_projects_index.md.j2").render(
         generated_at=generated_at,
@@ -1543,6 +1553,7 @@ def _render_projects_index(
                 status=status,
                 current_streak=current_streak,
                 health=health_ns.display,
+                _health_score=health_ns.score,
                 last_updated=_format_last_updated_row(last_updated_row),
                 due_today_display=(
                     f"{buckets['due_today']['count']:,} ({buckets['due_today']['minutes']}m)"
@@ -1556,13 +1567,28 @@ def _render_projects_index(
             )
         )
 
-    # Sort: by status order, then by display title
-    rows.sort(key=lambda r: (r._status_order, r._display_title.lower()))
+    active_rows = [r for r in rows if r.status == "In Progress"]
+    on_hold_rows = [r for r in rows if r.status == "On Hold"]
+    planned_rows = [r for r in rows if r.status == "Planned"]
+    complete_rows = [r for r in rows if r.status == "Complete"]
+    cancelled_rows = [r for r in rows if r.status == "Cancelled"]
+
+    # Active projects: worst-to-best health, then title.
+    active_rows.sort(key=lambda r: (r._health_score, r._display_title.lower()))
+    # Other statuses: title.
+    on_hold_rows.sort(key=lambda r: r._display_title.lower())
+    planned_rows.sort(key=lambda r: r._display_title.lower())
+    complete_rows.sort(key=lambda r: r._display_title.lower())
+    cancelled_rows.sort(key=lambda r: r._display_title.lower())
 
     content = env.get_template("projects_index.md.j2").render(
         generated_at=generated_at,
         dashboard_link=_rel(this_file, out_dir / _HOME_PAGE),
-        rows=rows,
+        active_rows=active_rows,
+        on_hold_rows=on_hold_rows,
+        planned_rows=planned_rows,
+        complete_rows=complete_rows,
+        cancelled_rows=cancelled_rows,
     )
     _write_file(conn, this_file, content, today_str)
     return 1

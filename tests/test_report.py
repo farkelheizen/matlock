@@ -562,13 +562,13 @@ class TestDashboardContent:
         content = (cfg.output_directory / "Home.md").read_text()
         assert "Current Streak" in content
 
-    def test_dashboard_shows_project_hub(self, tmp_path: Path):
+    def test_dashboard_shows_projects_index_link(self, tmp_path: Path):
         conn = _conn()
-        _seed_project(conn, "alpha", "Alpha Project")
+        _seed_project(conn, "alpha", "Alpha Project", status="In Progress")
         cfg = _make_config(tmp_path)
         run_report(cfg, conn, target="dashboard")
         content = (cfg.output_directory / "Home.md").read_text()
-        assert "alpha" in content
+        assert "Projects.md" in content
 
     def test_dashboard_shows_past_due_task(self, tmp_path: Path):
         """Past-due tasks appear in the Past Due page, not inline on Home."""
@@ -843,6 +843,30 @@ class TestSuperProjectsIndexPage:
         # Row contains the sp label and empty health cell
         assert "Idle SP" in content
 
+    def test_super_projects_index_sorts_worst_health_first_then_title(self, tmp_path: Path):
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+
+        _seed_super_project(conn, "sp_bad", "AAA Bad")
+        _seed_super_project(conn, "sp_good", "ZZZ Good")
+
+        _seed_project(conn, "p_bad", "Bad Project", super_project_id="sp_bad", status="In Progress")
+        _seed_project(conn, "p_good", "Good Project", super_project_id="sp_good", status="In Progress")
+
+        _seed_file(conn, "vault/bad.md")
+        _seed_file(conn, "vault/good.md")
+        _link(conn, "vault/bad.md", "p_bad")
+        _link(conn, "vault/good.md", "p_good")
+
+        today = datetime.date.today().isoformat()
+        yesterday = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
+        _seed_task_full(conn, "t_bad", "vault/bad.md", due_date=yesterday, estimate_secs=3600)
+        _seed_task_full(conn, "t_good", "vault/good.md", due_date=today, estimate_secs=0)
+
+        run_report(cfg, conn, target="dashboard")
+        content = (cfg.output_directory / "Super Projects.md").read_text()
+        assert content.index("AAA Bad") < content.index("ZZZ Good")
+
 
 # ---------------------------------------------------------------------------
 # Projects index page
@@ -870,6 +894,11 @@ class TestProjectsIndexPage:
         run_report(cfg, conn, target="dashboard")
         content = (cfg.output_directory / "Projects.md").read_text()
         assert "Project" in content
+        assert "Active Projects" in content
+        assert "On Hold" in content
+        assert "Planned" in content
+        assert "Complete" in content
+        assert "Cancelled" in content
 
     def test_projects_index_lists_project(self, tmp_path: Path):
         conn = _conn()
@@ -878,26 +907,47 @@ class TestProjectsIndexPage:
         run_report(cfg, conn, target="dashboard")
         content = (cfg.output_directory / "Projects.md").read_text()
         assert "My Project" in content
-        assert "In Progress" in content
+        assert "Active Projects" in content
 
-    def test_projects_index_sorted_by_status_order(self, tmp_path: Path):
+    def test_projects_index_has_section_links(self, tmp_path: Path):
         conn = _conn()
         cfg = _make_config(tmp_path)
-        _seed_project(conn, "p_complete", "ZZZ Done", status="Complete")
-        _seed_project(conn, "p_active", "AAA Active", status="In Progress")
         run_report(cfg, conn, target="dashboard")
         content = (cfg.output_directory / "Projects.md").read_text()
-        # In Progress should appear before Complete
-        assert content.index("AAA Active") < content.index("ZZZ Done")
+        assert "#active-projects" in content
+        assert "#on-hold" in content
+        assert "#planned" in content
+        assert "#complete" in content
+        assert "#cancelled" in content
 
-    def test_projects_index_has_health_column(self, tmp_path: Path):
+    def test_projects_index_active_sorted_by_health_then_title(self, tmp_path: Path):
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+
+        _seed_project(conn, "p_bad", "AAA Bad", status="In Progress")
+        _seed_project(conn, "p_good", "ZZZ Good", status="In Progress")
+
+        _seed_file(conn, "vault/active_bad.md")
+        _seed_file(conn, "vault/active_good.md")
+        _link(conn, "vault/active_bad.md", "p_bad")
+        _link(conn, "vault/active_good.md", "p_good")
+
+        yesterday = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
+        _seed_task_full(conn, "ta1", "vault/active_bad.md", due_date=yesterday, estimate_secs=3600)
+        _seed_task_full(conn, "tb1", "vault/active_good.md", due_date=None, estimate_secs=0)
+
+        run_report(cfg, conn, target="dashboard")
+        content = (cfg.output_directory / "Projects.md").read_text()
+        assert content.index("AAA Bad") < content.index("ZZZ Good")
+
+    def test_projects_index_health_column_only_in_active_table(self, tmp_path: Path):
         conn = _conn()
         cfg = _make_config(tmp_path)
         _seed_project(conn, "p1", "P One", status="In Progress")
+        _seed_project(conn, "p2", "P Two", status="On Hold")
         run_report(cfg, conn, target="dashboard")
         content = (cfg.output_directory / "Projects.md").read_text()
-        # Health column header should be present
-        assert "Health" in content
+        assert content.count("| Project | Current Streak | Health |") == 1
 
 
 # ---------------------------------------------------------------------------
