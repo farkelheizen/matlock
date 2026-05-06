@@ -793,6 +793,38 @@ class TestScanVault:
         assert len(scanned) == 1
         assert scanned[0].file_path == "fancy.md"
 
+    def test_malformed_frontmatter_warns_and_continues(self, tmp_path: Path):
+        cfg = _make_config(tmp_path)
+        vault = cfg.base_directory
+        _write_md(vault / "good.md", {"title": "good"})
+        (vault / "bad.md").write_text(
+            "---\n"
+            "type: wip\n"
+            "title: \"Bad Title\n"
+            "---\n"
+            "body\n",
+            encoding="utf-8",
+        )
+
+        scanned, candidates = scan_vault(cfg)
+
+        assert any(sf.file_path == "good.md" for sf in scanned)
+        bad = next(sf for sf in scanned if sf.file_path == "bad.md")
+        assert any("Failed to parse frontmatter YAML" in w for w in bad.warnings)
+        assert all(pc.project_id != "bad" for pc in candidates)
+
+    def test_non_utf8_markdown_warns_and_continues(self, tmp_path: Path):
+        cfg = _make_config(tmp_path)
+        vault = cfg.base_directory
+        _write_md(vault / "good.md", {"title": "good"})
+        (vault / "binary.md").write_bytes(b"\xff\xfe\xfa\xfb")
+
+        scanned, _ = scan_vault(cfg)
+
+        assert any(sf.file_path == "good.md" for sf in scanned)
+        binary = next(sf for sf in scanned if sf.file_path == "binary.md")
+        assert any("Failed to read file as UTF-8 text" in w for w in binary.warnings)
+
 
 # ---------------------------------------------------------------------------
 # format_as_yaml

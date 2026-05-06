@@ -119,12 +119,30 @@ def scan_vault(
     scanned_files: list[ScannedFile] = []
 
     for rel_path in rel_paths:
-        sf = _scan_file(base_dir, rel_path, seen_project_ids)
+        try:
+            sf = _scan_file(base_dir, rel_path, seen_project_ids)
+        except (yaml.YAMLError, UnicodeError, OSError, ValueError) as exc:
+            sf = ScannedFile(
+                file_path=rel_path,
+                warnings=[_format_scan_error(exc)],
+            )
         if sf is not None:
             scanned_files.append(sf)
 
     project_candidates = _build_project_candidates(scanned_files)
     return scanned_files, project_candidates
+
+
+def _format_scan_error(exc: Exception) -> str:
+    """Return a single-line warning for scan failures in one file."""
+    detail = " ".join(str(exc).splitlines()).strip() or repr(exc)
+    if isinstance(exc, yaml.YAMLError):
+        return f"Failed to parse frontmatter YAML: {detail}"
+    if isinstance(exc, UnicodeError):
+        return f"Failed to read file as UTF-8 text: {detail}"
+    if isinstance(exc, OSError):
+        return f"Failed to read file: {detail}"
+    return f"Failed to scan file: {detail}"
 
 
 # ---------------------------------------------------------------------------
