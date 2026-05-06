@@ -12,6 +12,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - `SECURITY.md` with guidance for keeping the public code repository separate from private vault data and generated outputs.
 
+---
+
+## [0.3.1] — 2026-05-05
+
+### Added
+
+- `matlock server --force-rollup` startup option to run `rollup` for today's date once before watcher/debouncer threads start.
+
+### Changed
+
+- History rendering now always runs `rollup` for today before generating history pages, even when today's `daily_metric` row already exists, so `file_touch`/`daily_task` reflect the latest tracked file state.
+- Parse stage now keeps an in-memory poison-file cache keyed by `(file_path, sha256)` to avoid repeated extraction retries/log spam for unchanged failing files while still retrying automatically when file content changes.
+- `scan-projects` now handles per-file read/parse failures gracefully by emitting per-file warnings and continuing to scan remaining files.
+
+### Fixed
+
+- Repeated `report --target history` runs now refresh today's `file_touch` data instead of leaving stale `modified` timestamps from earlier runs.
+
 ### Changed
 
 - Public package metadata now declares Apache-2.0 license information, README metadata, project URLs, and keywords/classifiers for publishing.
