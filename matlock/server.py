@@ -209,6 +209,7 @@ def run_server(
     skip_rollup: bool = False,
     force_sync: bool = False,
     force_report: bool = False,
+    force_rollup: bool = False,
 ) -> None:
     """Start the file watcher, debouncer, and scheduler. Blocks until SIGINT.
 
@@ -225,11 +226,14 @@ def run_server(
         When True, run a full forced sync+parse once at startup before the watcher starts.
     force_report:
         When True, run a full forced report once at startup (after any startup sync).
+    force_rollup:
+        When True, run rollup for today once at startup (after any forced sync).
+        Populates ``file_touch`` and ``daily_task`` for the current date.
     """
     effective_debounce = debounce_seconds if debounce_seconds is not None else config.debounce_seconds
 
     # Startup block: one-time operations before the watcher starts
-    if force_sync or force_report:
+    if force_sync or force_rollup or force_report:
         startup_conn = get_connection(config.db_path)
         try:
             init_db(startup_conn)
@@ -238,6 +242,11 @@ def run_server(
                 run_sync(config, startup_conn, force=True)
                 run_parse(config, startup_conn)
                 typer_echo("[startup] forced sync+parse complete")
+            if force_rollup:
+                rollup_today = datetime.date.today()
+                typer_echo(f"[startup] forced rollup for {rollup_today} starting")
+                run_rollup(config, startup_conn, rollup_today)
+                typer_echo(f"[startup] forced rollup for {rollup_today} complete")
             if force_report:
                 typer_echo("[startup] forced report starting")
                 run_map_projects(config, startup_conn)
