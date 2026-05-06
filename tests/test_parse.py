@@ -14,6 +14,7 @@ from matlock.db import (
     init_db,
     upsert_file,
 )
+from matlock.stages import parse as parse_stage
 from matlock.stages.parse import ParseResult, _build_extractor_config, run_parse
 from matlock.stages.sync import run_sync
 
@@ -47,6 +48,12 @@ _MD_NESTED = """\
   - [ ] Sub-task A1
 - [x] Task B
 """
+
+
+@pytest.fixture(autouse=True)
+def _clear_poison_cache() -> None:
+    """Ensure parse poison-cache state does not leak across tests."""
+    parse_stage._POISON_FILES.clear()
 
 
 def _make_config(
@@ -445,6 +452,75 @@ class TestRunParseErrorIsolation:
 
         tasks = get_tasks_for_file(conn, "ghost.md")
         assert tasks == []
+
+    def test_poison_file_skips_repeated_unchanged_retries(self, tmp_path: Path, caplog):
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        config = _make_config(vault, tmp_path)
+        conn = _conn()
+
+        upsert_file(conn, {
+            "file_path": "ghost.md",
+            "sha256": "poison-sha-1",
+            "file_ext": ".md",
+            "created": 0,
+            "modified": 0,
+            "modified_date": "2026-01-01",
+            "deleted": 0,
+            "length": 0,
+            "word_count": None,
+            "meta_data": None,
+            "is_generated": 0,
+            "needs_parsing": 1,
+        })
+
+        with caplog.at_level("WARNING"):
+            first = run_parse(config, conn)
+            second = run_parse(config, conn)
+
+        assert first.skipped == 1
+        assert second.skipped == 1
+        warning_records = [
+            r for r in caplog.records if "parse: skipped ghost.md (extraction error)" in r.message
+        ]
+        assert len(warning_records) == 1
+
+    def test_poison_file_retries_when_sha_changes(self, tmp_path: Path, caplog):
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        config = _make_config(vault, tmp_path)
+        conn = _conn()
+
+        upsert_file(conn, {
+            "file_path": "ghost.md",
+            "sha256": "poison-sha-1",
+            "file_ext": ".md",
+            "created": 0,
+            "modified": 0,
+            "modified_date": "2026-01-01",
+            "deleted": 0,
+            "length": 0,
+            "word_count": None,
+            "meta_data": None,
+            "is_generated": 0,
+            "needs_parsing": 1,
+        })
+
+        with caplog.at_level("WARNING"):
+            first = run_parse(config, conn)
+            conn.execute(
+                "UPDATE file SET sha256 = ? WHERE file_path = ?",
+                ("poison-sha-2", "ghost.md"),
+            )
+            conn.commit()
+            second = run_parse(config, conn)
+
+        assert first.skipped == 1
+        assert second.skipped == 1
+        warning_records = [
+            r for r in caplog.records if "parse: skipped ghost.md (extraction error)" in r.message
+        ]
+        assert len(warning_records) == 2
 
 
 # ---------------------------------------------------------------------------
