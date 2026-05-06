@@ -586,6 +586,52 @@ class TestRunReportHistoryPage:
         # today is the last date, so next_date is None — ➡ should not appear
         assert "➡" not in content
 
+    def test_history_always_reruns_rollup_for_today(self, tmp_path: Path):
+        """Rollup for today runs on every history render so file_touch stays fresh.
+
+        Scenario:
+            1. Seed a file modified today and run rollup once (no file_touch row yet).
+            2. Modify the file (update modified epoch in the file table).
+            3. Run report again WITHOUT resetting daily_metric — rollup must still fire
+               and the updated modified timestamp must appear in file_touch.
+        """
+        today = datetime.date.today().isoformat()
+        conn = _conn()
+
+        # Seed a vault file modified today
+        _seed_file(conn, "Notes/work.md", modified_date=today, modified=1_000_000_000_000)
+        conn.commit()
+
+        cfg = _make_config(tmp_path)
+        cfg.base_directory.mkdir(parents=True, exist_ok=True)
+
+        # First report run — today not yet in daily_metric; rollup fires, captures modified=1_000_000_000_000
+        run_report(cfg, conn, target="history")
+        rows = conn.execute(
+            "SELECT modified FROM file_touch WHERE touch_date = ? AND file_path = ?",
+            (today, "Notes/work.md"),
+        ).fetchall()
+        assert len(rows) == 1
+        assert rows[0]["modified"] == 1_000_000_000_000
+
+        # Simulate a sync that updates the file's modified epoch (user saved the file again)
+        conn.execute(
+            "UPDATE file SET modified = 2_000_000_000_000 WHERE file_path = ?",
+            ("Notes/work.md",),
+        )
+        conn.commit()
+
+        # Second report run — today IS already in daily_metric but rollup must still fire
+        run_report(cfg, conn, target="history")
+        rows = conn.execute(
+            "SELECT modified FROM file_touch WHERE touch_date = ? AND file_path = ?",
+            (today, "Notes/work.md"),
+        ).fetchall()
+        assert len(rows) == 1, "INSERT OR REPLACE should keep exactly one row per PK"
+        assert rows[0]["modified"] == 2_000_000_000_000, (
+            "file_touch must reflect the updated modified epoch after the second report run"
+        )
+
     def test_history_file_touches_section_empty_fallback(self, tmp_path: Path):
         conn = _conn()
         _seed_metric(conn, "2026-04-20", None, completed=1)

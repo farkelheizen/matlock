@@ -2322,9 +2322,10 @@ def _render_history(
     ).fetchall()
     dates = [r["metric_date"] for r in dates_rows]
 
-    # Always include today — run rollup for today if not already present
+    # Always run rollup for today so that file_touch / daily_task reflect the
+    # current state of the file table (idempotent — INSERT OR REPLACE).
+    run_rollup(config, conn, datetime.date.today())
     if today_str not in dates:
-        run_rollup(config, conn, datetime.date.today())
         dates.append(today_str)
 
     count = 0

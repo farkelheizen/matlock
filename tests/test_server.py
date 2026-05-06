@@ -608,3 +608,57 @@ class TestRunServerStartupFlags:
 
         # The scheduler args tuple should contain True (skip_rollup)
         assert any(True in args for args in captured_scheduler_args)
+
+    def test_force_rollup_runs_rollup_for_today_at_startup(self, tmp_path: Path):
+        """force_rollup=True calls run_rollup with today's date at startup."""
+        config, vault, db_path, out_dir = _make_config(tmp_path)
+        conn = get_connection(db_path)
+        init_db(conn)
+        conn.close()
+
+        from matlock.stages.rollup import RollupResult
+
+        with patch("matlock.server.Observer", return_value=self._make_fake_observer()):
+            with patch("matlock.server.time.sleep", side_effect=self._patched_sleep(2)):
+                with patch("matlock.server.run_rollup",
+                           return_value=RollupResult(rows_written=0, rollup_date="2026-05-05")) as mock_rollup:
+                    try:
+                        run_server(config, debounce_seconds=1, force_rollup=True)
+                    except KeyboardInterrupt:
+                        pass
+
+        assert mock_rollup.call_count >= 1
+        # run_rollup should be called with today's date, not yesterday
+        call_args = mock_rollup.call_args_list[0]
+        rollup_date_arg = call_args.args[2] if len(call_args.args) >= 3 else call_args.kwargs.get("rollup_date")
+        assert rollup_date_arg == datetime.date.today()
+
+    def test_force_rollup_runs_after_force_sync(self, tmp_path: Path):
+        """When both --force-sync and --force-rollup are given, sync runs before rollup."""
+        config, vault, db_path, out_dir = _make_config(tmp_path)
+        conn = get_connection(db_path)
+        init_db(conn)
+        conn.close()
+
+        call_order: list[str] = []
+
+        from matlock.stages.sync import SyncResult
+        from matlock.stages.parse import ParseResult
+        from matlock.stages.rollup import RollupResult
+
+        with patch("matlock.server.Observer", return_value=self._make_fake_observer()):
+            with patch("matlock.server.time.sleep", side_effect=self._patched_sleep(2)):
+                with patch("matlock.server.run_sync",
+                           side_effect=lambda *a, **kw: (call_order.append("sync"), SyncResult(0, 0, 0, 0))[1]) as mock_sync:
+                    with patch("matlock.server.run_parse",
+                               side_effect=lambda *a, **kw: (call_order.append("parse"), ParseResult(0, 0, 0, 0))[1]):
+                        with patch("matlock.server.run_rollup",
+                                   side_effect=lambda *a, **kw: (call_order.append("rollup"), RollupResult(0, "2026-05-05"))[1]):
+                            try:
+                                run_server(config, debounce_seconds=1, force_sync=True, force_rollup=True)
+                            except KeyboardInterrupt:
+                                pass
+
+        assert "sync" in call_order
+        assert "rollup" in call_order
+        assert call_order.index("sync") < call_order.index("rollup")

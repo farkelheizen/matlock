@@ -337,3 +337,24 @@ class TestWarnings:
         # Warnings go to stderr; CliRunner captures both by default
         assert result.exit_code == 0
         assert "Ultra" in result.output and "[p.md]" in result.output
+
+    def test_malformed_frontmatter_warning_in_output(self, tmp_path: Path):
+        vault = tmp_path / "vault"
+        vault.mkdir(parents=True, exist_ok=True)
+        (vault / "bad.md").write_text(
+            "---\n"
+            "type: wip\n"
+            "title: \"Bad Title\n"
+            "---\n"
+            "body\n",
+            encoding="utf-8",
+        )
+
+        cfg_path = tmp_path / "config.yaml"
+        _write_config(cfg_path, vault, tmp_path / "db.db")
+
+        result = runner.invoke(app, ["--config", str(cfg_path), "scan-projects"])
+
+        assert result.exit_code == 0
+        assert "Failed to parse frontmatter YAML" in result.output
+        assert "[bad.md]" in result.output

@@ -425,6 +425,11 @@ def server(
         "--force-report",
         help="Run a full forced report once at startup (after any startup sync).",
     ),
+    force_rollup: bool = typer.Option(
+        False,
+        "--force-rollup",
+        help="Run rollup for today once at startup (after any forced sync).",
+    ),
 ) -> None:
     """Watch the vault and run pipeline stages automatically."""
     cfg = _load_and_validate(ctx.obj[_CONFIG_KEY])
@@ -463,4 +468,5 @@ def server(
         skip_rollup=skip_rollup,
         force_sync=force_sync,
         force_report=force_report,
+        force_rollup=force_rollup,
     )
