@@ -2,10 +2,10 @@
 
 Use this file to identify the active implementation plan before starting work.
 
-- Active plan: `docs/copilot/plans/20260505-daily-history-persistence.md` ✅ Completed
-- Current step: complete (all 5 steps done)
+- Active plan: `docs/copilot/plans/20260506-spec-driven-runtime-hardening.md`
+- Current step: complete (SDR-S1 through SDR-S5 completed)
 - Next plan: none
-- Last updated: 2026-05-05
+- Last updated: 2026-05-06
 - Owner: Copilot
 
 ## Update Rules

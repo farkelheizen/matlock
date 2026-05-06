@@ -760,6 +760,39 @@ class TestScanVault:
         paths = [sf.file_path for sf in scanned]
         assert not any("_Matlock" in p for p in paths)
 
+    def test_malformed_yaml_adds_warning_and_scan_continues(self, tmp_path: Path):
+        cfg = _make_config(tmp_path)
+        vault = cfg.base_directory
+        _write_md(vault / "Projects" / "Good" / "Good.md", {"title": "Good"})
+        bad = vault / "broken.md"
+        bad.write_text("---\ntitle: [unterminated\n---\n", encoding="utf-8")
+
+        scanned, candidates = scan_vault(cfg)
+
+        assert any(candidate.project_id == "Good" for candidate in candidates)
+        assert any(
+            sf.file_path == "broken.md"
+            and any(w.startswith("Failed to parse frontmatter YAML:") for w in sf.warnings)
+            for sf in scanned
+        )
+
+    def test_non_utf8_file_adds_warning_and_scan_continues(self, tmp_path: Path):
+        cfg = _make_config(tmp_path)
+        vault = cfg.base_directory
+        _write_md(vault / "Projects" / "Good" / "Good.md", {"title": "Good"})
+        bad = vault / "binary.md"
+        bad.parent.mkdir(parents=True, exist_ok=True)
+        bad.write_bytes(b"\xff\xfe\x00bad")
+
+        scanned, candidates = scan_vault(cfg)
+
+        assert any(candidate.project_id == "Good" for candidate in candidates)
+        assert any(
+            sf.file_path == "binary.md"
+            and any(w.startswith("Failed to read file as UTF-8 text:") for w in sf.warnings)
+            for sf in scanned
+        )
+
     def test_excludes_ignored_dirs(self, tmp_path: Path):
         vault = tmp_path / "vault"
         vault.mkdir()
@@ -792,38 +825,6 @@ class TestScanVault:
         scanned, _ = scan_vault(cfg)
         assert len(scanned) == 1
         assert scanned[0].file_path == "fancy.md"
-
-    def test_malformed_frontmatter_warns_and_continues(self, tmp_path: Path):
-        cfg = _make_config(tmp_path)
-        vault = cfg.base_directory
-        _write_md(vault / "good.md", {"title": "good"})
-        (vault / "bad.md").write_text(
-            "---\n"
-            "type: wip\n"
-            "title: \"Bad Title\n"
-            "---\n"
-            "body\n",
-            encoding="utf-8",
-        )
-
-        scanned, candidates = scan_vault(cfg)
-
-        assert any(sf.file_path == "good.md" for sf in scanned)
-        bad = next(sf for sf in scanned if sf.file_path == "bad.md")
-        assert any("Failed to parse frontmatter YAML" in w for w in bad.warnings)
-        assert all(pc.project_id != "bad" for pc in candidates)
-
-    def test_non_utf8_markdown_warns_and_continues(self, tmp_path: Path):
-        cfg = _make_config(tmp_path)
-        vault = cfg.base_directory
-        _write_md(vault / "good.md", {"title": "good"})
-        (vault / "binary.md").write_bytes(b"\xff\xfe\xfa\xfb")
-
-        scanned, _ = scan_vault(cfg)
-
-        assert any(sf.file_path == "good.md" for sf in scanned)
-        binary = next(sf for sf in scanned if sf.file_path == "binary.md")
-        assert any("Failed to read file as UTF-8 text" in w for w in binary.warnings)
 
 
 # ---------------------------------------------------------------------------
