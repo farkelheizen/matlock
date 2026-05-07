@@ -55,13 +55,17 @@ Extract task data from files flagged by the `sync` stage and persist results to 
 
 1. Query: `SELECT file_path FROM file WHERE needs_parsing = 1 AND deleted = 0`.
 2. For each result:
+   a. Check the in-memory poison cache for this `file_path` and current `sha256`.
+      - If the file failed extraction previously with the same `sha256`, skip extraction for this run (`skipped += 1`).
+      - If `sha256` changed, clear poison state and retry extraction.
    a. Delete all existing rows in `task` where `file_path` matches (full replace).
    b. Read the file from disk.
    c. Run `extract_tasks_from_markdown(content, config)` to produce a `ParsedMarkdownFile`.
    d. Insert each `ParsedMarkdownTask` from the result into the `task` table.
    e. Set `needs_parsing = 0` on the `file` row.
    f. Update `word_count`, `length`, `meta_data`, `sha256` on the `file` row from the parsed result.
-3. If extraction raises an unhandled exception for a file: log the error, leave `needs_parsing = 1`, continue to the next file.
+3. If extraction raises an unhandled exception for a file: record/update poison cache for `(file_path, sha256)`, log the error, leave `needs_parsing = 1`, continue to the next file.
+4. On successful extraction, clear poison state for that `file_path`.
 
 ### Flags
 
@@ -75,6 +79,7 @@ Extract task data from files flagged by the `sync` stage and persist results to 
 - It does not walk the filesystem.
 - It does not modify project mappings.
 - It does not generate any reports.
+- It does not persist poison-cache state across process restarts.
 
 ---
 
@@ -182,15 +187,16 @@ Query the database and render Jinja2 Markdown dashboards into the `output_direct
 | `super_project.md.j2` | `_Matlock/Super Projects/Unassigned.md` | Virtual page — always generated |
 | `project.md.j2` | `_Matlock/Projects/<id>.md` | Per project |
 | `project.md.j2` | `_Matlock/Projects/Unassigned.md` | Virtual page — always generated |
-| `daily_history.md.j2` | `_Matlock/History/<YYYY-MM-DD>.md` | After `rollup` |
+| `daily_history.md.j2` | `_Matlock/History/<YYYY-MM-DD>.md` | After `rollup`; history renders also refresh today's rollup snapshot |
 
 ### Logic
 
 1. Load Jinja2 templates from `matlock/templates/`.
-2. Query the database for required data per dashboard type (see `docs/matlock-generated-reports.md` for field details).
-3. Render each template with the query results.
-4. Write output to `_Matlock/` (creates directories as needed).
-5. Rows written to `file` with `is_generated = 1` for each output file, so `sync` ignores them.
+2. For history target (`history` or `all`), run `rollup` for today before rendering history pages so `file_touch` and `daily_task` are refreshed.
+3. Query the database for required data per dashboard type (see `docs/matlock-generated-reports.md` for field details).
+4. Render each template with the query results.
+5. Write output to `_Matlock/` (creates directories as needed).
+6. Rows written to `file` with `is_generated = 1` for each output file, so `sync` ignores them.
 
 ### Flags
 
@@ -242,12 +248,23 @@ Runs a persistent daemon that orchestrates all pipeline stages in response to ev
 3. **Scheduler (nightly metrics):**
    - At midnight (00:01): triggers `rollup` then a full `report` rebuild (Daily Dashboard + new History page).
 
+4. **Startup refresh (optional):**
+   - One-time startup actions can run before watcher/debouncer/scheduler threads start.
+   - Startup order when combined: forced `sync`+`parse`, then forced `rollup` for today, then forced `report`.
+
 ### Flags
 
 | Flag | Description |
 |:-----|:------------|
 | `--config PATH` | Path to `config.yaml` |
 | `--debounce SECONDS` | Override debounce window (default: `5`) |
+| `--scan-projects` | Run `scan-projects --merge` once at startup before the watcher starts |
+| `--force-sync` | Run a full forced sync+parse once at startup before the watcher starts |
+| `--force-rollup` | Run rollup for today once at startup (after any forced sync) |
+| `--force-report` | Run a full forced report once at startup (after any startup sync/rollup) |
+| `--skip-rollup` | Skip rollup in the nightly scheduled job |
+
+Startup flags are one-shot startup actions; they do not change watcher/debouncer behavior after startup.
 
 ---
 

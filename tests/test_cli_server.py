@@ -64,13 +64,13 @@ class TestServerHelp:
         result = _invoke_help()
         assert "--force-sync" in result.output
 
-    def test_force_report_option_in_help(self):
-        result = _invoke_help()
-        assert "--force-report" in result.output
-
     def test_force_rollup_option_in_help(self):
         result = _invoke_help()
         assert "--force-rollup" in result.output
+
+    def test_force_report_option_in_help(self):
+        result = _invoke_help()
+        assert "--force-report" in result.output
 
 
 # ---------------------------------------------------------------------------
@@ -93,7 +93,7 @@ class TestServerNewFlags:
         calls: list = []
 
         def fake_run_server(cfg, debounce_seconds=None, skip_rollup=False,
-                            force_sync=False, force_report=False, force_rollup=False):
+                            force_sync=False, force_rollup=False, force_report=False):
             calls.append({"force_sync": force_sync})
 
         with patch("matlock.cli.run_server", side_effect=fake_run_server):
@@ -102,12 +102,26 @@ class TestServerNewFlags:
         assert result.exit_code == 0
         assert calls[0]["force_sync"] is True
 
+    def test_force_rollup_passed_to_run_server(self, tmp_path: Path):
+        cfg_path = self._cfg(tmp_path)
+        calls: list = []
+
+        def fake_run_server(cfg, debounce_seconds=None, skip_rollup=False,
+                            force_sync=False, force_rollup=False, force_report=False):
+            calls.append({"force_rollup": force_rollup})
+
+        with patch("matlock.cli.run_server", side_effect=fake_run_server):
+            result = runner.invoke(app, ["--config", str(cfg_path), "server", "--force-rollup"])
+
+        assert result.exit_code == 0
+        assert calls[0]["force_rollup"] is True
+
     def test_force_report_passed_to_run_server(self, tmp_path: Path):
         cfg_path = self._cfg(tmp_path)
         calls: list = []
 
         def fake_run_server(cfg, debounce_seconds=None, skip_rollup=False,
-                            force_sync=False, force_report=False, force_rollup=False):
+                            force_sync=False, force_rollup=False, force_report=False):
             calls.append({"force_report": force_report})
 
         with patch("matlock.cli.run_server", side_effect=fake_run_server):
@@ -121,7 +135,7 @@ class TestServerNewFlags:
         calls: list = []
 
         def fake_run_server(cfg, debounce_seconds=None, skip_rollup=False,
-                            force_sync=False, force_report=False, force_rollup=False):
+                            force_sync=False, force_rollup=False, force_report=False):
             calls.append({"skip_rollup": skip_rollup})
 
         with patch("matlock.cli.run_server", side_effect=fake_run_server):
@@ -157,38 +171,29 @@ class TestServerNewFlags:
         assert mock_merge.call_count == 1
         assert len(run_server_calls) == 1
 
-    def test_force_rollup_passed_to_run_server(self, tmp_path: Path):
-        cfg_path = self._cfg(tmp_path)
-        calls: list = []
-
-        def fake_run_server(cfg, debounce_seconds=None, skip_rollup=False,
-                            force_sync=False, force_report=False, force_rollup=False):
-            calls.append({"force_rollup": force_rollup})
-
-        with patch("matlock.cli.run_server", side_effect=fake_run_server):
-            result = runner.invoke(app, ["--config", str(cfg_path), "server", "--force-rollup"])
-
-        assert result.exit_code == 0
-        assert calls[0]["force_rollup"] is True
-
     def test_no_flags_defaults_are_false(self, tmp_path: Path):
         cfg_path = self._cfg(tmp_path)
         calls: list = []
 
         def fake_run_server(cfg, debounce_seconds=None, skip_rollup=False,
-                            force_sync=False, force_report=False, force_rollup=False):
+                            force_sync=False, force_rollup=False, force_report=False):
             calls.append({
                 "skip_rollup": skip_rollup,
                 "force_sync": force_sync,
-                "force_report": force_report,
                 "force_rollup": force_rollup,
+                "force_report": force_report,
             })
 
         with patch("matlock.cli.run_server", side_effect=fake_run_server):
             result = runner.invoke(app, ["--config", str(cfg_path), "server"])
 
         assert result.exit_code == 0
-        assert calls[0] == {"skip_rollup": False, "force_sync": False, "force_report": False, "force_rollup": False}
+        assert calls[0] == {
+            "skip_rollup": False,
+            "force_sync": False,
+            "force_rollup": False,
+            "force_report": False,
+        }
 
 
 # ---------------------------------------------------------------------------

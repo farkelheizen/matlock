@@ -345,6 +345,72 @@ class TestRunReportTargetFilter:
         assert (cfg.output_directory / _history_subpath("2026-04-20")).exists()
 
 
+class TestRunReportHistoryFreshness:
+    def test_history_target_always_runs_rollup_for_today(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        today = datetime.date.today().isoformat()
+        _seed_metric(conn, today, None, completed=1)
+
+        rollup_dates: list[datetime.date] = []
+
+        def fake_rollup(config, db_conn, rollup_date):
+            rollup_dates.append(rollup_date)
+            from matlock.stages.rollup import RollupResult
+            return RollupResult(rollup_date=rollup_date.isoformat(), rows_written=0)
+
+        monkeypatch.setattr("matlock.stages.report.run_rollup", fake_rollup)
+
+        run_report(cfg, conn, target="history")
+
+        assert rollup_dates == [datetime.date.today()]
+
+    def test_repeated_history_render_refreshes_today_file_touch_modified(self, tmp_path: Path):
+        conn = _conn()
+        cfg = _make_config(tmp_path)
+        today = datetime.date.today().isoformat()
+        file_path = "notes/today.md"
+
+        upsert_file(conn, {
+            "file_path": file_path,
+            "sha256": "abc",
+            "file_ext": ".md",
+            "created": 0,
+            "modified": 1000,
+            "modified_date": today,
+            "deleted": 0,
+            "length": 0,
+            "word_count": 0,
+            "meta_data": None,
+            "is_generated": 0,
+            "needs_parsing": 0,
+        })
+        conn.commit()
+
+        run_report(cfg, conn, target="history")
+        first_touch = conn.execute(
+            "SELECT modified FROM file_touch WHERE file_path = ? AND touch_date = ? AND event_type = 'modified'",
+            (file_path, today),
+        ).fetchone()
+
+        conn.execute(
+            "UPDATE file SET modified = ? WHERE file_path = ?",
+            (2000, file_path),
+        )
+        conn.commit()
+
+        run_report(cfg, conn, target="history")
+        refreshed_touch = conn.execute(
+            "SELECT modified FROM file_touch WHERE file_path = ? AND touch_date = ? AND event_type = 'modified'",
+            (file_path, today),
+        ).fetchone()
+
+        assert first_touch is not None
+        assert first_touch["modified"] == 1000
+        assert refreshed_touch is not None
+        assert refreshed_touch["modified"] == 2000
+
+
 # ---------------------------------------------------------------------------
 # run_report — project page content
 # ---------------------------------------------------------------------------
@@ -585,52 +651,6 @@ class TestRunReportHistoryPage:
         content = (cfg.output_directory / _history_subpath(today)).read_text()
         # today is the last date, so next_date is None — ➡ should not appear
         assert "➡" not in content
-
-    def test_history_always_reruns_rollup_for_today(self, tmp_path: Path):
-        """Rollup for today runs on every history render so file_touch stays fresh.
-
-        Scenario:
-            1. Seed a file modified today and run rollup once (no file_touch row yet).
-            2. Modify the file (update modified epoch in the file table).
-            3. Run report again WITHOUT resetting daily_metric — rollup must still fire
-               and the updated modified timestamp must appear in file_touch.
-        """
-        today = datetime.date.today().isoformat()
-        conn = _conn()
-
-        # Seed a vault file modified today
-        _seed_file(conn, "Notes/work.md", modified_date=today, modified=1_000_000_000_000)
-        conn.commit()
-
-        cfg = _make_config(tmp_path)
-        cfg.base_directory.mkdir(parents=True, exist_ok=True)
-
-        # First report run — today not yet in daily_metric; rollup fires, captures modified=1_000_000_000_000
-        run_report(cfg, conn, target="history")
-        rows = conn.execute(
-            "SELECT modified FROM file_touch WHERE touch_date = ? AND file_path = ?",
-            (today, "Notes/work.md"),
-        ).fetchall()
-        assert len(rows) == 1
-        assert rows[0]["modified"] == 1_000_000_000_000
-
-        # Simulate a sync that updates the file's modified epoch (user saved the file again)
-        conn.execute(
-            "UPDATE file SET modified = 2_000_000_000_000 WHERE file_path = ?",
-            ("Notes/work.md",),
-        )
-        conn.commit()
-
-        # Second report run — today IS already in daily_metric but rollup must still fire
-        run_report(cfg, conn, target="history")
-        rows = conn.execute(
-            "SELECT modified FROM file_touch WHERE touch_date = ? AND file_path = ?",
-            (today, "Notes/work.md"),
-        ).fetchall()
-        assert len(rows) == 1, "INSERT OR REPLACE should keep exactly one row per PK"
-        assert rows[0]["modified"] == 2_000_000_000_000, (
-            "file_touch must reflect the updated modified epoch after the second report run"
-        )
 
     def test_history_file_touches_section_empty_fallback(self, tmp_path: Path):
         conn = _conn()

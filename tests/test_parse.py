@@ -1,11 +1,14 @@
 """Tests for matlock/stages/parse.py."""
 from __future__ import annotations
 
+import logging
 import json
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
+import matlock.stages.parse as parse_stage
 from matlock.config import MatlockConfig
 from matlock.db import (
     get_connection,
@@ -14,7 +17,6 @@ from matlock.db import (
     init_db,
     upsert_file,
 )
-from matlock.stages import parse as parse_stage
 from matlock.stages.parse import ParseResult, _build_extractor_config, run_parse
 from matlock.stages.sync import run_sync
 
@@ -48,12 +50,6 @@ _MD_NESTED = """\
   - [ ] Sub-task A1
 - [x] Task B
 """
-
-
-@pytest.fixture(autouse=True)
-def _clear_poison_cache() -> None:
-    """Ensure parse poison-cache state does not leak across tests."""
-    parse_stage._POISON_FILES.clear()
 
 
 def _make_config(
@@ -453,74 +449,70 @@ class TestRunParseErrorIsolation:
         tasks = get_tasks_for_file(conn, "ghost.md")
         assert tasks == []
 
-    def test_poison_file_skips_repeated_unchanged_retries(self, tmp_path: Path, caplog):
+
+class TestRunParsePoisonCache:
+    def test_unchanged_failed_file_is_skipped_without_retry_warning(
+        self,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+    ):
         vault = tmp_path / "vault"
         vault.mkdir()
         config = _make_config(vault, tmp_path)
         conn = _conn()
+        _seed_file(conn, "bad.md", _MD_WITH_TASKS, vault)
+        if hasattr(parse_stage, "_POISON_CACHE"):
+            parse_stage._POISON_CACHE.clear()
 
-        upsert_file(conn, {
-            "file_path": "ghost.md",
-            "sha256": "poison-sha-1",
-            "file_ext": ".md",
-            "created": 0,
-            "modified": 0,
-            "modified_date": "2026-01-01",
-            "deleted": 0,
-            "length": 0,
-            "word_count": None,
-            "meta_data": None,
-            "is_generated": 0,
-            "needs_parsing": 1,
-        })
+        with patch(
+            "matlock.stages.parse.extract_tasks_from_markdown",
+            side_effect=RuntimeError("boom"),
+        ) as mock_extract:
+            with caplog.at_level(logging.WARNING):
+                first = run_parse(config, conn)
 
-        with caplog.at_level("WARNING"):
-            first = run_parse(config, conn)
-            second = run_parse(config, conn)
+            caplog.clear()
+            with caplog.at_level(logging.WARNING):
+                second = run_parse(config, conn)
 
         assert first.skipped == 1
         assert second.skipped == 1
-        warning_records = [
-            r for r in caplog.records if "parse: skipped ghost.md (extraction error)" in r.message
-        ]
-        assert len(warning_records) == 1
+        assert mock_extract.call_count == 1
+        assert not caplog.records
 
-    def test_poison_file_retries_when_sha_changes(self, tmp_path: Path, caplog):
+    def test_sha_change_retries_failed_file_and_logs_warning_again(
+        self,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+    ):
         vault = tmp_path / "vault"
         vault.mkdir()
         config = _make_config(vault, tmp_path)
         conn = _conn()
+        _seed_file(conn, "bad.md", _MD_WITH_TASKS, vault)
+        if hasattr(parse_stage, "_POISON_CACHE"):
+            parse_stage._POISON_CACHE.clear()
 
-        upsert_file(conn, {
-            "file_path": "ghost.md",
-            "sha256": "poison-sha-1",
-            "file_ext": ".md",
-            "created": 0,
-            "modified": 0,
-            "modified_date": "2026-01-01",
-            "deleted": 0,
-            "length": 0,
-            "word_count": None,
-            "meta_data": None,
-            "is_generated": 0,
-            "needs_parsing": 1,
-        })
+        with patch(
+            "matlock.stages.parse.extract_tasks_from_markdown",
+            side_effect=[RuntimeError("boom"), RuntimeError("boom again")],
+        ) as mock_extract:
+            with caplog.at_level(logging.WARNING):
+                run_parse(config, conn)
 
-        with caplog.at_level("WARNING"):
-            first = run_parse(config, conn)
+            caplog.clear()
             conn.execute(
                 "UPDATE file SET sha256 = ? WHERE file_path = ?",
-                ("poison-sha-2", "ghost.md"),
+                ("def", "bad.md"),
             )
             conn.commit()
-            second = run_parse(config, conn)
 
-        assert first.skipped == 1
+            with caplog.at_level(logging.WARNING):
+                second = run_parse(config, conn)
+
         assert second.skipped == 1
-        warning_records = [
-            r for r in caplog.records if "parse: skipped ghost.md (extraction error)" in r.message
-        ]
-        assert len(warning_records) == 2
+        assert mock_extract.call_count == 2
+        assert any(record.levelno == logging.WARNING for record in caplog.records)
 
 
 # ---------------------------------------------------------------------------

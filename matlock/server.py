@@ -208,8 +208,8 @@ def run_server(
     debounce_seconds: int | None = None,
     skip_rollup: bool = False,
     force_sync: bool = False,
-    force_report: bool = False,
     force_rollup: bool = False,
+    force_report: bool = False,
 ) -> None:
     """Start the file watcher, debouncer, and scheduler. Blocks until SIGINT.
 
@@ -224,11 +224,10 @@ def run_server(
         When True, the nightly scheduler skips the rollup step.
     force_sync:
         When True, run a full forced sync+parse once at startup before the watcher starts.
-    force_report:
-        When True, run a full forced report once at startup (after any startup sync).
     force_rollup:
-        When True, run rollup for today once at startup (after any forced sync).
-        Populates ``file_touch`` and ``daily_task`` for the current date.
+        When True, run rollup for today once at startup after any forced sync.
+    force_report:
+        When True, run a full forced report once at startup (after any startup sync/rollup).
     """
     effective_debounce = debounce_seconds if debounce_seconds is not None else config.debounce_seconds
 
@@ -243,10 +242,14 @@ def run_server(
                 run_parse(config, startup_conn)
                 typer_echo("[startup] forced sync+parse complete")
             if force_rollup:
-                rollup_today = datetime.date.today()
-                typer_echo(f"[startup] forced rollup for {rollup_today} starting")
-                run_rollup(config, startup_conn, rollup_today)
-                typer_echo(f"[startup] forced rollup for {rollup_today} complete")
+                startup_rollup_date = datetime.date.today()
+                typer_echo(
+                    f"[startup] forced rollup starting ({startup_rollup_date.isoformat()})"
+                )
+                run_rollup(config, startup_conn, startup_rollup_date)
+                typer_echo(
+                    f"[startup] forced rollup complete ({startup_rollup_date.isoformat()})"
+                )
             if force_report:
                 typer_echo("[startup] forced report starting")
                 run_map_projects(config, startup_conn)

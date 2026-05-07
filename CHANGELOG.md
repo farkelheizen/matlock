@@ -14,6 +14,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ---
 
+## [0.3.2] — 2026-05-06
+
+### Changed
+
+- Reimplemented runtime-hardening features from spec (spec-driven rewrite of `--force-rollup`, history freshness, parse poison-file cache, and scan-projects per-file fault tolerance). Behaviour is identical to 0.3.1; implementation is now spec-authored.
+
+---
+
 ## [0.3.1] — 2026-05-05
 
 ### Added

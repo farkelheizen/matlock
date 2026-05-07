@@ -116,6 +116,15 @@ Files are processed in case-folded alphabetical order by their relative path.
 
 Files with **no YAML frontmatter** (or an empty frontmatter block) are silently skipped.
 
+Files with malformed frontmatter/read issues are reported as per-file warnings and do not abort the scan.
+The scanner continues processing remaining files and returns warning entries bound to each failing `file_path`.
+
+Warning prefixes are stable and category-specific:
+- `Failed to parse frontmatter YAML: ...`
+- `Failed to read file as UTF-8 text: ...`
+- `Failed to read file: ...`
+- `Failed to scan file: ...`
+
 ### Frontmatter Key Handling
 
 All frontmatter keys are normalised to lowercase before reading. If duplicate case-variant keys exist (e.g., `projects` and `Projects`), their values are **combined** rather than one being dropped.

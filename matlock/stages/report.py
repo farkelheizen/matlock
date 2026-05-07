@@ -2317,14 +2317,15 @@ def _render_history(
     today_str: str,
     config: MatlockConfig,
 ) -> int:
+    # Always refresh today's rollup-backed history snapshots before rendering.
+    run_rollup(config, conn, datetime.date.today())
+
     dates_rows = conn.execute(
         "SELECT DISTINCT metric_date FROM daily_metric ORDER BY metric_date"
     ).fetchall()
     dates = [r["metric_date"] for r in dates_rows]
 
-    # Always run rollup for today so that file_touch / daily_task reflect the
-    # current state of the file table (idempotent — INSERT OR REPLACE).
-    run_rollup(config, conn, datetime.date.today())
+    # Always include today in the render list, even if the DB query predates the refresh.
     if today_str not in dates:
         dates.append(today_str)
 

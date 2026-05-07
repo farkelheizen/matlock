@@ -119,30 +119,12 @@ def scan_vault(
     scanned_files: list[ScannedFile] = []
 
     for rel_path in rel_paths:
-        try:
-            sf = _scan_file(base_dir, rel_path, seen_project_ids)
-        except (yaml.YAMLError, UnicodeError, OSError, ValueError) as exc:
-            sf = ScannedFile(
-                file_path=rel_path,
-                warnings=[_format_scan_error(exc)],
-            )
+        sf = _scan_file(base_dir, rel_path, seen_project_ids)
         if sf is not None:
             scanned_files.append(sf)
 
     project_candidates = _build_project_candidates(scanned_files)
     return scanned_files, project_candidates
-
-
-def _format_scan_error(exc: Exception) -> str:
-    """Return a single-line warning for scan failures in one file."""
-    detail = " ".join(str(exc).splitlines()).strip() or repr(exc)
-    if isinstance(exc, yaml.YAMLError):
-        return f"Failed to parse frontmatter YAML: {detail}"
-    if isinstance(exc, UnicodeError):
-        return f"Failed to read file as UTF-8 text: {detail}"
-    if isinstance(exc, OSError):
-        return f"Failed to read file: {detail}"
-    return f"Failed to scan file: {detail}"
 
 
 # ---------------------------------------------------------------------------
@@ -157,218 +139,245 @@ def _scan_file(
 ) -> ScannedFile | None:
     """Parse one Markdown file and return a ScannedFile, or None if no frontmatter."""
     abs_path = base_dir / rel_path
-    post = frontmatter.load(str(abs_path))
+    try:
+        text = abs_path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as exc:
+        return ScannedFile(
+            file_path=rel_path,
+            warnings=[f"Failed to read file as UTF-8 text: {exc}"],
+        )
+    except OSError as exc:
+        return ScannedFile(
+            file_path=rel_path,
+            warnings=[f"Failed to read file: {exc}"],
+        )
+
+    try:
+        post = frontmatter.loads(text)
+    except yaml.YAMLError as exc:
+        return ScannedFile(
+            file_path=rel_path,
+            warnings=[f"Failed to parse frontmatter YAML: {exc}"],
+        )
+    except Exception as exc:
+        return ScannedFile(
+            file_path=rel_path,
+            warnings=[f"Failed to scan file: {exc}"],
+        )
 
     if not post.metadata:
         return None
 
-    # Build case-insensitive view; first occurrence of a lower-cased key wins.
-    meta: dict[str, Any] = {}
-    for k, v in post.metadata.items():
-        if k.lower() not in meta:
-            meta[k.lower()] = v
+    try:
+        # Build case-insensitive view; first occurrence of a lower-cased key wins.
+        meta: dict[str, Any] = {}
+        for k, v in post.metadata.items():
+            if k.lower() not in meta:
+                meta[k.lower()] = v
 
-    warnings: list[str] = []
+        warnings: list[str] = []
 
-    # --- tagged_project ---
-    tagged_project = False
-    tag_val = meta.get("tag")
-    if isinstance(tag_val, str) and tag_val.lower() == "project":
-        tagged_project = True
-    tags_val = meta.get("tags")
-    if isinstance(tags_val, list):
-        for t in tags_val:
-            if isinstance(t, str) and t.lower() == "project":
-                tagged_project = True
+        # --- tagged_project ---
+        tagged_project = False
+        tag_val = meta.get("tag")
+        if isinstance(tag_val, str) and tag_val.lower() == "project":
+            tagged_project = True
+        tags_val = meta.get("tags")
+        if isinstance(tags_val, list):
+            for t in tags_val:
+                if isinstance(t, str) and t.lower() == "project":
+                    tagged_project = True
+                    break
+
+        # --- named_file_project ---
+        filename = Path(rel_path).name
+        named_file_project: str | None = None
+        for suffix in (", Master Project.md", ", Project.md"):
+            if filename.endswith(suffix):
+                named_file_project = filename[: -len(suffix)]
                 break
 
-    # --- named_file_project ---
-    filename = Path(rel_path).name
-    named_file_project: str | None = None
-    for suffix in (", Master Project.md", ", Project.md"):
-        if filename.endswith(suffix):
-            named_file_project = filename[: -len(suffix)]
-            break
+        # --- projects_directory_project ---
+        normalized_path = rel_path.replace("\\", "/")
+        m = _PROJECTS_DIR_RE.match(normalized_path)
+        projects_directory_project: str | None = m.group(1) if m else None
 
-    # --- projects_directory_project ---
-    normalized_path = rel_path.replace("\\", "/")
-    m = _PROJECTS_DIR_RE.match(normalized_path)
-    projects_directory_project: str | None = m.group(1) if m else None
-
-    # --- project_id (priority: directory > named > tagged) ---
-    if projects_directory_project:
-        project_id: str | None = projects_directory_project
-    elif named_file_project:
-        project_id = named_file_project
-    elif tagged_project:
-        project_id = Path(rel_path).stem
-    else:
-        project_id = None
-
-    # --- project_directory (only for the FIRST candidate per project_id) ---
-    project_directory: ResourceConfig | None = None
-    if projects_directory_project and project_id and project_id not in seen_project_ids:
-        parent_dir = str(Path(rel_path).parent)
-        project_directory = ResourceConfig(type="DIRECTORY", path=parent_dir)
-        seen_project_ids.add(project_id)
-    elif projects_directory_project and project_id:
-        # Already seen — mark as seen but do not create a directory resource
-        pass
-
-    # --- super_project_id ---
-    spid = meta.get("super_project_id")
-    super_project_id: str | None = spid if isinstance(spid, str) else None
-
-    # Fallback: infer from `parent: "[[Name, Super-Project]]"` when the file
-    # is a project candidate and super_project_id was not set explicitly.
-    if super_project_id is None and project_id is not None:
-        parent_val = meta.get("parent")
-        if isinstance(parent_val, str):
-            pm = _PARENT_SUPER_RE.match(parent_val.strip())
-            if pm:
-                super_project_id = pm.group(1)
-
-    # --- title ---
-    title_val = meta.get("title")
-    title: str | None = title_val if isinstance(title_val, str) else None
-
-    # --- priority ---
-    priority: str | None = None
-    pval = meta.get("priority")
-    if pval is not None:
-        if isinstance(pval, str):
-            canonical = _PRIORITY_MAP.get(pval.lower())
-            if canonical:
-                priority = canonical
-            else:
-                warnings.append(
-                    f"Invalid priority {pval!r} — expected Low, Medium, or High"
-                )
+        # --- project_id (priority: directory > named > tagged) ---
+        if projects_directory_project:
+            project_id: str | None = projects_directory_project
+        elif named_file_project:
+            project_id = named_file_project
+        elif tagged_project:
+            project_id = Path(rel_path).stem
         else:
-            warnings.append(f"Invalid priority value {pval!r} — expected a string")
+            project_id = None
 
-    # --- start_date ---
-    start_date: str | None = None
-    for attr in ("started", "start_date", "start date"):
-        val = meta.get(attr)
-        if val is not None:
-            parsed = _parse_date_value(val, attr, warnings)
-            if parsed is not None:
-                start_date = parsed
-                break
+        # --- project_directory (only for the FIRST candidate per project_id) ---
+        project_directory: ResourceConfig | None = None
+        if projects_directory_project and project_id and project_id not in seen_project_ids:
+            parent_dir = str(Path(rel_path).parent)
+            project_directory = ResourceConfig(type="DIRECTORY", path=parent_dir)
+            seen_project_ids.add(project_id)
 
-    if start_date is None:
-        # Fallback: file creation date in local timezone
-        stat = abs_path.stat()
-        created_s: float = getattr(stat, "st_birthtime", stat.st_ctime)
-        start_date = datetime.datetime.fromtimestamp(created_s).date().isoformat()
+        # --- super_project_id ---
+        spid = meta.get("super_project_id")
+        super_project_id: str | None = spid if isinstance(spid, str) else None
 
-    # --- due_date ---
-    due_date: str | None = None
-    for attr in ("due_date", "due date", "est_comp", "est comp"):
-        val = meta.get(attr)
-        if val is not None:
-            parsed = _parse_date_value(val, attr, warnings)
-            if parsed is not None:
-                due_date = parsed
-                break
+        # Fallback: infer from `parent: "[[Name, Super-Project]]"` when the file
+        # is a project candidate and super_project_id was not set explicitly.
+        if super_project_id is None and project_id is not None:
+            parent_val = meta.get("parent")
+            if isinstance(parent_val, str):
+                pm = _PARENT_SUPER_RE.match(parent_val.strip())
+                if pm:
+                    super_project_id = pm.group(1)
 
-    # --- status ---
-    status: str | None = None
-    sval = meta.get("status")
-    if sval is not None:
-        if isinstance(sval, str):
-            canonical = _STATUS_NORM.get(sval.lower())
-            if canonical:
-                status = canonical
-            else:
-                warnings.append(
-                    f"Invalid status {sval!r} — expected one of: "
-                    + str(sorted(_VALID_STATUSES))
-                )
-        else:
-            warnings.append(f"Invalid status value {sval!r} — expected a string")
+        # --- title ---
+        title_val = meta.get("title")
+        title: str | None = title_val if isinstance(title_val, str) else None
 
-    # --- resources (from 'resources' and 'related' frontmatter attributes) ---
-    resources: list[ResourceConfig] = []
-    seen_resource_paths: set[str] = set()
-    for attr_key in ("resources", "related"):
-        raw = meta.get(attr_key)
-        if isinstance(raw, list):
-            for entry in raw:
-                path_value: str | None = None
-                declared_type: str | None = None
-
-                if isinstance(entry, str):
-                    path_value = entry
-                elif isinstance(entry, dict):
-                    path_raw = entry.get("path")
-                    if isinstance(path_raw, str):
-                        path_value = path_raw
-                    type_raw = entry.get("type")
-                    if isinstance(type_raw, str):
-                        declared_type = type_raw.upper()
-                        if declared_type not in {"FILE", "DIRECTORY"}:
-                            warnings.append(
-                                f"Resource {entry!r} has invalid type {type_raw!r}; expected FILE or DIRECTORY"
-                            )
-                            continue
-
-                if path_value is None:
-                    continue
-                if path_value in seen_resource_paths:
-                    continue
-                seen_resource_paths.add(path_value)
-
-                target = base_dir / path_value
-                if target.is_file():
-                    if declared_type in (None, "FILE"):
-                        resources.append(ResourceConfig(type="FILE", path=path_value))
-                    else:
-                        warnings.append(
-                            f"Resource {path_value!r} is a file but declared as {declared_type}"
-                        )
-                elif target.is_dir():
-                    if declared_type in (None, "DIRECTORY"):
-                        resources.append(ResourceConfig(type="DIRECTORY", path=path_value))
-                    else:
-                        warnings.append(
-                            f"Resource {path_value!r} is a directory but declared as {declared_type}"
-                        )
+        # --- priority ---
+        priority: str | None = None
+        pval = meta.get("priority")
+        if pval is not None:
+            if isinstance(pval, str):
+                canonical = _PRIORITY_MAP.get(pval.lower())
+                if canonical:
+                    priority = canonical
                 else:
                     warnings.append(
-                        f"Resource {path_value!r} is not a valid file or directory"
+                        f"Invalid priority {pval!r} — expected Low, Medium, or High"
                     )
+            else:
+                warnings.append(f"Invalid priority value {pval!r} — expected a string")
 
-    # --- projects (combine 'projects' and 'Projects' keys before lowercasing) ---
-    projects_combined: list[str] = []
-    for k, v in post.metadata.items():
-        if k.lower() == "projects" and isinstance(v, list):
-            projects_combined.extend(v)
-    seen_proj: set[str] = set()
-    projects: list[str] = []
-    for p in projects_combined:
-        if isinstance(p, str) and p not in seen_proj:
-            projects.append(p)
-            seen_proj.add(p)
+        # --- start_date ---
+        start_date: str | None = None
+        for attr in ("started", "start_date", "start date"):
+            val = meta.get(attr)
+            if val is not None:
+                parsed = _parse_date_value(val, attr, warnings)
+                if parsed is not None:
+                    start_date = parsed
+                    break
 
-    return ScannedFile(
-        file_path=rel_path,
-        tagged_project=tagged_project,
-        named_file_project=named_file_project,
-        projects_directory_project=projects_directory_project,
-        project_directory=project_directory,
-        project_id=project_id,
-        super_project_id=super_project_id,
-        title=title,
-        priority=priority,
-        start_date=start_date,
-        due_date=due_date,
-        status=status,
-        resources=resources,
-        warnings=warnings,
-        projects=projects,
-    )
+        if start_date is None:
+            # Fallback: file creation date in local timezone
+            stat = abs_path.stat()
+            created_s: float = getattr(stat, "st_birthtime", stat.st_ctime)
+            start_date = datetime.datetime.fromtimestamp(created_s).date().isoformat()
+
+        # --- due_date ---
+        due_date: str | None = None
+        for attr in ("due_date", "due date", "est_comp", "est comp"):
+            val = meta.get(attr)
+            if val is not None:
+                parsed = _parse_date_value(val, attr, warnings)
+                if parsed is not None:
+                    due_date = parsed
+                    break
+
+        # --- status ---
+        status: str | None = None
+        sval = meta.get("status")
+        if sval is not None:
+            if isinstance(sval, str):
+                canonical = _STATUS_NORM.get(sval.lower())
+                if canonical:
+                    status = canonical
+                else:
+                    warnings.append(
+                        f"Invalid status {sval!r} — expected one of: "
+                        + str(sorted(_VALID_STATUSES))
+                    )
+            else:
+                warnings.append(f"Invalid status value {sval!r} — expected a string")
+
+        # --- resources (from 'resources' and 'related' frontmatter attributes) ---
+        resources: list[ResourceConfig] = []
+        seen_resource_paths: set[str] = set()
+        for attr_key in ("resources", "related"):
+            raw = meta.get(attr_key)
+            if isinstance(raw, list):
+                for entry in raw:
+                    path_value: str | None = None
+                    declared_type: str | None = None
+
+                    if isinstance(entry, str):
+                        path_value = entry
+                    elif isinstance(entry, dict):
+                        path_raw = entry.get("path")
+                        if isinstance(path_raw, str):
+                            path_value = path_raw
+                        type_raw = entry.get("type")
+                        if isinstance(type_raw, str):
+                            declared_type = type_raw.upper()
+                            if declared_type not in {"FILE", "DIRECTORY"}:
+                                warnings.append(
+                                    f"Resource {entry!r} has invalid type {type_raw!r}; expected FILE or DIRECTORY"
+                                )
+                                continue
+
+                    if path_value is None:
+                        continue
+                    if path_value in seen_resource_paths:
+                        continue
+                    seen_resource_paths.add(path_value)
+
+                    target = base_dir / path_value
+                    if target.is_file():
+                        if declared_type in (None, "FILE"):
+                            resources.append(ResourceConfig(type="FILE", path=path_value))
+                        else:
+                            warnings.append(
+                                f"Resource {path_value!r} is a file but declared as {declared_type}"
+                            )
+                    elif target.is_dir():
+                        if declared_type in (None, "DIRECTORY"):
+                            resources.append(ResourceConfig(type="DIRECTORY", path=path_value))
+                        else:
+                            warnings.append(
+                                f"Resource {path_value!r} is a directory but declared as {declared_type}"
+                            )
+                    else:
+                        warnings.append(
+                            f"Resource {path_value!r} is not a valid file or directory"
+                        )
+
+        # --- projects (combine 'projects' and 'Projects' keys before lowercasing) ---
+        projects_combined: list[str] = []
+        for k, v in post.metadata.items():
+            if k.lower() == "projects" and isinstance(v, list):
+                projects_combined.extend(v)
+        seen_proj: set[str] = set()
+        projects: list[str] = []
+        for p in projects_combined:
+            if isinstance(p, str) and p not in seen_proj:
+                projects.append(p)
+                seen_proj.add(p)
+
+        return ScannedFile(
+            file_path=rel_path,
+            tagged_project=tagged_project,
+            named_file_project=named_file_project,
+            projects_directory_project=projects_directory_project,
+            project_directory=project_directory,
+            project_id=project_id,
+            super_project_id=super_project_id,
+            title=title,
+            priority=priority,
+            start_date=start_date,
+            due_date=due_date,
+            status=status,
+            resources=resources,
+            warnings=warnings,
+            projects=projects,
+        )
+    except Exception as exc:
+        return ScannedFile(
+            file_path=rel_path,
+            warnings=[f"Failed to scan file: {exc}"],
+        )
 
 
 # ---------------------------------------------------------------------------

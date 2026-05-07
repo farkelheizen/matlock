@@ -420,15 +420,15 @@ def server(
         "--force-sync",
         help="Run a full forced sync+parse once at startup before the watcher starts.",
     ),
-    force_report: bool = typer.Option(
-        False,
-        "--force-report",
-        help="Run a full forced report once at startup (after any startup sync).",
-    ),
     force_rollup: bool = typer.Option(
         False,
         "--force-rollup",
-        help="Run rollup for today once at startup (after any forced sync).",
+        help="Run rollup for today once at startup after any forced sync.",
+    ),
+    force_report: bool = typer.Option(
+        False,
+        "--force-report",
+        help="Run a full forced report once at startup (after any startup sync/rollup).",
     ),
 ) -> None:
     """Watch the vault and run pipeline stages automatically."""
@@ -467,6 +467,6 @@ def server(
         debounce_seconds=debounce,
         skip_rollup=skip_rollup,
         force_sync=force_sync,
-        force_report=force_report,
         force_rollup=force_rollup,
+        force_report=force_report,
     )

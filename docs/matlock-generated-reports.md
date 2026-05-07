@@ -260,7 +260,7 @@ The `health` field on each project row is derived from live task data:
 
 **Template:** `matlock/templates/daily_history.md.j2`
 **Output:** `_Matlock/History/<YYYY-MM-DD>.md`
-**Regenerated:** Once after each `rollup` run (effectively immutable after the next day). Can be accurately regenerated at any future date because `file_touch` and `daily_task` snapshot the events at rollup time.
+**Regenerated:** After each `rollup` run and whenever `report` renders the history target. History rendering always runs rollup for today first, so same-day pages remain fresh while prior dates remain snapshot-accurate through `file_touch` and `daily_task`.
 
 ### Template
 

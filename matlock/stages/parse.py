@@ -31,9 +31,7 @@ from matlock.parser import parse_front_matter
 
 log = logging.getLogger(__name__)
 
-# In-memory cache of files that previously failed extraction.
-# Key: file_path, Value: sha256 at the time of failure.
-_POISON_FILES: dict[str, str] = {}
+_POISON_CACHE: dict[str, str | None] = {}
 
 
 # ---------------------------------------------------------------------------
@@ -147,28 +145,26 @@ def run_parse(
     for file_row in files:
         file_path: str = file_row["file_path"]
         abs_path = config.base_directory / file_path
-        current_sha = str(file_row["sha256"] or "")
+        current_sha = file_row["sha256"]
 
-        poisoned_sha = _POISON_FILES.get(file_path)
-        if poisoned_sha == current_sha:
-            # Retry only when content hash changes.
-            log.debug("parse: skipped poison file unchanged %s", file_path)
-            result.skipped += 1
-            continue
-        if poisoned_sha is not None and poisoned_sha != current_sha:
-            _POISON_FILES.pop(file_path, None)
+        if file_path in _POISON_CACHE:
+            cached_sha = _POISON_CACHE[file_path]
+            if cached_sha == current_sha:
+                result.skipped += 1
+                continue
+            _POISON_CACHE.pop(file_path, None)
 
         # --- Extraction (no DB writes yet) ---
         try:
             content = abs_path.read_text(encoding="utf-8")
             parsed_file = extract_tasks_from_markdown(content, extractor_cfg, file_path)
         except Exception:
-            _POISON_FILES[file_path] = current_sha
+            _POISON_CACHE[file_path] = current_sha
             log.warning("parse: skipped %s (extraction error)", file_path, exc_info=True)
             result.skipped += 1
             continue
 
-        _POISON_FILES.pop(file_path, None)
+        _POISON_CACHE.pop(file_path, None)
 
         # --- DB writes (only reached on success) ---
         _, body = parse_front_matter(content)
