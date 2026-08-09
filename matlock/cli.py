@@ -365,6 +365,11 @@ def search_query(
         min=1,
         help="Maximum number of results to return in human mode.",
     ),
+    min_score: float | None = typer.Option(
+        None,
+        "--min-score",
+        help="Optional minimum score threshold for returned matches.",
+    ),
     surrounding_chunks: int = typer.Option(
         0,
         "--surrounding-chunks",
@@ -412,6 +417,7 @@ def search_query(
         request_payload = {
             "query": query_text,
             "search_mode": search_mode,
+            "tuning": {"min_score": min_score},
             "output": {
                 "granularity": granularity,
                 "limit": limit,

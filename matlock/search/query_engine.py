@@ -555,10 +555,28 @@ def _load_frontmatter(raw: str | None) -> dict[str, Any]:
 
 def _normalize_db_timestamp(value: object) -> str:
     if isinstance(value, (int, float)):
-        timestamp = datetime.fromtimestamp(value, tz=UTC).replace(microsecond=0)
+        numeric = float(value)
+        abs_value = abs(numeric)
+        # Support epoch units commonly seen in file metadata stores.
+        # - seconds: ~1e9
+        # - milliseconds: ~1e12
+        # - microseconds: ~1e15
+        # - nanoseconds: ~1e18
+        if abs_value >= 1e17:
+            numeric /= 1_000_000_000.0
+        elif abs_value >= 1e14:
+            numeric /= 1_000_000.0
+        elif abs_value >= 1e11:
+            numeric /= 1_000.0
+        timestamp = datetime.fromtimestamp(numeric, tz=UTC).replace(microsecond=0)
         return timestamp.isoformat().replace("+00:00", "Z")
     if isinstance(value, str):
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        text = value.strip()
+        if not text:
+            raise ValueError("unsupported timestamp value: empty string")
+        if text.replace(".", "", 1).replace("-", "", 1).isdigit():
+            return _normalize_db_timestamp(float(text))
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
         if parsed.tzinfo is None:
             parsed = parsed.replace(tzinfo=UTC)
         return parsed.replace(microsecond=0).isoformat().replace("+00:00", "Z")

@@ -141,7 +141,7 @@ search:
 
   embedding:
     provider: fastembed
-    model_name: all-MiniLM-L6-v2
+    model_name: sentence-transformers/all-MiniLM-L6-v2
     dimensions: 384
     api_base_url: null
     api_base_url_env_var: null
@@ -151,6 +151,7 @@ search:
 Notes:
 
 - `search.indexing.enabled` is a stored config flag, but runtime execution is still explicitly opt-in through CLI commands and flags.
+- `api_base_url`, `api_base_url_env_var`, and `api_key_env_var` are only used when `provider` is `openai-compatible`; they are ignored for `fastembed`.
 - `api_base_url_env_var` and `api_key_env_var` opt into environment overrides only for declared keys.
 - `chunk_overlap` must be smaller than `chunk_size`.
 

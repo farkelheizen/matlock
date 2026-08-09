@@ -97,7 +97,7 @@ search:
 
   embedding:
     provider: fastembed        # fastembed | openai-compatible
-    model_name: all-MiniLM-L6-v2
+    model_name: sentence-transformers/all-MiniLM-L6-v2
     dimensions: 384
     api_base_url: null
     api_base_url_env_var: null
@@ -277,13 +277,13 @@ Available template namespaces:
 | Field | Type | Default | Description |
 |:------|:-----|:--------|:------------|
 | `search.embedding.provider` | string | `fastembed` | Embedding backend: `fastembed` or `openai-compatible`. |
-| `search.embedding.model_name` | string | `all-MiniLM-L6-v2` | Embedding model name used for indexing and vector queries. |
+| `search.embedding.model_name` | string | `sentence-transformers/all-MiniLM-L6-v2` | Embedding model name used for indexing and vector queries. |
 | `search.embedding.dimensions` | int | `384` | Expected vector dimension. Must match provider output. |
-| `search.embedding.api_base_url` | string \| null | `null` | Base URL for `openai-compatible` providers. |
-| `search.embedding.api_base_url_env_var` | string \| null | `null` | Optional env var that overrides `api_base_url` when the env var is set. |
-| `search.embedding.api_key_env_var` | string \| null | `OPENAI_API_KEY` | Optional env var used to resolve a non-serialized API key. |
+| `search.embedding.api_base_url` | string \| null | `null` | Base URL for `openai-compatible` providers. Ignored for `fastembed`. |
+| `search.embedding.api_base_url_env_var` | string \| null | `null` | Optional env var that overrides `api_base_url` when the env var is set. Ignored for `fastembed`. |
+| `search.embedding.api_key_env_var` | string \| null | `OPENAI_API_KEY` | Optional env var used to resolve a non-serialized API key for `openai-compatible` providers. Ignored for `fastembed`. |
 
-Environment override behavior is opt-in and limited to explicitly configured keys. If `api_base_url_env_var` or `api_key_env_var` is present and the environment variable is set, the loaded config uses the environment value.
+Environment override behavior is opt-in and limited to explicitly configured keys. If `api_base_url_env_var` or `api_key_env_var` is present and the environment variable is set, the loaded config uses the environment value. These overrides are only consumed by the `openai-compatible` provider path.
 
 ### Parser Limits
 
