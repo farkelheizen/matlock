@@ -141,6 +141,144 @@ def test_default_task_attributes_empty(tmp_path: Path) -> None:
     assert load_config(cfg_file).task_attributes == {}
 
 
+def test_default_search_config(tmp_path: Path) -> None:
+    cfg_file = _write_config(tmp_path, _minimal_data())
+    config = load_config(cfg_file)
+
+    assert config.search.indexing.enabled is False
+    assert config.search.indexing.batch_size == 100
+    assert config.search.chunking.strategy == "fixed_token"
+    assert config.search.chunking.chunk_size == 500
+    assert config.search.chunking.chunk_overlap == 50
+    assert config.search.embedding.provider == "fastembed"
+    assert config.search.embedding.model_name == "all-MiniLM-L6-v2"
+    assert config.search.embedding.dimensions == 384
+    assert config.search.embedding.api_key_env_var == "OPENAI_API_KEY"
+
+
+def test_custom_search_config(tmp_path: Path) -> None:
+    data = {
+        **_minimal_data(),
+        "search": {
+            "indexing": {"enabled": True, "batch_size": 25},
+            "chunking": {
+                "strategy": "markdown_header",
+                "chunk_size": 256,
+                "chunk_overlap": 32,
+                "inject_frontmatter": False,
+                "frontmatter_template": "prefix {fm.status}",
+            },
+            "embedding": {
+                "provider": "openai-compatible",
+                "model_name": "text-embedding-3-small",
+                "dimensions": 1536,
+                "api_base_url": "http://localhost:11434/v1",
+                "api_base_url_env_var": "MATLOCK_SEARCH_API_BASE_URL",
+                "api_key_env_var": "MATLOCK_SEARCH_API_KEY",
+            },
+        },
+    }
+
+    config = load_config(_write_config(tmp_path, data))
+
+    assert config.search.indexing.enabled is True
+    assert config.search.indexing.batch_size == 25
+    assert config.search.chunking.strategy == "markdown_header"
+    assert config.search.chunking.inject_frontmatter is False
+    assert config.search.embedding.provider == "openai-compatible"
+    assert config.search.embedding.model_name == "text-embedding-3-small"
+    assert config.search.embedding.api_base_url == "http://localhost:11434/v1"
+    assert config.search.embedding.api_base_url_env_var == "MATLOCK_SEARCH_API_BASE_URL"
+
+
+def test_search_chunk_overlap_must_be_smaller_than_chunk_size(tmp_path: Path) -> None:
+    data = {
+        **_minimal_data(),
+        "search": {"chunking": {"chunk_size": 32, "chunk_overlap": 32}},
+    }
+
+    with pytest.raises(ValidationError, match="chunk_overlap"):
+        load_config(_write_config(tmp_path, data))
+
+
+def test_search_batch_size_must_be_positive(tmp_path: Path) -> None:
+    data = {
+        **_minimal_data(),
+        "search": {"indexing": {"batch_size": 0}},
+    }
+
+    with pytest.raises(ValidationError):
+        load_config(_write_config(tmp_path, data))
+
+
+def test_search_embedding_dimensions_must_be_positive(tmp_path: Path) -> None:
+    data = {
+        **_minimal_data(),
+        "search": {"embedding": {"dimensions": 0}},
+    }
+
+    with pytest.raises(ValidationError):
+        load_config(_write_config(tmp_path, data))
+
+
+def test_search_embedding_env_override_requires_explicit_declaration(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MATLOCK_SEARCH_API_BASE_URL", "http://env.example/v1")
+    monkeypatch.setenv("MATLOCK_SEARCH_MODEL_NAME", "env-model")
+    data = {
+        **_minimal_data(),
+        "search": {
+            "embedding": {
+                "model_name": "config-model",
+                "api_base_url": "http://config.example/v1",
+                "api_base_url_env_var": "MATLOCK_SEARCH_API_BASE_URL",
+            }
+        },
+    }
+
+    config = load_config(_write_config(tmp_path, data))
+
+    assert config.search.embedding.api_base_url == "http://env.example/v1"
+    assert config.search.embedding.model_name == "config-model"
+
+
+def test_search_embedding_api_key_reads_from_environment(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MATLOCK_SEARCH_API_KEY", "top-secret")
+    data = {
+        **_minimal_data(),
+        "search": {"embedding": {"api_key_env_var": "MATLOCK_SEARCH_API_KEY"}},
+    }
+
+    config = load_config(_write_config(tmp_path, data))
+
+    assert config.search.embedding.api_key == "top-secret"
+
+
+def test_search_embedding_missing_env_keeps_config_value(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("MATLOCK_SEARCH_API_BASE_URL", raising=False)
+    data = {
+        **_minimal_data(),
+        "search": {
+            "embedding": {
+                "api_base_url": "http://config.example/v1",
+                "api_base_url_env_var": "MATLOCK_SEARCH_API_BASE_URL",
+            }
+        },
+    }
+
+    config = load_config(_write_config(tmp_path, data))
+
+    assert config.search.embedding.api_base_url == "http://config.example/v1"
+
+
 # ---------------------------------------------------------------------------
 # Missing required fields
 # ---------------------------------------------------------------------------
