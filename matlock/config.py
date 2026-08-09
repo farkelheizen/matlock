@@ -6,6 +6,7 @@ Load and validate a config.yaml file into a MatlockConfig instance.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Literal
 
@@ -141,6 +142,77 @@ class TasksConfig(BaseModel):
     task_text_maxlen: int = 500
 
 
+class SearchIndexingConfig(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    enabled: bool = False
+    batch_size: int = Field(default=100, ge=1)
+
+
+class SearchChunkingConfig(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    strategy: Literal["fixed_token", "markdown_header"] = "fixed_token"
+    chunk_size: int = Field(default=500, ge=1)
+    chunk_overlap: int = Field(default=50, ge=0)
+    inject_frontmatter: bool = True
+    frontmatter_template: str = (
+        "[Project: {db.project_id} | File: {sys.file_name} | Status: {fm.status}]\n\n"
+    )
+
+    @model_validator(mode="after")
+    def _check_overlap_lt_size(self) -> "SearchChunkingConfig":
+        if self.chunk_overlap >= self.chunk_size:
+            raise ValueError("search.chunking.chunk_overlap must be smaller than chunk_size")
+        return self
+
+
+class SearchEmbeddingConfig(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    provider: Literal["fastembed", "openai-compatible"] = "fastembed"
+    model_name: str = "all-MiniLM-L6-v2"
+    dimensions: int = Field(default=384, ge=1)
+    api_base_url: str | None = None
+    api_base_url_env_var: str | None = None
+    api_key: str | None = Field(default=None, exclude=True, repr=False)
+    api_key_env_var: str | None = "OPENAI_API_KEY"
+
+    @field_validator("api_base_url_env_var", "api_key_env_var", mode="before")
+    @classmethod
+    def _normalise_env_var_names(cls, value: object) -> str | None:
+        if value is None:
+            return None
+        text = str(value).strip()
+        return text or None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _apply_explicit_env_overrides(cls, data: object) -> object:
+        if not isinstance(data, dict):
+            return data
+        updates = dict(data)
+        api_base_url_env_var = updates.get("api_base_url_env_var")
+        if api_base_url_env_var:
+            api_base_url = os.getenv(str(api_base_url_env_var))
+            if api_base_url is not None:
+                updates["api_base_url"] = api_base_url
+        api_key_env_var = updates.get("api_key_env_var", "OPENAI_API_KEY")
+        if api_key_env_var:
+            api_key = os.getenv(str(api_key_env_var))
+            if api_key is not None:
+                updates["api_key"] = api_key
+        return updates
+
+
+class SearchConfig(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    indexing: SearchIndexingConfig = Field(default_factory=SearchIndexingConfig)
+    chunking: SearchChunkingConfig = Field(default_factory=SearchChunkingConfig)
+    embedding: SearchEmbeddingConfig = Field(default_factory=SearchEmbeddingConfig)
+
+
 # ---------------------------------------------------------------------------
 # Root config model
 # ---------------------------------------------------------------------------
@@ -157,6 +229,7 @@ class MatlockConfig(BaseModel):
     dashboard_recent_changes_limit: int = Field(default=10, ge=1)
     headers: HeadersConfig = Field(default_factory=HeadersConfig)
     tasks: TasksConfig = Field(default_factory=TasksConfig)
+    search: SearchConfig = Field(default_factory=SearchConfig)
     task_attributes: dict[str, TaskAttributeConfig] = Field(default_factory=dict)
     super_projects: list[SuperProjectConfig] = Field(default_factory=list)
     projects: list[ProjectConfig] = Field(default_factory=list)

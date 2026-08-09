@@ -1,8 +1,8 @@
 # Matlock Pipeline Specification
 
-**Version:** 0.1.x
+**Version:** 0.3.x
 
-This document specifies the behaviour of each of the five pipeline stages. Each stage is a discrete, independently invocable unit. Stages communicate **exclusively** through the SQLite database; no stage imports or calls another directly.
+This document specifies the behavior of Matlock's five core pipeline stages plus the optional local search hooks that integrate with them. Each core stage is a discrete, independently invocable unit. Stages communicate **exclusively** through the SQLite database; no core stage imports or calls another directly.
 
 See `docs/matlock-data-model.md` for the full schema referenced here.
 
@@ -15,7 +15,7 @@ See `docs/matlock-data-model.md` for the full schema referenced here.
 
 ### Responsibility
 
-Keep the `file` table in sync with the physical filesystem under `base_directory`. This is the only stage that touches the filesystem directly (excluding the `report` stage's writes to `_Matlock/`).
+Keep the `file` table in sync with the physical filesystem under `base_directory`. Within the core pipeline, this is the only stage that reads source files directly from disk (excluding the `report` stage's writes to `_Matlock/`).
 
 ### Logic
 
@@ -72,7 +72,6 @@ Extract task data from files flagged by the `sync` stage and persist results to 
 | Flag | Description |
 |:-----|:------------|
 | `--config PATH` | Path to `config.yaml` |
-| `--file PATH` | Parse a single file by path (bypasses `needs_parsing` check) |
 
 ### What it does NOT do
 
@@ -218,12 +217,62 @@ Query the database and render Jinja2 Markdown dashboards into the `output_direct
 
 **Command:** `matlock run-all`
 
-Runs all five stages in order: `sync` → `parse` → `map-projects` → `rollup` → `report`.
+Runs all five stages in order: `[scan-projects →]` `sync` → `parse` → `map-projects` → `rollup` → `report`, with optional post-pipeline search indexing.
 
 | Flag | Description |
 |:-----|:------------|
+| `--scan-projects` | Run `scan-projects --merge` before `sync` |
 | `--skip-rollup` | Skip Stage IV (use when running mid-day; rollup is designed for nightly use) |
+| `--force-sync` | Pass `--force` to the `sync` stage |
+| `--force-report` | Pass `--force` to the `report` stage |
+| `--index-search` | Run search indexing after `report` |
 | `--config PATH` | Passed through to all stages |
+
+When `--index-search` is enabled, search indexing runs after the core pipeline so `file`, `task`, `project`, and report-side generated-file metadata are already current.
+
+---
+
+## Optional Search Services
+
+Search is additive to the core five-stage pipeline. It introduces one write path (`matlock search index`) and one read path (`matlock search query`).
+
+### `matlock search index`
+
+**Module:** `matlock/stages/search_index.py` and `matlock/search/indexer.py`
+**Command:** `matlock search index`
+
+#### Responsibility
+
+Build or refresh local search state for active, non-generated Markdown files.
+
+#### Logic
+
+1. Select candidate rows from `file` where the file is active and search freshness is missing or stale, plus any files forced by frontmatter override or CLI `--force`.
+2. Read each file from disk and parse frontmatter when available.
+3. Apply per-file overrides from `matlock.search` frontmatter:
+   - `exclude: true` clears search rows and marks the file as indexed without chunk/vector writes.
+   - `force_index: true` forces re-indexing even when freshness appears current.
+4. Chunk the body text using the configured chunking strategy and optional frontmatter/context template prefix.
+5. Replace `search_chunks` rows for the file and synchronize `search_fts` through triggers.
+6. Generate embeddings for each chunk and upsert `search_vec` rows.
+7. Mark the file's `search_indexed_at` and `search_index_hash`, batching commits according to `search.indexing.batch_size`.
+8. Purge orphaned search rows whose owning file is deleted or generated.
+
+### `matlock search query`
+
+**Module:** `matlock/search/query_cli.py` and `matlock/search/query_engine.py`
+**Command:** `matlock search query`
+
+#### Responsibility
+
+Execute `metadata_only`, `fts_only`, `vector_only`, or `hybrid` search requests against the local SQLite search index.
+
+#### Behavior
+
+- Human mode prints concise text results to stdout.
+- `--stdio` mode reads a JSON request from stdin and emits a JSON response only to stdout.
+- Deterministic exit codes are reserved for success (`0`), input/schema failures (`1`), storage failures (`2`), and embedding-provider failures (`3`).
+- Search query logging is isolated away from stdout so machine callers can parse responses safely.
 
 ---
 
@@ -238,19 +287,23 @@ Runs a persistent daemon that orchestrates all pipeline stages in response to ev
 
 1. **Watcher (real-time I/O):**
    - Uses `watchdog` to monitor `base_directory`.
-   - On file create/modify/delete: calls `sync` for that file, then `parse` if `needs_parsing`.
+   - On file create/modify/delete: runs `sync`, then `parse`.
    - Marks affected project IDs as "dirty" in an in-memory queue.
 
 2. **Debouncer (UI refresh):**
    - Listens to the dirty-project queue.
-   - After a configurable idle period with no new changes (`debounce_seconds`, default `5`), triggers `report` for affected projects only.
+   - After a configurable idle period with no new changes (`debounce_seconds`, default `5`), triggers `map-projects` followed by a full `report` pass.
 
 3. **Scheduler (nightly metrics):**
    - At midnight (00:01): triggers `rollup` then a full `report` rebuild (Daily Dashboard + new History page).
 
 4. **Startup refresh (optional):**
    - One-time startup actions can run before watcher/debouncer/scheduler threads start.
-   - Startup order when combined: forced `sync`+`parse`, then forced `rollup` for today, then forced `report`.
+   - Startup order when combined: forced `sync`+`parse`, then forced `rollup` for today, then forced `report`, then one startup search indexing pass.
+
+5. **Continuous search indexing (optional):**
+   - A background thread can poll for stale search work when `--index-search-continuous` is enabled.
+   - It shares the same pipeline lock as watcher, debouncer, and scheduler execution to avoid concurrent SQLite work.
 
 ### Flags
 
@@ -262,9 +315,11 @@ Runs a persistent daemon that orchestrates all pipeline stages in response to ev
 | `--force-sync` | Run a full forced sync+parse once at startup before the watcher starts |
 | `--force-rollup` | Run rollup for today once at startup (after any forced sync) |
 | `--force-report` | Run a full forced report once at startup (after any startup sync/rollup) |
+| `--index-search` | Run search indexing once at startup before the watcher starts |
+| `--index-search-continuous` | Continuously poll for stale search work in the background |
 | `--skip-rollup` | Skip rollup in the nightly scheduled job |
 
-Startup flags are one-shot startup actions; they do not change watcher/debouncer behavior after startup.
+Startup flags are one-shot startup actions; they do not change watcher/debouncer behavior after startup. `--index-search-continuous` is the long-lived search option.
 
 ---
 
@@ -276,3 +331,4 @@ At any point in time, the database state should satisfy:
 - `file_project` reflects the current `config.yaml` → `map-projects` has run since last config change.
 - `daily_metric` has a row for every past date → `rollup` has run each night.
 - All `_Matlock/` files have `is_generated = 1` in the `file` table.
+- Files with current search rows have `search_index_hash = file.sha256` and a non-null `search_indexed_at`.

@@ -25,6 +25,7 @@ from matlock.stages.map_projects import run_map_projects
 from matlock.stages.parse import run_parse
 from matlock.stages.report import run_report
 from matlock.stages.rollup import run_rollup
+from matlock.stages.search_index import run_search_index_stage
 from matlock.stages.sync import run_sync
 
 # One lock shared across all triggers to prevent concurrent stage execution.
@@ -193,6 +194,47 @@ def _scheduler_thread(
         typer_echo("[scheduler] nightly rollup+report complete")
 
 
+def _run_search_index_pass(
+    config: MatlockConfig,
+    *,
+    force: bool = False,
+    log_prefix: str,
+) -> None:
+    with _pipeline_lock:
+        conn = get_connection(config.db_path)
+        try:
+            init_db(conn)
+            result = run_search_index_stage(config, conn, force=force)
+        finally:
+            conn.close()
+
+    typer_echo(
+        f"{log_prefix} search index complete: "
+        f"{result.indexed_files} indexed, "
+        f"{result.excluded_files} excluded, "
+        f"{result.failed_files} failed, "
+        f"{result.orphaned_files_purged} orphaned purged, "
+        f"{result.chunks_written} chunks, "
+        f"{result.vectors_written} vectors"
+    )
+
+
+def _search_indexer_thread(
+    config: MatlockConfig,
+    stop_event: threading.Event,
+    *,
+    interval_seconds: int,
+    run_immediately: bool,
+) -> None:
+    if run_immediately:
+        _run_search_index_pass(config, log_prefix="[search-indexer]")
+
+    while not stop_event.is_set():
+        if stop_event.wait(timeout=interval_seconds):
+            return
+        _run_search_index_pass(config, log_prefix="[search-indexer]")
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -210,6 +252,8 @@ def run_server(
     force_sync: bool = False,
     force_rollup: bool = False,
     force_report: bool = False,
+    index_search: bool = False,
+    index_search_continuous: bool = False,
 ) -> None:
     """Start the file watcher, debouncer, and scheduler. Blocks until SIGINT.
 
@@ -228,11 +272,15 @@ def run_server(
         When True, run rollup for today once at startup after any forced sync.
     force_report:
         When True, run a full forced report once at startup (after any startup sync/rollup).
+    index_search:
+        When True, run search indexing once at startup before the watcher starts.
+    index_search_continuous:
+        When True, continuously poll for stale search work in a background thread.
     """
     effective_debounce = debounce_seconds if debounce_seconds is not None else config.debounce_seconds
 
     # Startup block: one-time operations before the watcher starts
-    if force_sync or force_rollup or force_report:
+    if force_sync or force_rollup or force_report or index_search:
         startup_conn = get_connection(config.db_path)
         try:
             init_db(startup_conn)
@@ -255,6 +303,18 @@ def run_server(
                 run_map_projects(config, startup_conn)
                 run_report(config, startup_conn, target="all", force=True)
                 typer_echo("[startup] forced report complete")
+            if index_search:
+                typer_echo("[startup] search index starting")
+                result = run_search_index_stage(config, startup_conn)
+                typer_echo(
+                    "[startup] search index complete: "
+                    f"{result.indexed_files} indexed, "
+                    f"{result.excluded_files} excluded, "
+                    f"{result.failed_files} failed, "
+                    f"{result.orphaned_files_purged} orphaned purged, "
+                    f"{result.chunks_written} chunks, "
+                    f"{result.vectors_written} vectors"
+                )
         finally:
             startup_conn.close()
 
@@ -294,6 +354,21 @@ def run_server(
     )
     scheduler.start()
 
+    search_indexer: threading.Thread | None = None
+    if index_search_continuous:
+        search_indexer = threading.Thread(
+            target=_search_indexer_thread,
+            kwargs={
+                "config": config,
+                "stop_event": stop_event,
+                "interval_seconds": effective_debounce,
+                "run_immediately": not index_search,
+            },
+            daemon=True,
+            name="matlock-search-indexer",
+        )
+        search_indexer.start()
+
     typer_echo(
         f"[server] watching {config.base_directory} "
         f"(debounce={effective_debounce}s) — press Ctrl+C to stop"
@@ -311,4 +386,6 @@ def run_server(
         observer.join()
         debouncer.join(timeout=effective_debounce + 2)
         scheduler.join(timeout=2)
+        if search_indexer is not None:
+            search_indexer.join(timeout=effective_debounce + 2)
         typer_echo("[server] stopped.")

@@ -1,5 +1,5 @@
 # Copilot Docs Reference Map (matlock)
-> Docs baseline: 0.2.x
+> Docs baseline: 0.3.x
 
 Use this file as the fast lookup index before implementation.
 
@@ -7,19 +7,21 @@ Use this file as the fast lookup index before implementation.
 
 1. **Need architecture context?**
    - Open: `docs/matlock-high-level-design.md`
-2. **Need pipeline stage details (sync, parse, map-projects, rollup, report, server)?**
+2. **Need search indexing, query modes, STDIO transport, or search/server integration?**
+   - Open: `docs/matlock-search.md`
+3. **Need pipeline stage details (sync, parse, map-projects, rollup, report, server)?**
    - Open: `docs/matlock-pipeline-specification.md`
-3. **Need data model / SQLite schema?**
+4. **Need data model / SQLite schema?**
    - Open: `docs/matlock-data-model.md`
-4. **Need config.yaml schema (paths, task attributes, projects)?**
+5. **Need config.yaml schema (paths, task attributes, projects, search config)?**
    - Open: `docs/matlock-configuration.md`
-5. **Need report template structure or dashboard fields?**
+6. **Need report template structure or dashboard fields?**
    - Open: `docs/matlock-generated-reports.md`
-6. **Need CLI command reference (flags, entrypoint)?**
+7. **Need CLI command reference (flags, entrypoint)?**
    - Open: `docs/matlock-cli.md`
-7. **Need `scan-projects` command details (scanning logic, output modes, YAML schema)?**
+8. **Need `scan-projects` command details (scanning logic, output modes, YAML schema)?**
    - Open: `docs/matlock-scan-projects.md`
-8. **Need the implementation roadmap or a phase plan?**
+9. **Need the implementation roadmap or a phase plan?**
    - Open: `docs/roadmap/index.md`, then the relevant phase plan doc.
 
 ---
@@ -28,12 +30,13 @@ Use this file as the fast lookup index before implementation.
 
 | Topic | Primary Doc | Supporting Docs |
 |---|---|---|
-| Architecture overview, 5-stage pipeline, execution modes, directory guardrail, discovery commands | `docs/matlock-high-level-design.md` | `docs/matlock-pipeline-specification.md` |
-| Pipeline stage logic: sync, parse, map-projects, rollup, report, server | `docs/matlock-pipeline-specification.md` | `docs/matlock-data-model.md`, `docs/matlock-high-level-design.md` |
-| SQLite schema, in-memory models, table columns, PRAGMA config | `docs/matlock-data-model.md` | `docs/matlock-pipeline-specification.md` |
-| config.yaml schema, task attributes, project definitions, path resolution, logging | `docs/matlock-configuration.md` | `docs/matlock-data-model.md` |
+| Architecture overview, core pipeline, search subsystem, execution modes, directory guardrail, discovery commands | `docs/matlock-high-level-design.md` | `docs/matlock-pipeline-specification.md`, `docs/matlock-search.md` |
+| Search indexing, query modes, STDIO transport, per-file overrides, server integration | `docs/matlock-search.md` | `docs/matlock-cli.md`, `docs/matlock-configuration.md`, `docs/matlock-data-model.md` |
+| Pipeline stage logic: sync, parse, map-projects, rollup, report, server, opt-in search indexing hooks | `docs/matlock-pipeline-specification.md` | `docs/matlock-data-model.md`, `docs/matlock-high-level-design.md`, `docs/matlock-search.md` |
+| SQLite schema, in-memory models, search contracts, table columns, PRAGMA config | `docs/matlock-data-model.md` | `docs/matlock-pipeline-specification.md`, `docs/matlock-search.md` |
+| config.yaml schema, task attributes, project definitions, path resolution, logging, search config | `docs/matlock-configuration.md` | `docs/matlock-data-model.md`, `docs/matlock-search.md` |
 | Jinja2 report templates, dashboard types, template variables, heatmap logic | `docs/matlock-generated-reports.md` | `docs/matlock-high-level-design.md` |
-| CLI commands, flags, `matlock server`, entrypoint registration | `docs/matlock-cli.md` | `docs/matlock-pipeline-specification.md` |
+| CLI commands, flags, `matlock server`, `matlock search`, entrypoint registration | `docs/matlock-cli.md` | `docs/matlock-pipeline-specification.md`, `docs/matlock-search.md` |
 | `scan-projects`: scanning logic, ScannedFile, ProjectCandidate, output modes, YAML schema | `docs/matlock-scan-projects.md` | `docs/matlock-cli.md`, `docs/matlock-configuration.md` |
 | Implementation phases, roadmap overview | `docs/roadmap/index.md` | Phase plan docs in `docs/roadmap/` |
 
@@ -48,6 +51,9 @@ Use this file as the fast lookup index before implementation.
 - **rollup, daily_metric, streak, heatmap, nightly** → `matlock-pipeline-specification.md`, `matlock-data-model.md`
 - **report, Jinja2, _Matlock/, dashboard, is_generated** → `matlock-generated-reports.md`, `matlock-pipeline-specification.md`
 - **server, watchdog, debouncer, scheduler, daemon, midnight** → `matlock-cli.md`, `matlock-pipeline-specification.md`
+- **search, search index, search query, stdio, search_mode, granularity, surrounding_chunks, search.log** → `matlock-search.md`, `matlock-cli.md`, `matlock-configuration.md`
+- **search_chunks, search_fts, search_vec, search_indexed_at, search_index_hash, embeddings** → `matlock-data-model.md`, `matlock-search.md`
+- **index-search, index-search-continuous, background indexing, hybrid search, metadata_only** → `matlock-search.md`, `matlock-cli.md`, `matlock-pipeline-specification.md`
 - **config.yaml, base_directory, output_directory, db_path, debounce_seconds** → `matlock-configuration.md`
 - **log_path, log_max_bytes, log_backup_count, logging, rotating log** → `matlock-configuration.md`, `matlock-high-level-design.md`
 - **task_attributes, due_date, priority, alias, domain, date, time** → `matlock-configuration.md`, `matlock-data-model.md`

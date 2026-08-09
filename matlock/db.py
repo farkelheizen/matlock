@@ -142,6 +142,76 @@ CREATE TABLE IF NOT EXISTS daily_task (
 """
 
 
+_SEARCH_SCHEMA = """
+CREATE TABLE IF NOT EXISTS search_chunks (
+    search_rowid INTEGER PRIMARY KEY AUTOINCREMENT,
+    chunk_id     TEXT NOT NULL UNIQUE,
+    file_id      TEXT NOT NULL REFERENCES file(file_path) ON DELETE CASCADE,
+    chunk_index  INTEGER NOT NULL CHECK (chunk_index >= 0),
+    content      TEXT NOT NULL,
+    UNIQUE (file_id, chunk_index)
+);
+
+CREATE TABLE IF NOT EXISTS search_vec (
+    chunk_id        TEXT PRIMARY KEY REFERENCES search_chunks(chunk_id) ON DELETE CASCADE,
+    embedding       BLOB,
+    embedding_model TEXT,
+    embedding_dim   INTEGER
+);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS search_fts USING fts5(
+    content,
+    content='search_chunks',
+    content_rowid='search_rowid',
+    tokenize='porter'
+);
+
+CREATE TRIGGER IF NOT EXISTS search_chunks_ai
+AFTER INSERT ON search_chunks
+BEGIN
+    INSERT INTO search_fts(rowid, content)
+    VALUES (new.search_rowid, new.content);
+END;
+
+CREATE TRIGGER IF NOT EXISTS search_chunks_ad
+AFTER DELETE ON search_chunks
+BEGIN
+    INSERT INTO search_fts(search_fts, rowid, content)
+    VALUES ('delete', old.search_rowid, old.content);
+END;
+
+CREATE TRIGGER IF NOT EXISTS search_chunks_au
+AFTER UPDATE ON search_chunks
+BEGIN
+    INSERT INTO search_fts(search_fts, rowid, content)
+    VALUES ('delete', old.search_rowid, old.content);
+    INSERT INTO search_fts(rowid, content)
+    VALUES (new.search_rowid, new.content);
+END;
+
+CREATE TRIGGER IF NOT EXISTS file_search_cleanup_on_soft_delete
+AFTER UPDATE OF deleted, is_generated ON file
+WHEN new.deleted = 1 OR new.is_generated = 1
+BEGIN
+    DELETE FROM search_chunks WHERE file_id = new.file_path;
+    UPDATE file
+       SET search_indexed_at = NULL,
+           search_index_hash = NULL
+     WHERE file_path = new.file_path;
+END;
+
+CREATE TRIGGER IF NOT EXISTS file_search_reset_on_hash_change
+AFTER UPDATE OF sha256 ON file
+WHEN new.sha256 IS NOT old.sha256
+BEGIN
+    UPDATE file
+       SET search_indexed_at = NULL,
+           search_index_hash = NULL
+     WHERE file_path = new.file_path;
+END;
+"""
+
+
 def init_db(conn: sqlite3.Connection) -> None:
     """Create all six tables idempotently and apply any pending migrations.
 
@@ -169,6 +239,12 @@ def _migrate(conn: sqlite3.Connection) -> None:
     }
     if "deleted_date" not in existing_file_cols:
         conn.execute("ALTER TABLE file ADD COLUMN deleted_date TEXT")
+    if "search_indexed_at" not in existing_file_cols:
+        conn.execute("ALTER TABLE file ADD COLUMN search_indexed_at TEXT")
+    if "search_index_hash" not in existing_file_cols:
+        conn.execute("ALTER TABLE file ADD COLUMN search_index_hash TEXT")
+
+    conn.executescript(_SEARCH_SCHEMA)
 
     conn.commit()
 
@@ -193,11 +269,27 @@ _FILE_COLUMNS = (
 )
 
 _UPSERT_FILE = (
-    "INSERT OR REPLACE INTO file ("
+    "INSERT INTO file ("
     + ", ".join(_FILE_COLUMNS)
     + ") VALUES ("
     + ", ".join(f":{c}" for c in _FILE_COLUMNS)
-    + ")"
+    + ") ON CONFLICT(file_path) DO UPDATE SET "
+    + ", ".join(
+        f"{column} = excluded.{column}"
+        for column in _FILE_COLUMNS
+        if column != "file_path"
+    )
+    + ", deleted_date = CASE"
+    + " WHEN excluded.deleted = 0 THEN NULL"
+    + " ELSE file.deleted_date END"
+    + ", search_indexed_at = CASE"
+    + " WHEN excluded.deleted = 1 OR excluded.is_generated = 1 THEN NULL"
+    + " WHEN file.sha256 IS excluded.sha256 THEN file.search_indexed_at"
+    + " ELSE NULL END"
+    + ", search_index_hash = CASE"
+    + " WHEN excluded.deleted = 1 OR excluded.is_generated = 1 THEN NULL"
+    + " WHEN file.sha256 IS excluded.sha256 THEN file.search_index_hash"
+    + " ELSE NULL END"
 )
 
 
@@ -243,6 +335,123 @@ def set_needs_parsing(
         "UPDATE file SET needs_parsing = ? WHERE file_path = ?",
         (value, file_path),
     )
+
+
+def get_files_needing_search_indexing(
+    conn: sqlite3.Connection,
+) -> list[sqlite3.Row]:
+    """Return active, non-generated files whose search index is stale."""
+    return conn.execute(
+        "SELECT * FROM file"
+        " WHERE deleted = 0"
+        "   AND is_generated = 0"
+        "   AND ("
+        "       search_indexed_at IS NULL"
+        "       OR search_index_hash IS NULL"
+        "       OR sha256 IS NULL"
+        "       OR search_index_hash != sha256"
+        "   )"
+        " ORDER BY file_path"
+    ).fetchall()
+
+
+def mark_file_search_indexed(
+    conn: sqlite3.Connection,
+    file_path: str,
+    indexed_at: str,
+    search_index_hash: str | None = None,
+) -> None:
+    """Persist the latest successful search-index timestamp and hash."""
+    conn.execute(
+        "UPDATE file"
+        " SET search_indexed_at = ?,"
+        "     search_index_hash = COALESCE(?, sha256)"
+        " WHERE file_path = ?",
+        (indexed_at, search_index_hash, file_path),
+    )
+
+
+def clear_file_search_state(
+    conn: sqlite3.Connection, file_path: str
+) -> None:
+    """Remove search rows for a file and clear its freshness markers."""
+    delete_search_chunks_for_file(conn, file_path)
+    conn.execute(
+        "UPDATE file"
+        " SET search_indexed_at = NULL, search_index_hash = NULL"
+        " WHERE file_path = ?",
+        (file_path,),
+    )
+
+
+_SEARCH_CHUNK_COLUMNS = (
+    "chunk_id",
+    "file_id",
+    "chunk_index",
+    "content",
+)
+
+_INSERT_SEARCH_CHUNK = (
+    "INSERT INTO search_chunks ("
+    + ", ".join(_SEARCH_CHUNK_COLUMNS)
+    + ") VALUES ("
+    + ", ".join(f":{column}" for column in _SEARCH_CHUNK_COLUMNS)
+    + ")"
+)
+
+
+def replace_search_chunks(
+    conn: sqlite3.Connection, file_path: str, rows: list[dict]
+) -> None:
+    """Replace all search chunks for a file with the provided chunk rows."""
+    delete_search_chunks_for_file(conn, file_path)
+    if not rows:
+        return
+
+    conn.executemany(
+        _INSERT_SEARCH_CHUNK,
+        [
+            {
+                "chunk_id": row["chunk_id"],
+                "file_id": file_path,
+                "chunk_index": row["chunk_index"],
+                "content": row["content"],
+            }
+            for row in rows
+        ],
+    )
+
+
+def delete_search_chunks_for_file(
+    conn: sqlite3.Connection, file_path: str
+) -> None:
+    """Delete all search chunks for a file."""
+    conn.execute("DELETE FROM search_chunks WHERE file_id = ?", (file_path,))
+
+
+def get_search_chunks_for_file(
+    conn: sqlite3.Connection, file_path: str
+) -> list[sqlite3.Row]:
+    """Return all search chunks for a file in chunk order."""
+    return conn.execute(
+        "SELECT * FROM search_chunks WHERE file_id = ? ORDER BY chunk_index",
+        (file_path,),
+    ).fetchall()
+
+
+_UPSERT_SEARCH_VECTOR = (
+    "INSERT INTO search_vec (chunk_id, embedding, embedding_model, embedding_dim)"
+    " VALUES (:chunk_id, :embedding, :embedding_model, :embedding_dim)"
+    " ON CONFLICT(chunk_id) DO UPDATE SET"
+    " embedding = excluded.embedding,"
+    " embedding_model = excluded.embedding_model,"
+    " embedding_dim = excluded.embedding_dim"
+)
+
+
+def upsert_search_vector(conn: sqlite3.Connection, row: dict) -> None:
+    """Insert or replace the stored embedding payload for a chunk."""
+    conn.execute(_UPSERT_SEARCH_VECTOR, row)
 
 
 # ---------------------------------------------------------------------------

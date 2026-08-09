@@ -7,13 +7,16 @@ Usage:
     matlock --config PATH map-projects
     matlock --config PATH rollup [--date YYYY-MM-DD]
     matlock --config PATH report [--target {all,dashboard,projects,history}] [--project-id ID]
-    matlock --config PATH run-all [--scan-projects] [--skip-rollup] [--force-sync]
-    matlock --config PATH server [--debounce SECONDS]
+    matlock --config PATH run-all [--scan-projects] [--skip-rollup] [--force-sync] [--index-search]
+    matlock --config PATH server [--debounce SECONDS] [--index-search] [--index-search-continuous]
+    matlock --config PATH search index [--force] [--batch-size INT] [--model STRING]
+    matlock --config PATH search query [QUERY] [--search-mode MODE] [--granularity LEVEL] [--limit INT] [--stdio]
 """
 
 from __future__ import annotations
 
 import datetime
+import sys
 from pathlib import Path
 
 import typer
@@ -21,11 +24,22 @@ import typer
 from matlock.config import load_config, validate_config_paths
 from matlock.db import get_connection, init_db
 from matlock.logging_setup import setup_logging
+from matlock.search.logging import isolated_search_logging
+from matlock.search.query_cli import (
+    EXIT_CODE_EMBEDDING_ERROR,
+    EXIT_CODE_INPUT_ERROR,
+    EXIT_CODE_STORAGE_ERROR,
+    build_error_response,
+    format_human_response,
+    load_request_json,
+    run_search_request,
+)
 from matlock.server import run_server
 from matlock.stages.map_projects import run_map_projects
 from matlock.stages.parse import run_parse
 from matlock.stages.report import run_report
 from matlock.stages.rollup import run_rollup
+from matlock.stages.search_index import run_search_index_stage
 from matlock.stages.sync import run_sync
 
 app = typer.Typer(
@@ -33,6 +47,8 @@ app = typer.Typer(
     help="Matlock — Markdown task & project engine.",
     add_completion=False,
 )
+search_app = typer.Typer(help="Search indexing and query commands.")
+app.add_typer(search_app, name="search")
 
 # Global state passed from the callback to subcommands via the Typer context
 _CONFIG_KEY = "config"
@@ -216,6 +232,237 @@ def report(
     )
 
 
+@search_app.command(name="index")
+def search_index(
+    ctx: typer.Context,
+    force: bool = typer.Option(
+        False,
+        "--force",
+        "-f",
+        help="Re-index all eligible files regardless of search freshness state.",
+    ),
+    batch_size: int = typer.Option(
+        None,
+        "--batch-size",
+        min=1,
+        help="Override the configured SQLite commit batch size for this run.",
+    ),
+    model: str = typer.Option(
+        None,
+        "--model",
+        help="Override the configured embedding model name for this run.",
+    ),
+) -> None:
+    """Build or refresh the local search index."""
+    cfg = _load_and_validate(ctx.obj[_CONFIG_KEY])
+
+    conn = get_connection(cfg.db_path)
+    try:
+        init_db(conn)
+        result = run_search_index_stage(
+            cfg,
+            conn,
+            force=force,
+            batch_size=batch_size,
+            model_name=model,
+        )
+    finally:
+        conn.close()
+
+    typer.echo(
+        "Search index complete: "
+        f"{result.indexed_files} indexed, "
+        f"{result.excluded_files} excluded, "
+        f"{result.failed_files} failed, "
+        f"{result.orphaned_files_purged} orphaned purged, "
+        f"{result.chunks_written} chunks, "
+        f"{result.vectors_written} vectors"
+    )
+
+
+def _emit_search_response(response) -> None:
+    sys.stdout.write(response.model_dump_json())
+
+
+def _raise_search_error(
+    *,
+    stdio: bool,
+    exit_code: int,
+    error_code: str,
+    message: str,
+    details: dict[str, object] | None = None,
+) -> None:
+    response = build_error_response(
+        error_code=error_code,
+        message=message,
+        details=details,
+    )
+    if stdio:
+        _emit_search_response(response)
+    else:
+        typer.echo(f"Error: {message}", err=True)
+    raise typer.Exit(code=exit_code)
+
+
+def _load_query_config(config_path: Path, *, stdio: bool):
+    try:
+        cfg = load_config(config_path)
+    except FileNotFoundError:
+        _raise_search_error(
+            stdio=stdio,
+            exit_code=EXIT_CODE_INPUT_ERROR,
+            error_code="config_error",
+            message=f"config file not found: {config_path}",
+            details={"config_path": str(config_path)},
+        )
+    except Exception as exc:
+        _raise_search_error(
+            stdio=stdio,
+            exit_code=EXIT_CODE_INPUT_ERROR,
+            error_code="config_error",
+            message=f"invalid config: {exc}",
+            details={"config_path": str(config_path)},
+        )
+
+    try:
+        validate_config_paths(cfg)
+    except ValueError as exc:
+        _raise_search_error(
+            stdio=stdio,
+            exit_code=EXIT_CODE_INPUT_ERROR,
+            error_code="config_error",
+            message=str(exc),
+            details={"config_path": str(config_path)},
+        )
+    return cfg
+
+
+@search_app.command(name="query")
+def search_query(
+    ctx: typer.Context,
+    query_text: str = typer.Argument(
+        None,
+        help="Human-mode search text. Omit when using --stdio.",
+    ),
+    stdio: bool = typer.Option(
+        False,
+        "--stdio",
+        help="Read a JSON request from stdin and emit JSON-only to stdout.",
+    ),
+    search_mode: str = typer.Option(
+        "hybrid",
+        "--search-mode",
+        help="Human-mode search strategy.",
+    ),
+    granularity: str = typer.Option(
+        "chunk",
+        "--granularity",
+        help="Return chunk-level or file-level results in human mode.",
+    ),
+    limit: int = typer.Option(
+        10,
+        "--limit",
+        min=1,
+        help="Maximum number of results to return in human mode.",
+    ),
+    surrounding_chunks: int = typer.Option(
+        0,
+        "--surrounding-chunks",
+        min=0,
+        max=3,
+        help="Number of adjacent chunks to include before and after a chunk hit.",
+    ),
+    include_content: bool = typer.Option(
+        True,
+        "--include-content/--no-include-content",
+        help="Include matched content in human-mode output.",
+    ),
+) -> None:
+    """Run a local search query in human or strict stdio mode."""
+    cfg = _load_query_config(ctx.obj[_CONFIG_KEY], stdio=stdio)
+
+    if stdio and query_text is not None:
+        _raise_search_error(
+            stdio=True,
+            exit_code=EXIT_CODE_INPUT_ERROR,
+            error_code="input_error",
+            message="query argument cannot be combined with --stdio",
+        )
+
+    if not stdio and query_text is None:
+        _raise_search_error(
+            stdio=False,
+            exit_code=EXIT_CODE_INPUT_ERROR,
+            error_code="input_error",
+            message="query text is required unless --stdio is used",
+        )
+
+    request_payload = None
+    if stdio:
+        try:
+            request_payload = load_request_json(sys.stdin.read())
+        except ValueError as exc:
+            _raise_search_error(
+                stdio=True,
+                exit_code=EXIT_CODE_INPUT_ERROR,
+                error_code="input_error",
+                message=str(exc),
+            )
+    else:
+        request_payload = {
+            "query": query_text,
+            "search_mode": search_mode,
+            "output": {
+                "granularity": granularity,
+                "limit": limit,
+                "surrounding_chunks": surrounding_chunks,
+                "include_content": include_content,
+            },
+        }
+
+    if not cfg.db_path.exists():
+        _raise_search_error(
+            stdio=stdio,
+            exit_code=EXIT_CODE_STORAGE_ERROR,
+            error_code="database_error",
+            message=f"search database file not found: {cfg.db_path}",
+            details={"db_path": str(cfg.db_path)},
+        )
+
+    with isolated_search_logging(cfg):
+        conn = get_connection(cfg.db_path)
+        try:
+            init_db(conn)
+            outcome = run_search_request(cfg, conn, request_payload)
+        finally:
+            conn.close()
+
+    if stdio:
+        _emit_search_response(outcome.response)
+        raise typer.Exit(code=outcome.exit_code)
+
+    if outcome.exit_code == EXIT_CODE_STORAGE_ERROR:
+        typer.echo(
+            f"Search failed [database_error]: {outcome.response.error.message}",
+            err=True,
+        )
+        raise typer.Exit(code=EXIT_CODE_STORAGE_ERROR)
+    if outcome.exit_code == EXIT_CODE_EMBEDDING_ERROR:
+        typer.echo(
+            f"Search failed [embedding_error]: {outcome.response.error.message}",
+            err=True,
+        )
+        raise typer.Exit(code=EXIT_CODE_EMBEDDING_ERROR)
+    if outcome.exit_code == EXIT_CODE_INPUT_ERROR:
+        typer.echo(
+            f"Search failed [input_error]: {outcome.response.error.message}",
+            err=True,
+        )
+        raise typer.Exit(code=EXIT_CODE_INPUT_ERROR)
+
+    typer.echo(format_human_response(outcome.response))
+
+
 @app.command(name="run-all")
 def run_all(
     ctx: typer.Context,
@@ -238,6 +485,11 @@ def run_all(
         False,
         "--force-report",
         help="Pass --force to the report stage (regenerate all, delete stale files).",
+    ),
+    index_search: bool = typer.Option(
+        False,
+        "--index-search",
+        help="Run search indexing after the core pipeline completes (opt-in).",
     ),
 ) -> None:
     """Run all pipeline stages in sequence: [scan-projects →] sync → parse → map-projects → rollup → report."""
@@ -311,6 +563,18 @@ def run_all(
             f"Report: {report_result.files_written} files written, "
             f"{report_result.files_deleted} deleted ({report_result.target})"
         )
+
+        if index_search:
+            search_result = run_search_index_stage(cfg, conn)
+            typer.echo(
+                "Search index: "
+                f"{search_result.indexed_files} indexed, "
+                f"{search_result.excluded_files} excluded, "
+                f"{search_result.failed_files} failed, "
+                f"{search_result.orphaned_files_purged} orphaned purged, "
+                f"{search_result.chunks_written} chunks, "
+                f"{search_result.vectors_written} vectors"
+            )
     finally:
         conn.close()
 
@@ -430,6 +694,16 @@ def server(
         "--force-report",
         help="Run a full forced report once at startup (after any startup sync/rollup).",
     ),
+    index_search: bool = typer.Option(
+        False,
+        "--index-search",
+        help="Run search indexing once at startup before the watcher starts.",
+    ),
+    index_search_continuous: bool = typer.Option(
+        False,
+        "--index-search-continuous",
+        help="Continuously poll for stale search work in the background.",
+    ),
 ) -> None:
     """Watch the vault and run pipeline stages automatically."""
     cfg = _load_and_validate(ctx.obj[_CONFIG_KEY])
@@ -469,4 +743,6 @@ def server(
         force_sync=force_sync,
         force_rollup=force_rollup,
         force_report=force_report,
+        index_search=index_search,
+        index_search_continuous=index_search_continuous,
     )

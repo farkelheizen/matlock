@@ -4,6 +4,7 @@ from __future__ import annotations
 import subprocess
 import sys
 from pathlib import Path
+from unittest.mock import patch
 
 import yaml
 from typer.testing import CliRunner
@@ -81,6 +82,10 @@ class TestRunAllHelp:
         result = runner.invoke(app, ["run-all", "--help"])
         assert "--scan-projects" in result.output
 
+    def test_index_search_option_shown_in_help(self):
+        result = runner.invoke(app, ["run-all", "--help"])
+        assert "--index-search" in result.output
+
 
 # ---------------------------------------------------------------------------
 # Happy path — default run
@@ -134,6 +139,53 @@ class TestRunAllCommand:
         result, _, out_dir, _ = _invoke(tmp_path)
         assert result.exit_code == 0
         assert (out_dir / "Home.md").exists()
+
+    def test_index_search_runs_after_report_when_enabled(self, tmp_path: Path):
+        vault = tmp_path / "vault"
+        vault.mkdir(exist_ok=True)
+        out_dir = tmp_path / "_Matlock"
+        cfg_path = tmp_path / "config.yaml"
+        db_path = tmp_path / "matlock.db"
+        _write_config(cfg_path, vault, db_path, out_dir)
+
+        call_order: list[str] = []
+
+        def fake_report(cfg, conn, **kwargs):
+            call_order.append("report")
+            from matlock.stages.report import ReportResult
+
+            return ReportResult(files_written=0, target="all")
+
+        def fake_search_index_stage(cfg, conn, **kwargs):
+            call_order.append("search-index")
+            from matlock.search.indexer import SearchIndexingResult
+
+            return SearchIndexingResult(indexed_files=1)
+
+        with patch("matlock.cli.run_report", side_effect=fake_report):
+            with patch("matlock.cli.run_search_index_stage", side_effect=fake_search_index_stage):
+                result = runner.invoke(
+                    app,
+                    ["--config", str(cfg_path), "run-all", "--index-search"],
+                )
+
+        assert result.exit_code == 0
+        assert call_order[-2:] == ["report", "search-index"]
+        assert "Search index:" in result.output
+
+    def test_index_search_not_run_by_default(self, tmp_path: Path):
+        vault = tmp_path / "vault"
+        vault.mkdir(exist_ok=True)
+        out_dir = tmp_path / "_Matlock"
+        cfg_path = tmp_path / "config.yaml"
+        db_path = tmp_path / "matlock.db"
+        _write_config(cfg_path, vault, db_path, out_dir)
+
+        with patch("matlock.cli.run_search_index_stage") as mock_search_index:
+            result = runner.invoke(app, ["--config", str(cfg_path), "run-all"])
+
+        assert result.exit_code == 0
+        assert mock_search_index.call_count == 0
 
 
 # ---------------------------------------------------------------------------

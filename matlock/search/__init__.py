@@ -1,0 +1,36 @@
+from .models import (
+    SEARCH_REQUEST_CONTRACT,
+    SEARCH_RESPONSE_CONTRACT,
+    MatlockSearchRequest,
+    MatlockSearchResponse,
+    SearchChunkDetails,
+    SearchError,
+    SearchFileDetails,
+    SearchFilters,
+    SearchMetadataFilter,
+    SearchOutputOptions,
+    SearchResponseResult,
+    SearchResponseStats,
+    SearchScoreBreakdown,
+    SearchTuning,
+)
+from .query_engine import SearchQueryEngine, execute_search
+
+__all__ = [
+    "SEARCH_REQUEST_CONTRACT",
+    "SEARCH_RESPONSE_CONTRACT",
+    "MatlockSearchRequest",
+    "MatlockSearchResponse",
+    "SearchChunkDetails",
+    "SearchError",
+    "SearchFileDetails",
+    "SearchFilters",
+    "SearchMetadataFilter",
+    "SearchOutputOptions",
+    "SearchResponseResult",
+    "SearchResponseStats",
+    "SearchScoreBreakdown",
+    "SearchTuning",
+    "SearchQueryEngine",
+    "execute_search",
+]

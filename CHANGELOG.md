@@ -8,9 +8,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+---
+
+## [0.4.0] — 2026-08-09
+
 ### Added
 
 - `SECURITY.md` with guidance for keeping the public code repository separate from private vault data and generated outputs.
+- `matlock search index` for incremental local indexing into SQLite-backed chunk, FTS, and embedding tables.
+- `matlock search query` with human CLI output and strict `--stdio` JSON transport using the `matlock.search.v1` and `matlock.search.response.v1` contracts.
+- `docs/matlock-search.md` as the dedicated search subsystem guide.
+
+### Changed
+
+- `matlock run-all` now supports opt-in post-pipeline search indexing via `--index-search`.
+- `matlock server` now supports startup search indexing and optional continuous background indexing via `--index-search` and `--index-search-continuous`.
+- Core documentation now describes the search configuration block, search schema objects, and search architecture alongside the existing pipeline docs.
+
+### Fixed
+
+- Search STDIO mode now guarantees JSON-only stdout with deterministic exit codes for input, storage, and embedding failures.
 
 ---
 

@@ -11,6 +11,7 @@ from matlock.db import (
     get_connection,
     get_file,
     get_files_needing_parsing,
+    mark_file_search_indexed,
     get_tasks_for_file,
     init_db,
     mark_file_deleted,
@@ -136,19 +137,26 @@ def test_all_six_tables_created(conn):
             "SELECT name FROM sqlite_master WHERE type='table'"
         ).fetchall()
     }
-    assert tables == {
+    assert {
         "file", "task", "super_project", "project", "file_project",
         "daily_metric", "file_touch", "daily_task",
-    }
+    }.issubset(tables)
 
 
 def test_init_db_idempotent(conn):
     # Calling init_db a second time must not raise
     init_db(conn)
-    tables = conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='table'"
-    ).fetchall()
-    assert len(tables) == 8
+    tables = {
+        row["name"]
+        for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()
+    }
+    assert {
+        "file", "task", "super_project", "project", "file_project",
+        "daily_metric", "file_touch", "daily_task",
+        "search_chunks", "search_fts", "search_vec",
+    }.issubset(tables)
 
 
 def test_daily_metric_project_id_nullable(conn):
@@ -268,6 +276,19 @@ def test_set_needs_parsing_does_not_touch_other_columns(conn):
     set_needs_parsing(conn, "Notes/foo.md", 0)
     conn.commit()
     assert get_file(conn, "Notes/foo.md")["sha256"] == "original"
+
+
+def test_upsert_file_preserves_search_freshness_when_hash_unchanged(conn):
+    upsert_file(conn, _file_row())
+    mark_file_search_indexed(conn, "Notes/foo.md", "2026-01-02T03:04:05Z")
+    conn.commit()
+
+    upsert_file(conn, _file_row(modified=3000, modified_date="2026-01-02"))
+    conn.commit()
+
+    row = get_file(conn, "Notes/foo.md")
+    assert row["search_indexed_at"] == "2026-01-02T03:04:05Z"
+    assert row["search_index_hash"] == "abc123"
 
 
 # ---------------------------------------------------------------------------
