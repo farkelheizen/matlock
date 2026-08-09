@@ -10,6 +10,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ---
 
+## [0.4.1] — 2026-08-09
+
+### Added
+
+- `matlock search query --min-score` in human CLI mode, mapped to search request tuning for score-threshold filtering.
+
+### Changed
+
+- Default search embedding model now uses the fully qualified fastembed-compatible identifier `sentence-transformers/all-MiniLM-L6-v2`.
+- Search configuration examples and docs now explicitly state that `api_base_url` / `api_*_env_var` settings are only used for the `openai-compatible` provider and ignored for `fastembed`.
+
+### Fixed
+
+- Search query timestamp normalization now correctly handles numeric epoch values stored in seconds, milliseconds, microseconds, or nanoseconds, preventing invalid date conversion errors in result serialization.
+
+---
+
 ## [0.4.0] — 2026-08-09
 
 ### Added
