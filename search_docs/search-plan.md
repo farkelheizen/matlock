@@ -79,7 +79,7 @@ while preserving existing pipeline behavior and backward compatibility.
 | MS-P1 | Completed | Add search config and API contract models | Config and request/response schemas validated by tests |
 | MS-P2 | Completed | Add DB schema, migrations, and helper APIs for search | Search tables/triggers/migrations pass db tests |
 | MS-P3 | Completed | Implement indexing engine and CLI index/server integration | Incremental and forced indexing work end-to-end, including optional continuous server indexing |
-| MS-P4 | Not Started | Implement query engine and result shaping | All search modes + filters + granularity behave per spec |
+| MS-P4 | Completed | Implement query engine and result shaping | All search modes + filters + granularity behave per spec |
 | MS-P5 | Not Started | Harden CLI transport, exit codes, and logging isolation | STDIO mode is parser-safe and error-code stable |
 | MS-P6 | Not Started | Complete docs, changelog, and final regression validation | Docs/changelog updated and full test suite passes |
 
@@ -95,7 +95,7 @@ while preserving existing pipeline behavior and backward compatibility.
 | MS-P2-S1 | MS-P2 | Completed | Add search schema + migrations | Extend `matlock/db.py` schema/migration for file search tracking columns and search tables/triggers; add db helper functions | `tests/test_db.py`, new `tests/test_db_search_schema.py` |
 | MS-P3-S1 | MS-P3 | Completed | Build chunking + embedding + indexing core | Add search indexing modules (chunker, embedding provider abstraction, index coordinator, frontmatter template injection, per-file overrides, cleanup passes) | new `tests/test_search_chunking.py`, `tests/test_search_indexer.py`, `tests/test_search_embedding_provider.py` |
 | MS-P3-S2 | MS-P3 | Completed | Expose indexing via CLI and orchestration hooks | Add `matlock search index`; add `--index-search` to `run-all`; add server indexing options including continuous background indexing mode; enforce no behavior change unless opted in | new `tests/test_cli_search_index.py`, updates to `tests/test_cli_run_all.py`, `tests/test_cli_server.py`, new `tests/test_server_search_indexing.py` |
-| MS-P4-S1 | MS-P4 | Not Started | Build query execution engine | Implement metadata filter SQL mapping, FTS/vector/hybrid ranking, project filters, and chunk/file output shaping | new `tests/test_search_query_engine.py`, `tests/test_search_metadata_filters.py`, `tests/test_search_output_shape.py` |
+| MS-P4-S1 | MS-P4 | Completed | Build query execution engine | Implement metadata filter SQL mapping, FTS/vector/hybrid ranking, project filters, and chunk/file output shaping | new `tests/test_search_query_engine.py`, `tests/test_search_metadata_filters.py`, `tests/test_search_output_shape.py` |
 | MS-P5-S1 | MS-P5 | Not Started | Deliver CLI query transport hardening | Add `matlock search query` human mode and `--stdio` mode, strict stdout purity, deterministic exit code mapping, structured error payloads, isolated search logging | new `tests/test_cli_search_query.py`, new `tests/test_search_stdio_contract.py`, new `tests/test_search_logging.py` |
 | MS-P6-S1 | MS-P6 | Not Started | Documentation, changelog, and final validation | Update docs and changelog, run focused/regression/full suites, record validation outcomes in step log | docs updates + `CHANGELOG.md`; full `poetry run pytest` |
 
@@ -490,9 +490,9 @@ Because continuous indexing is mandatory for your workflow, unattended execution
 - Validation: `poetry run pytest tests/test_cli_search_index.py tests/test_server_search_indexing.py` -> 9 passed; `poetry run pytest tests/test_cli_run_all.py tests/test_cli_server.py tests/test_search_indexer.py tests/test_db.py` -> 101 passed; `poetry run pytest` -> 803 passed.
 
 ### MS-P4-S1 Notes
-- Changes made: Pending.
-- Deviations: Pending.
-- Validation: Pending.
+- Changes made: Added `matlock/search/sql_filters.py` to compile file, project, date, and metadata filters into SQLite predicates with exact-only D9 project matching and consistent scalar/array handling for D10 `contains`/`in`. Added `matlock/search/ranking.py` with cosine similarity and hybrid reciprocal-rank fusion helpers. Added `matlock/search/query_engine.py` with `metadata_only`, `fts_only`, `vector_only`, and `hybrid` execution paths, chunk and file granularity shaping, adjacent chunk retrieval, response stats population, and convenience exports through `matlock/search/__init__.py`. Added focused coverage in new `tests/test_search_query_engine.py`, `tests/test_search_metadata_filters.py`, and `tests/test_search_output_shape.py`.
+- Deviations: Executed vector retrieval and hybrid fusion in Python against the existing JSON-encoded `search_vec` payloads rather than introducing a query-time `sqlite-vec` dependency in MS-P4-S1.
+- Validation: `poetry run pytest tests/test_search_query_engine.py tests/test_search_metadata_filters.py tests/test_search_output_shape.py` -> 12 passed; `poetry run pytest tests/test_db.py tests/test_db_search_schema.py tests/test_search_indexer.py tests/test_matlock_config.py` -> 93 passed; `poetry run pytest` -> 815 passed.
 
 ### MS-P5-S1 Notes
 - Changes made: Pending.

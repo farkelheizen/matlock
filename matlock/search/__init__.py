@@ -14,6 +14,7 @@ from .models import (
     SearchScoreBreakdown,
     SearchTuning,
 )
+from .query_engine import SearchQueryEngine, execute_search
 
 __all__ = [
     "SEARCH_REQUEST_CONTRACT",
@@ -30,4 +31,6 @@ __all__ = [
     "SearchResponseStats",
     "SearchScoreBreakdown",
     "SearchTuning",
+    "SearchQueryEngine",
+    "execute_search",
 ]
