@@ -77,7 +77,7 @@ while preserving existing pipeline behavior and backward compatibility.
 |---|---|---|---|
 | MS-P0 | Completed | Lock design decisions and integration boundaries | All open questions resolved; `Questions / Concerns` replaced with `Design Decisions (Resolved)` |
 | MS-P1 | Completed | Add search config and API contract models | Config and request/response schemas validated by tests |
-| MS-P2 | Not Started | Add DB schema, migrations, and helper APIs for search | Search tables/triggers/migrations pass db tests |
+| MS-P2 | Completed | Add DB schema, migrations, and helper APIs for search | Search tables/triggers/migrations pass db tests |
 | MS-P3 | Not Started | Implement indexing engine and CLI index/server integration | Incremental and forced indexing work end-to-end, including optional continuous server indexing |
 | MS-P4 | Not Started | Implement query engine and result shaping | All search modes + filters + granularity behave per spec |
 | MS-P5 | Not Started | Harden CLI transport, exit codes, and logging isolation | STDIO mode is parser-safe and error-code stable |
@@ -92,7 +92,7 @@ while preserving existing pipeline behavior and backward compatibility.
 | MS-P0-S1 | MS-P0 | Completed | Baseline audit and plan authoring | Capture architecture gaps, integration touchpoints, and phased rollout plan in this file | N/A (planning step) |
 | MS-P0-S2 | MS-P0 | Completed | Resolve design ambiguities | Resolve all questions below; replace with `Design Decisions (Resolved)` | N/A (decision gate) |
 | MS-P1-S1 | MS-P1 | Completed | Add search config and contract models | Update `matlock/config.py` with `search` block models; add search request/response Pydantic models in new search module; define defaults and validators | `tests/test_matlock_config.py`, new `tests/test_search_models.py` |
-| MS-P2-S1 | MS-P2 | Not Started | Add search schema + migrations | Extend `matlock/db.py` schema/migration for file search tracking columns and search tables/triggers; add db helper functions | `tests/test_db.py`, new `tests/test_db_search_schema.py` |
+| MS-P2-S1 | MS-P2 | Completed | Add search schema + migrations | Extend `matlock/db.py` schema/migration for file search tracking columns and search tables/triggers; add db helper functions | `tests/test_db.py`, new `tests/test_db_search_schema.py` |
 | MS-P3-S1 | MS-P3 | Not Started | Build chunking + embedding + indexing core | Add search indexing modules (chunker, embedding provider abstraction, index coordinator, frontmatter template injection, per-file overrides, cleanup passes) | new `tests/test_search_chunking.py`, `tests/test_search_indexer.py`, `tests/test_search_embedding_provider.py` |
 | MS-P3-S2 | MS-P3 | Not Started | Expose indexing via CLI and orchestration hooks | Add `matlock search index`; add `--index-search` to `run-all`; add server indexing options including continuous background indexing mode; enforce no behavior change unless opted in | new `tests/test_cli_search_index.py`, updates to `tests/test_cli_run_all.py`, `tests/test_cli_server.py`, new `tests/test_server_search_indexing.py` |
 | MS-P4-S1 | MS-P4 | Not Started | Build query execution engine | Implement metadata filter SQL mapping, FTS/vector/hybrid ranking, project filters, and chunk/file output shaping | new `tests/test_search_query_engine.py`, `tests/test_search_metadata_filters.py`, `tests/test_search_output_shape.py` |
@@ -475,9 +475,9 @@ Because continuous indexing is mandatory for your workflow, unattended execution
 - Validation: `poetry run pytest tests/test_search_models.py tests/test_matlock_config.py` -> 54 passed; `poetry run pytest tests/test_config.py tests/test_db.py` -> 44 passed.
 
 ### MS-P2-S1 Notes
-- Changes made: Pending.
-- Deviations: Pending.
-- Validation: Pending.
+- Changes made: Extended `matlock/db.py` with additive file search freshness columns, idempotent search schema creation (`search_chunks`, `search_fts`, `search_vec`), FTS/file cleanup triggers, search indexing helper APIs, and a compatibility-safe `upsert_file` path that preserves search freshness when file content hash is unchanged. Added focused coverage in new `tests/test_db_search_schema.py` and updated `tests/test_db.py` for the expanded schema baseline.
+- Deviations: Implemented `search_vec` as an additive relational table keyed by `chunk_id` so existing SQLite databases initialize cleanly without requiring a loaded `sqlite-vec` extension during MS-P2-S1.
+- Validation: `poetry run pytest tests/test_db_search_schema.py tests/test_db.py` -> 45 passed; `poetry run pytest tests/test_matlock_config.py tests/test_config.py` -> 51 passed.
 
 ### MS-P3-S1 Notes
 - Changes made: Pending.
