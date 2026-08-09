@@ -1,8 +1,8 @@
 # Matlock
 
-Pipeline-driven task extractor and report generator for Markdown second brains.
+Pipeline-driven task extractor, report generator, and local search engine for Markdown second brains.
 
-Matlock walks a Obsidian/Markdown vault, extracts checkbox tasks, maps files to projects, calculates daily metrics, and renders Jinja2 Markdown dashboards — all orchestrated from a single CLI.
+Matlock walks an Obsidian/Markdown vault, extracts checkbox tasks, maps files to projects, calculates daily metrics, renders Jinja2 Markdown dashboards, and can build a local search index for human and machine query flows.
 
 ## Requirements
 
@@ -28,6 +28,9 @@ poetry run matlock run-all
 # Run full pipeline and do an opt-in project scan/merge first
 poetry run matlock run-all --scan-projects
 
+# Run full pipeline, then refresh the local search index
+poetry run matlock run-all --index-search
+
 # Or run each stage individually
 poetry run matlock sync
 poetry run matlock parse
@@ -35,8 +38,14 @@ poetry run matlock map-projects
 poetry run matlock rollup
 poetry run matlock report
 
+# Or build/query the local search index directly
+poetry run matlock search index
+poetry run matlock search query "database"
+printf '{"query": "database", "search_mode": "fts_only"}' | poetry run matlock search query --stdio
+
 # Or run the server daemon (watch vault continuously)
 poetry run matlock server
+poetry run matlock server --index-search --index-search-continuous
 ```
 
 ## Configuration
@@ -124,6 +133,17 @@ Notes:
 - `DIRECTORY` matching is path-based, so `Tech/Backend` matches `Tech/Backend/api.md` but not `Tech/BackendExtra/api.md`.
 - A file may belong to multiple projects if it matches multiple resource rules.
 
+## Search
+
+Matlock Search is an optional local-first subsystem layered on top of the core pipeline.
+
+- `matlock search index` chunks active vault files, injects optional frontmatter context, and stores FTS plus embedding-backed search records in SQLite.
+- `matlock search query` supports human CLI output and strict `--stdio` JSON transport for editor and agent integrations.
+- `matlock run-all --index-search` runs indexing after the core pipeline.
+- `matlock server --index-search --index-search-continuous` can do one startup indexing pass and continue polling for stale search work in the background.
+
+See [docs/matlock-search.md](docs/matlock-search.md) for the full search guide.
+
 ## CLI Reference
 
 All commands accept `--config PATH` to override the default config location.
@@ -142,6 +162,7 @@ matlock run-all [--scan-projects] [--skip-rollup] [--force-sync] [--force-report
 | `--skip-rollup` | False | Skip Stage IV rollup (useful for mid-day runs) |
 | `--force-sync` | False | Re-hash every file regardless of stored hash |
 | `--force-report` | False | Regenerate all reports and delete stale generated files |
+| `--index-search` | False | Run search indexing after `report` completes (opt-in) |
 
 ```bash
 poetry run matlock run-all
@@ -149,6 +170,7 @@ poetry run matlock run-all --scan-projects
 poetry run matlock run-all --skip-rollup
 poetry run matlock run-all --force-sync
 poetry run matlock run-all --force-report
+poetry run matlock run-all --index-search
 ```
 
 ---
@@ -211,7 +233,7 @@ poetry run matlock report --project-id backend_api
 Run a persistent daemon that monitors the vault in real time and orchestrates the pipeline automatically.
 
 ```
-matlock server [--debounce SECONDS] [--scan-projects] [--force-sync] [--force-report] [--skip-rollup] [--config PATH]
+matlock server [--debounce SECONDS] [--scan-projects] [--force-sync] [--force-report] [--skip-rollup] [--index-search] [--index-search-continuous] [--config PATH]
 ```
 
 | Flag | Default | Description |
@@ -221,6 +243,8 @@ matlock server [--debounce SECONDS] [--scan-projects] [--force-sync] [--force-re
 | `--force-sync` | `False` | Run a full forced sync+parse once at startup before the watcher starts |
 | `--force-report` | `False` | Run a full forced report once at startup (after any startup sync) |
 | `--skip-rollup` | `False` | Skip rollup in the nightly scheduled job |
+| `--index-search` | `False` | Run search indexing once at startup before the watcher starts |
+| `--index-search-continuous` | `False` | Continuously poll for stale search work in the background |
 
 Three integrated triggers:
 
@@ -233,6 +257,7 @@ poetry run matlock server
 poetry run matlock server --debounce 10
 poetry run matlock server --force-sync --force-report
 poetry run matlock server --skip-rollup
+poetry run matlock server --index-search --index-search-continuous
 ```
 
 Press `Ctrl+C` for a clean shutdown.
@@ -275,6 +300,10 @@ matlock/
     templates/          ← Jinja2 Markdown templates (.md.j2)
 docs/
     matlock-cli.md
+  matlock-configuration.md
+  matlock-data-model.md
+  matlock-high-level-design.md
+  matlock-search.md
     matlock-pipeline-specification.md
     roadmap/
         index.md
@@ -282,6 +311,15 @@ tests/
 pyproject.toml
 config.yaml             ← your local config (not committed)
 ```
+
+## Documentation
+
+- [docs/matlock-search.md](docs/matlock-search.md) — search indexing, query modes, STDIO transport, and server/search orchestration.
+- [docs/matlock-cli.md](docs/matlock-cli.md) — full CLI reference including `search` commands.
+- [docs/matlock-configuration.md](docs/matlock-configuration.md) — `config.yaml` schema, including the `search` block.
+- [docs/matlock-data-model.md](docs/matlock-data-model.md) — SQLite search tables plus request/response model contracts.
+- [docs/matlock-pipeline-specification.md](docs/matlock-pipeline-specification.md) — core pipeline stages and optional search indexing hooks.
+- [docs/matlock-high-level-design.md](docs/matlock-high-level-design.md) — architecture overview and execution modes.
 
 ## Development
 
@@ -292,5 +330,3 @@ poetry run pytest
 # Run a specific test file
 poetry run pytest tests/test_cli_run_all.py -v
 ```
-
-430 tests, 0 failures as of Phase 9.

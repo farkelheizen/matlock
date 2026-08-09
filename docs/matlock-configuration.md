@@ -1,6 +1,6 @@
 # Matlock Configuration
 
-**Version:** 0.1.x
+**Version:** 0.3.x
 
 All Matlock configuration lives in a single `config.yaml` file — one per "second brain" vault. It combines application-level settings (paths, DB connection, project structure) with task-attribute parsing rules.
 
@@ -78,6 +78,30 @@ headers:
 
 tasks:
   task_text_maxlen: 500     # Characters before truncation (sets overflow=True)
+
+# ────────────────────────────────────────────────────
+# Search
+# ────────────────────────────────────────────────────
+
+search:
+  indexing:
+    enabled: false
+    batch_size: 100
+
+  chunking:
+    strategy: fixed_token      # fixed_token | markdown_header
+    chunk_size: 500
+    chunk_overlap: 50
+    inject_frontmatter: true
+    frontmatter_template: "[Project: {db.project_id} | File: {sys.file_name} | Status: {fm.status}]\n\n"
+
+  embedding:
+    provider: fastembed        # fastembed | openai-compatible
+    model_name: all-MiniLM-L6-v2
+    dimensions: 384
+    api_base_url: null
+    api_base_url_env_var: null
+    api_key_env_var: OPENAI_API_KEY
 
 # ────────────────────────────────────────────────────
 # Parser: task attributes
@@ -225,6 +249,42 @@ This matches only `Projects/Planning.md`.
 | `log_max_bytes` | int | `10000000` | Maximum size of a single log file before rotation (bytes). |
 | `log_backup_count` | int | `3` | Number of rotated backup files to keep (e.g. `matlock.log.1`, `.log.2`, …). |
 
+### Search Indexing
+
+| Field | Type | Default | Description |
+|:------|:-----|:--------|:------------|
+| `search.indexing.enabled` | bool | `false` | Search feature toggle stored in config. Search work remains opt-in at runtime via `matlock search ...`, `run-all --index-search`, or server search flags. |
+| `search.indexing.batch_size` | int | `100` | Commit cadence for search indexing writes. Must be `>= 1`. |
+
+### Search Chunking
+
+| Field | Type | Default | Description |
+|:------|:-----|:--------|:------------|
+| `search.chunking.strategy` | string | `fixed_token` | Chunking mode. Current implementation uses `fixed_token`; `markdown_header` is validated config for forward compatibility. |
+| `search.chunking.chunk_size` | int | `500` | Target chunk size in approximate tokens. Must be `>= 1`. |
+| `search.chunking.chunk_overlap` | int | `50` | Overlap between adjacent chunks. Must be `>= 0` and smaller than `chunk_size`. |
+| `search.chunking.inject_frontmatter` | bool | `true` | Prefix each chunk with rendered context derived from frontmatter, system fields, and DB project metadata. |
+| `search.chunking.frontmatter_template` | string | Built-in template | Template used when `inject_frontmatter` is enabled. Missing namespaced values render as empty strings. |
+
+Available template namespaces:
+
+- `fm.*` for parsed frontmatter fields.
+- `sys.*` for runtime file context such as `absolute_path`, `file_name`, `file_path`, `created`, and `modified`.
+- `db.*` for mapped project context such as `project_id` and `super_project_id`.
+
+### Search Embedding
+
+| Field | Type | Default | Description |
+|:------|:-----|:--------|:------------|
+| `search.embedding.provider` | string | `fastembed` | Embedding backend: `fastembed` or `openai-compatible`. |
+| `search.embedding.model_name` | string | `all-MiniLM-L6-v2` | Embedding model name used for indexing and vector queries. |
+| `search.embedding.dimensions` | int | `384` | Expected vector dimension. Must match provider output. |
+| `search.embedding.api_base_url` | string \| null | `null` | Base URL for `openai-compatible` providers. |
+| `search.embedding.api_base_url_env_var` | string \| null | `null` | Optional env var that overrides `api_base_url` when the env var is set. |
+| `search.embedding.api_key_env_var` | string \| null | `OPENAI_API_KEY` | Optional env var used to resolve a non-serialized API key. |
+
+Environment override behavior is opt-in and limited to explicitly configured keys. If `api_base_url_env_var` or `api_key_env_var` is present and the environment variable is set, the loaded config uses the environment value.
+
 ### Parser Limits
 
 | Field | Type | Default | Description |
@@ -261,9 +321,12 @@ Important details:
 ## Validation Rules
 
 - `base_directory` must exist and be readable at startup.
-- `output_directory` will be created if it does not exist.
-- `db_path` must be an absolute path; its parent directory must exist and be writable.
-- `log_path`, when set, must be an absolute path; its parent directory is created automatically if it does not exist.
+- `output_directory` is resolved relative to `base_directory` when given as a relative path.
+- `db_path` is not resolved relative to `base_directory`; use an absolute path if you want the database outside the vault. The parent directory must already exist.
+- `log_path`, when set, is not resolved relative to `base_directory`; relative values remain relative. Search query logging writes to a sibling `search.log` file next to `log_path`, or `~/.matlock/logs/search.log` when `log_path` is unset.
 - All `home_file` and resource `path` values are relative to `base_directory`.
 - `super_project_id` on a project must reference a defined `super_project.id` or be omitted.
 - Duplicate `id` values within `super_projects` or `projects` are a fatal config error.
+- `search.chunking.chunk_overlap` must be smaller than `search.chunking.chunk_size`.
+
+For per-file search overrides, see `docs/matlock-search.md`.

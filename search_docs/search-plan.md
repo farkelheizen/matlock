@@ -2,7 +2,7 @@
 
 > Date: 8/8/2026
 > Owner: Copilot
-> Branch: TBD (implementation not started)
+> Branch: feat/search-ms-p6-s1
 > Related docs:
 > - docs/matlock-high-level-design.md
 > - docs/matlock-pipeline-specification.md
@@ -81,7 +81,7 @@ while preserving existing pipeline behavior and backward compatibility.
 | MS-P3 | Completed | Implement indexing engine and CLI index/server integration | Incremental and forced indexing work end-to-end, including optional continuous server indexing |
 | MS-P4 | Completed | Implement query engine and result shaping | All search modes + filters + granularity behave per spec |
 | MS-P5 | Completed | Harden CLI transport, exit codes, and logging isolation | STDIO mode is parser-safe and error-code stable |
-| MS-P6 | Not Started | Complete docs, changelog, and final regression validation | Docs/changelog updated and full test suite passes |
+| MS-P6 | Completed | Complete docs, changelog, and final regression validation | Docs/changelog updated and full test suite passes |
 
 ---
 
@@ -97,7 +97,7 @@ while preserving existing pipeline behavior and backward compatibility.
 | MS-P3-S2 | MS-P3 | Completed | Expose indexing via CLI and orchestration hooks | Add `matlock search index`; add `--index-search` to `run-all`; add server indexing options including continuous background indexing mode; enforce no behavior change unless opted in | new `tests/test_cli_search_index.py`, updates to `tests/test_cli_run_all.py`, `tests/test_cli_server.py`, new `tests/test_server_search_indexing.py` |
 | MS-P4-S1 | MS-P4 | Completed | Build query execution engine | Implement metadata filter SQL mapping, FTS/vector/hybrid ranking, project filters, and chunk/file output shaping | new `tests/test_search_query_engine.py`, `tests/test_search_metadata_filters.py`, `tests/test_search_output_shape.py` |
 | MS-P5-S1 | MS-P5 | Completed | Deliver CLI query transport hardening | Add `matlock search query` human mode and `--stdio` mode, strict stdout purity, deterministic exit code mapping, structured error payloads, isolated search logging | new `tests/test_cli_search_query.py`, new `tests/test_search_stdio_contract.py`, new `tests/test_search_logging.py` |
-| MS-P6-S1 | MS-P6 | Not Started | Documentation, changelog, and final validation | Update docs and changelog, run focused/regression/full suites, record validation outcomes in step log | docs updates + `CHANGELOG.md`; full `poetry run pytest` |
+| MS-P6-S1 | MS-P6 | Completed | Documentation, changelog, and final validation | Update docs and changelog, run focused/regression/full suites, record validation outcomes in step log | docs updates + `CHANGELOG.md`; full `poetry run pytest` |
 
 Status values: `Not Started` | `In Progress` | `Completed` | `Blocked`
 
@@ -500,9 +500,9 @@ Because continuous indexing is mandatory for your workflow, unattended execution
 - Validation: `poetry run pytest tests/test_cli_search_query.py tests/test_search_stdio_contract.py tests/test_search_logging.py` -> 12 passed; `poetry run pytest tests/test_cli_server.py tests/test_cli_run_all.py tests/test_search_query_engine.py tests/test_matlock_config.py` -> 108 passed; `poetry run pytest` -> 827 passed.
 
 ### MS-P6-S1 Notes
-- Changes made: Pending.
-- Deviations: Pending.
-- Validation: Pending.
+- Changes made: Added dedicated `docs/matlock-search.md` per D17 and updated `README.md`, `CHANGELOG.md`, `docs/matlock-cli.md`, `docs/matlock-configuration.md`, `docs/matlock-data-model.md`, `docs/matlock-pipeline-specification.md`, `docs/matlock-high-level-design.md`, and `docs/copilot/copilot-docs-reference.md` so the published docs reflect the implemented search index/query commands, search config/schema, STDIO contract, server background indexing options, and new cross-reference map.
+- Deviations: Also corrected stale wording in the touched docs where the existing server and config prose no longer matched the implemented behavior (for example, `run-all --index-search`, `server --index-search-continuous`, search log isolation, and path-resolution notes).
+- Validation: `poetry run matlock --help && poetry run matlock search --help && poetry run matlock search query --help && poetry run matlock run-all --help && poetry run matlock server --help` confirmed documented command/flag surfaces; `poetry run pytest tests/test_cli_search_index.py tests/test_cli_search_query.py tests/test_cli_run_all.py tests/test_cli_server.py tests/test_matlock_config.py tests/test_db.py` -> 149 passed; `poetry run pytest` -> 827 passed (1 third-party deprecation warning from `pytimeparse`).
 
 ---
 

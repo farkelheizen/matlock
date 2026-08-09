@@ -1,6 +1,6 @@
 # Matlock CLI Reference
 
-**Version:** 0.2.x
+**Version:** 0.3.x
 
 Matlock is invoked via the `matlock` command (registered as a Poetry script entrypoint). All commands accept `--config PATH` to specify a non-default `config.yaml` location.
 
@@ -142,6 +142,7 @@ matlock run-all [OPTIONS]
 | `--skip-rollup` | False | Skip Stage IV (for mid-day runs; rollup is designed for nightly use) |
 | `--force-sync` | False | Pass `--force` to the `sync` stage |
 | `--force-report` | False | Pass `--force` to the `report` stage (regenerate all, delete stale files) |
+| `--index-search` | False | Run search indexing after the core pipeline completes (opt-in) |
 | `--config PATH` | `./config.yaml` | Config file location |
 
 **Example:**
@@ -151,9 +152,78 @@ poetry run matlock run-all --scan-projects
 poetry run matlock run-all --skip-rollup
 poetry run matlock run-all --force-sync
 poetry run matlock run-all --force-report
+poetry run matlock run-all --index-search
 ```
 
-When `--scan-projects` is enabled, Matlock runs vault scan + config merge first, then reloads config and continues the normal pipeline.
+When `--scan-projects` is enabled, Matlock runs vault scan + config merge first, then reloads config and continues the normal pipeline. When `--index-search` is enabled, search indexing runs after `report` so file metadata, project mappings, and reports are already current.
+
+---
+
+## Search Commands
+
+The `matlock search` command group exposes optional local indexing and query flows. See `docs/matlock-search.md` for the deeper operational guide and request/response contract details.
+
+### `matlock search index`
+
+Build or refresh the local search index for all eligible vault files.
+
+```
+matlock search index [OPTIONS]
+```
+
+| Option | Short | Default | Description |
+|:-------|:------|:--------|:------------|
+| `--force` | `-f` | `False` | Re-index all eligible files regardless of stored search freshness state |
+| `--batch-size INT` | — | From `search.indexing.batch_size` | Override the configured SQLite commit batch size for this run |
+| `--model STRING` | — | From `search.embedding.model_name` | Override the configured embedding model name for this run |
+| `--config PATH` | `-c` | `./config.yaml` | Config file location |
+
+The indexer only considers active, non-generated Markdown files. It clears search rows automatically for soft-deleted/generated files and refreshes stale files whose SHA-256 hash no longer matches `file.search_index_hash`.
+
+**Examples:**
+```bash
+poetry run matlock search index
+poetry run matlock search index --force
+poetry run matlock search index --batch-size 25 --model all-MiniLM-L6-v2
+```
+
+### `matlock search query`
+
+Run a local search query in either human CLI mode or strict `--stdio` machine mode.
+
+```
+matlock search query [QUERY] [OPTIONS]
+```
+
+| Option | Default | Description |
+|:-------|:--------|:------------|
+| `--stdio` | `False` | Read a JSON request from stdin and emit JSON-only to stdout |
+| `--search-mode TEXT` | `hybrid` | Human-mode search strategy: `hybrid`, `fts_only`, `vector_only`, `metadata_only` |
+| `--granularity TEXT` | `chunk` | Human-mode result shape: `chunk` or `file` |
+| `--limit INT` | `10` | Maximum number of results to return in human mode |
+| `--surrounding-chunks INT` | `0` | Number of adjacent chunks to include before/after a chunk hit (0-3) |
+| `--include-content / --no-include-content` | `True` | Include matched content in human-mode output |
+| `--config PATH` | `./config.yaml` | Config file location |
+
+Human mode requires the positional `QUERY` argument. In `--stdio` mode, omit the positional argument and send a JSON object matching the `matlock.search.v1` request contract on stdin.
+
+**Examples:**
+```bash
+poetry run matlock search query "database"
+poetry run matlock search query "database" --search-mode fts_only --granularity file --limit 5
+printf '{"query": "database", "search_mode": "fts_only"}' | poetry run matlock search query --stdio
+```
+
+In `--stdio` mode, stdout is reserved for the JSON response only. Operational logging is redirected to an isolated search log and stderr is reserved for error-level messages.
+
+Deterministic exit codes:
+
+| Exit Code | Meaning |
+|:----------|:--------|
+| `0` | Success |
+| `1` | Input or schema error |
+| `2` | Database or search storage error |
+| `3` | Embedding provider error |
 
 ---
 
@@ -199,9 +269,10 @@ matlock server [OPTIONS]
 
 Three integrated triggers:
 
-1. **File Watcher** (`watchdog`) — File create/modify/delete triggers `sync` + `parse` for the affected file, then marks the owning project(s) dirty.
-2. **Debouncer** — After `debounce_seconds` of idle time, triggers `report` for dirty projects.
+1. **File Watcher** (`watchdog`) — File create/modify/delete events wake the watcher, which runs `sync` + `parse` and marks matching project IDs dirty.
+2. **Debouncer** — After `debounce_seconds` of idle time, runs `map-projects` + a full `report` pass while clearing the dirty-project set.
 3. **Scheduler** — At midnight (00:01): triggers `rollup` followed by a full `report` rebuild.
+4. **Optional Search Indexer** — When `--index-search-continuous` is enabled, a background thread polls for stale search work and runs search indexing under the same pipeline lock as the other triggers.
 
 | Option | Default | Description |
 |:-------|:--------|:------------|
@@ -211,6 +282,8 @@ Three integrated triggers:
 | `--force-rollup` | `False` | Run rollup for today once at startup (after any forced sync) |
 | `--force-report` | `False` | Run a full forced report once at startup (after any startup sync) |
 | `--skip-rollup` | `False` | Skip rollup in the nightly scheduled job |
+| `--index-search` | `False` | Run search indexing once at startup before the watcher starts |
+| `--index-search-continuous` | `False` | Continuously poll for stale search work in a background thread |
 | `--config PATH` | `./config.yaml` | Config file location |
 
 **Example:**
@@ -219,11 +292,14 @@ poetry run matlock server
 poetry run matlock server --debounce 10
 poetry run matlock server --force-sync --force-rollup --force-report
 poetry run matlock server --skip-rollup
+poetry run matlock server --index-search --index-search-continuous
 ```
 
 **Notes:**
 - `--scan-projects`, `--force-sync`, `--force-rollup`, and `--force-report` are **startup-only** — they run once before the watcher starts.
-- When combined, startup actions run in deterministic order: forced sync+parse, then forced rollup for today, then forced report.
+- `--index-search` is also a startup-only action.
+- When combined, startup actions run in deterministic order: forced sync+parse, then forced rollup for today, then forced report, then one startup search indexing pass.
+- `--index-search-continuous` starts a long-lived background poller after the watcher/debouncer/scheduler threads are up.
 - `--skip-rollup` affects only the nightly scheduler job; the watcher and debouncer paths are unaffected.
 - Run as a background process or managed via `launchd` / `systemd` for continuous operation.
 - The server logs to stdout by default. Redirect to a file for daemon use: `matlock server >> matlock.log 2>&1 &`

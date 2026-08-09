@@ -1,15 +1,16 @@
 # Matlock: High-Level Design
 
-**Version:** 0.2.x
+**Version:** 0.3.x
 **Motto:** "I'm just looking at the evidence… and the evidence says you're procrastinating."
 
 ## 1. Core Philosophy
 
-Matlock is a pipeline-driven task extractor and report generator for Markdown "second brain" vaults.
+Matlock is a pipeline-driven task extractor, report generator, and optional local search engine for Markdown "second brain" vaults.
 
 - **Source-of-Truth:** Your existing Markdown notes. Matlock never modifies them.
 - **Comprehensible:** A "worker-per-task" script pipeline where every stage is a standalone, independently runnable command. Shared state lives entirely in a single SQLite database.
 - **Performance:** Incremental sync via SHA-256 hashing — only modified files are re-parsed. Full-vault re-scans are always available via explicit CLI flags.
+- **Local-First Search:** Optional chunk, FTS, and embedding-backed search stays on the same SQLite foundation and remains opt-in at runtime.
 
 ## 2. 2-Tier Project Hierarchy
 
@@ -18,7 +19,7 @@ Matlock enforces a strict, flat two-tier hierarchy defined in `config.yaml`. Thi
 1. **Super Projects** — Broad thematic categories (e.g., "Personal Admin", "Website Overhaul").
 2. **Projects** — Actionable buckets (e.g., "Taxes 2026") that map directly to specific files or directories in your vault.
 
-## 3. The Five-Stage Pipeline
+## 3. The Core Five-Stage Pipeline
 
 Each stage is a discrete, independently invocable command. Stages communicate **exclusively** through the SQLite database — no stage calls another directly.
 
@@ -31,6 +32,12 @@ Each stage is a discrete, independently invocable command. Stages communicate **
 | V     | `matlock report`     | Render Jinja2 Markdown dashboards to `_Matlock/`                 |
 
 Run all five stages in sequence with `matlock run-all`.
+
+Matlock Search is additive rather than replacing the core pipeline:
+
+- `matlock search index` reads active vault files, creates chunk/FTS/vector search state, and tracks freshness on `file` rows.
+- `matlock search query` is read-only against the local SQLite search index and supports both human CLI output and strict machine JSON transport.
+- `matlock run-all --index-search` appends indexing after the five core stages.
 
 ## 4. Directory Structure Boundary (The Guardrail)
 
@@ -66,13 +73,27 @@ Each pipeline stage runs independently from the CLI. This is the primary mode fo
 
 ### Continuous Server Mode (`matlock server`)
 
-A persistent daemon with three integrated triggers:
+A persistent daemon with three core triggers plus an optional search indexer:
 
-- **Watcher** — `watchdog` monitors the `base_directory` for file-system events. On create/modify/delete: triggers `sync` + `parse` for the affected file.
-- **Debouncer** — Coalesces rapid file changes (configurable idle window, default 5 seconds) before triggering `report` for affected projects.
+- **Watcher** — `watchdog` monitors the `base_directory` for file-system events. On create/modify/delete: triggers `sync` + `parse`, then marks matching projects dirty.
+- **Debouncer** — Coalesces rapid file changes (configurable idle window, default 5 seconds) before triggering `map-projects` + a full `report` pass.
 - **Scheduler** — Midnight trigger runs `rollup` + `report` (Daily History page + refreshed Global Dashboard).
+- **Search Indexer** — Optional startup and continuous background indexing can run under the same pipeline lock as the watcher, debouncer, and scheduler.
 
-## 6. Discovery Commands
+For search-specific behavior and contracts, see `docs/matlock-search.md`.
+
+## 6. Search Subsystem
+
+The optional search subsystem adds local retrieval without changing the existing pipeline contract.
+
+| Command | Purpose |
+|:--------|:--------|
+| `matlock search index` | Build or refresh local chunk, FTS, and embedding-backed search state |
+| `matlock search query` | Query the local index in human mode or strict `--stdio` JSON mode |
+
+Search indexing excludes generated and soft-deleted files, honors per-file frontmatter overrides, and can run from `run-all` or `server` entrypoints.
+
+## 7. Discovery Commands
 
 Alongside the pipeline, Matlock provides standalone **discovery commands** that read the vault directly and do not touch the SQLite database.
 
@@ -82,7 +103,7 @@ Alongside the pipeline, Matlock provides standalone **discovery commands** that 
 
 `scan-projects` is designed for **bootstrapping** (initial `config.yaml` population) and **drift auditing** (checking whether the vault has diverged from the config). See `docs/matlock-scan-projects.md` for full details.
 
-## 7. Decoupled Stage Design (The "Why")
+## 8. Decoupled Stage Design (The "Why")
 
 Each stage can be swapped or extended without touching any other stage:
 
@@ -91,8 +112,9 @@ Each stage can be swapped or extended without touching any other stage:
 - **Stage III (Map Projects)** — Today it maps by directory/file path in `config.yaml`. Tomorrow it could map by `#tags` inside files. Only this module changes.
 - **Stage IV (Rollup)** — Runs computationally expensive historical queries once per day without slowing real-time editing.
 - **Stage V (Report)** — Today it outputs Markdown dashboards. A future module could generate a local web UI or send an email. The same reliable database is the data source.
+- **Search Layer** — Today it uses SQLite FTS plus local embeddings. A future module could swap embedding providers or ranking strategies without changing the core sync/parse/report pipeline.
 
-## 8. Debugging the Pipeline
+## 9. Debugging the Pipeline
 
 Because there is no hidden event loop or magic, diagnosing stale output is trivial:
 
@@ -103,12 +125,13 @@ Because there is no hidden event loop or magic, diagnosing stale output is trivi
 
 Each stage can be re-run independently without side effects. All DB writes are upserts or atomic delete-then-insert operations.
 
-## 9. Logging
+## 10. Logging
 
 Matlock uses Python's stdlib `logging` module. Logging is configured once at CLI startup via `matlock.logging_setup.setup_logging(config)`.
 
 - **Console (stderr):** WARNING and above — always active, regardless of config.
 - **File (rotating):** DEBUG and above — enabled when `log_path` is set in `config.yaml`. The file rotates when it reaches `log_max_bytes`; up to `log_backup_count` rotated files are kept.
+- **Search query isolation:** `matlock search query --stdio` temporarily routes root logging to a dedicated `search.log` file while reserving stderr for error-level events only, so stdout remains machine-parseable JSON.
 
 Typical log file entries:
 
@@ -121,14 +144,14 @@ Typical log file entries:
 Configure in `config.yaml`:
 
 ```yaml
-log_path: "/Users/me/Matlock/matlock.log"   # absolute path required
+log_path: "/Users/me/Matlock/matlock.log"   # absolute path recommended
 log_max_bytes: 10000000                       # 10 MB
 log_backup_count: 3
 ```
 
 Omit `log_path` (or set to `null`) to suppress file logging while keeping stderr warnings.
 
-## 10. Output & Rendering
+## 11. Output & Rendering
 
 All reports are standard Markdown (tables, checkboxes, emojis). They render natively in Obsidian, VS Code, and GitHub — no plugins required.
 
