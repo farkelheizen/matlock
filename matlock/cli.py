@@ -7,8 +7,9 @@ Usage:
     matlock --config PATH map-projects
     matlock --config PATH rollup [--date YYYY-MM-DD]
     matlock --config PATH report [--target {all,dashboard,projects,history}] [--project-id ID]
-    matlock --config PATH run-all [--scan-projects] [--skip-rollup] [--force-sync]
-    matlock --config PATH server [--debounce SECONDS]
+    matlock --config PATH run-all [--scan-projects] [--skip-rollup] [--force-sync] [--index-search]
+    matlock --config PATH server [--debounce SECONDS] [--index-search] [--index-search-continuous]
+    matlock --config PATH search index [--force] [--batch-size INT] [--model STRING]
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ from matlock.stages.map_projects import run_map_projects
 from matlock.stages.parse import run_parse
 from matlock.stages.report import run_report
 from matlock.stages.rollup import run_rollup
+from matlock.stages.search_index import run_search_index_stage
 from matlock.stages.sync import run_sync
 
 app = typer.Typer(
@@ -33,6 +35,8 @@ app = typer.Typer(
     help="Matlock — Markdown task & project engine.",
     add_completion=False,
 )
+search_app = typer.Typer(help="Search indexing and query commands.")
+app.add_typer(search_app, name="search")
 
 # Global state passed from the callback to subcommands via the Typer context
 _CONFIG_KEY = "config"
@@ -216,6 +220,54 @@ def report(
     )
 
 
+@search_app.command(name="index")
+def search_index(
+    ctx: typer.Context,
+    force: bool = typer.Option(
+        False,
+        "--force",
+        "-f",
+        help="Re-index all eligible files regardless of search freshness state.",
+    ),
+    batch_size: int = typer.Option(
+        None,
+        "--batch-size",
+        min=1,
+        help="Override the configured SQLite commit batch size for this run.",
+    ),
+    model: str = typer.Option(
+        None,
+        "--model",
+        help="Override the configured embedding model name for this run.",
+    ),
+) -> None:
+    """Build or refresh the local search index."""
+    cfg = _load_and_validate(ctx.obj[_CONFIG_KEY])
+
+    conn = get_connection(cfg.db_path)
+    try:
+        init_db(conn)
+        result = run_search_index_stage(
+            cfg,
+            conn,
+            force=force,
+            batch_size=batch_size,
+            model_name=model,
+        )
+    finally:
+        conn.close()
+
+    typer.echo(
+        "Search index complete: "
+        f"{result.indexed_files} indexed, "
+        f"{result.excluded_files} excluded, "
+        f"{result.failed_files} failed, "
+        f"{result.orphaned_files_purged} orphaned purged, "
+        f"{result.chunks_written} chunks, "
+        f"{result.vectors_written} vectors"
+    )
+
+
 @app.command(name="run-all")
 def run_all(
     ctx: typer.Context,
@@ -238,6 +290,11 @@ def run_all(
         False,
         "--force-report",
         help="Pass --force to the report stage (regenerate all, delete stale files).",
+    ),
+    index_search: bool = typer.Option(
+        False,
+        "--index-search",
+        help="Run search indexing after the core pipeline completes (opt-in).",
     ),
 ) -> None:
     """Run all pipeline stages in sequence: [scan-projects →] sync → parse → map-projects → rollup → report."""
@@ -311,6 +368,18 @@ def run_all(
             f"Report: {report_result.files_written} files written, "
             f"{report_result.files_deleted} deleted ({report_result.target})"
         )
+
+        if index_search:
+            search_result = run_search_index_stage(cfg, conn)
+            typer.echo(
+                "Search index: "
+                f"{search_result.indexed_files} indexed, "
+                f"{search_result.excluded_files} excluded, "
+                f"{search_result.failed_files} failed, "
+                f"{search_result.orphaned_files_purged} orphaned purged, "
+                f"{search_result.chunks_written} chunks, "
+                f"{search_result.vectors_written} vectors"
+            )
     finally:
         conn.close()
 
@@ -430,6 +499,16 @@ def server(
         "--force-report",
         help="Run a full forced report once at startup (after any startup sync/rollup).",
     ),
+    index_search: bool = typer.Option(
+        False,
+        "--index-search",
+        help="Run search indexing once at startup before the watcher starts.",
+    ),
+    index_search_continuous: bool = typer.Option(
+        False,
+        "--index-search-continuous",
+        help="Continuously poll for stale search work in the background.",
+    ),
 ) -> None:
     """Watch the vault and run pipeline stages automatically."""
     cfg = _load_and_validate(ctx.obj[_CONFIG_KEY])
@@ -469,4 +548,6 @@ def server(
         force_sync=force_sync,
         force_rollup=force_rollup,
         force_report=force_report,
+        index_search=index_search,
+        index_search_continuous=index_search_continuous,
     )

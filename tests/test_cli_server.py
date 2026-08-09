@@ -72,6 +72,14 @@ class TestServerHelp:
         result = _invoke_help()
         assert "--force-report" in result.output
 
+    def test_index_search_option_in_help(self):
+        result = _invoke_help()
+        assert "--index-search" in result.output
+
+    def test_index_search_continuous_option_in_help(self):
+        result = _invoke_help()
+        assert "--index-search-continuous" in result.output
+
 
 # ---------------------------------------------------------------------------
 # New flag pass-through tests
@@ -93,7 +101,8 @@ class TestServerNewFlags:
         calls: list = []
 
         def fake_run_server(cfg, debounce_seconds=None, skip_rollup=False,
-                            force_sync=False, force_rollup=False, force_report=False):
+                            force_sync=False, force_rollup=False, force_report=False,
+                            index_search=False, index_search_continuous=False):
             calls.append({"force_sync": force_sync})
 
         with patch("matlock.cli.run_server", side_effect=fake_run_server):
@@ -107,7 +116,8 @@ class TestServerNewFlags:
         calls: list = []
 
         def fake_run_server(cfg, debounce_seconds=None, skip_rollup=False,
-                            force_sync=False, force_rollup=False, force_report=False):
+                            force_sync=False, force_rollup=False, force_report=False,
+                            index_search=False, index_search_continuous=False):
             calls.append({"force_rollup": force_rollup})
 
         with patch("matlock.cli.run_server", side_effect=fake_run_server):
@@ -121,7 +131,8 @@ class TestServerNewFlags:
         calls: list = []
 
         def fake_run_server(cfg, debounce_seconds=None, skip_rollup=False,
-                            force_sync=False, force_rollup=False, force_report=False):
+                            force_sync=False, force_rollup=False, force_report=False,
+                            index_search=False, index_search_continuous=False):
             calls.append({"force_report": force_report})
 
         with patch("matlock.cli.run_server", side_effect=fake_run_server):
@@ -135,7 +146,8 @@ class TestServerNewFlags:
         calls: list = []
 
         def fake_run_server(cfg, debounce_seconds=None, skip_rollup=False,
-                            force_sync=False, force_rollup=False, force_report=False):
+                            force_sync=False, force_rollup=False, force_report=False,
+                            index_search=False, index_search_continuous=False):
             calls.append({"skip_rollup": skip_rollup})
 
         with patch("matlock.cli.run_server", side_effect=fake_run_server):
@@ -143,6 +155,35 @@ class TestServerNewFlags:
 
         assert result.exit_code == 0
         assert calls[0]["skip_rollup"] is True
+
+    def test_index_search_passed_to_run_server(self, tmp_path: Path):
+        cfg_path = self._cfg(tmp_path)
+        calls: list = []
+
+        def fake_run_server(cfg, **kwargs):
+            calls.append(kwargs)
+
+        with patch("matlock.cli.run_server", side_effect=fake_run_server):
+            result = runner.invoke(app, ["--config", str(cfg_path), "server", "--index-search"])
+
+        assert result.exit_code == 0
+        assert calls[0]["index_search"] is True
+
+    def test_index_search_continuous_passed_to_run_server(self, tmp_path: Path):
+        cfg_path = self._cfg(tmp_path)
+        calls: list = []
+
+        def fake_run_server(cfg, **kwargs):
+            calls.append(kwargs)
+
+        with patch("matlock.cli.run_server", side_effect=fake_run_server):
+            result = runner.invoke(
+                app,
+                ["--config", str(cfg_path), "server", "--index-search-continuous"],
+            )
+
+        assert result.exit_code == 0
+        assert calls[0]["index_search_continuous"] is True
 
     def test_scan_projects_runs_merge_then_reloads(self, tmp_path: Path):
         cfg_path = self._cfg(tmp_path)
@@ -176,12 +217,15 @@ class TestServerNewFlags:
         calls: list = []
 
         def fake_run_server(cfg, debounce_seconds=None, skip_rollup=False,
-                            force_sync=False, force_rollup=False, force_report=False):
+                            force_sync=False, force_rollup=False, force_report=False,
+                            index_search=False, index_search_continuous=False):
             calls.append({
                 "skip_rollup": skip_rollup,
                 "force_sync": force_sync,
                 "force_rollup": force_rollup,
                 "force_report": force_report,
+                "index_search": index_search,
+                "index_search_continuous": index_search_continuous,
             })
 
         with patch("matlock.cli.run_server", side_effect=fake_run_server):
@@ -193,6 +237,8 @@ class TestServerNewFlags:
             "force_sync": False,
             "force_rollup": False,
             "force_report": False,
+            "index_search": False,
+            "index_search_continuous": False,
         }
 
 
