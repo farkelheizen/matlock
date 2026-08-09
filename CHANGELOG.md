@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+---
+
+## [0.4.0] — 2026-08-09
+
 ### Added
 
 - `SECURITY.md` with guidance for keeping the public code repository separate from private vault data and generated outputs.
