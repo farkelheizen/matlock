@@ -184,7 +184,7 @@ The indexer only considers active, non-generated Markdown files. It clears searc
 ```bash
 poetry run matlock search index
 poetry run matlock search index --force
-poetry run matlock search index --batch-size 25 --model all-MiniLM-L6-v2
+poetry run matlock search index --batch-size 25 --model sentence-transformers/all-MiniLM-L6-v2
 ```
 
 ### `matlock search query`
@@ -201,6 +201,7 @@ matlock search query [QUERY] [OPTIONS]
 | `--search-mode TEXT` | `hybrid` | Human-mode search strategy: `hybrid`, `fts_only`, `vector_only`, `metadata_only` |
 | `--granularity TEXT` | `chunk` | Human-mode result shape: `chunk` or `file` |
 | `--limit INT` | `10` | Maximum number of results to return in human mode |
+| `--min-score FLOAT` | `None` | Optional minimum score threshold for returned matches |
 | `--surrounding-chunks INT` | `0` | Number of adjacent chunks to include before/after a chunk hit (0-3) |
 | `--include-content / --no-include-content` | `True` | Include matched content in human-mode output |
 | `--config PATH` | `./config.yaml` | Config file location |
@@ -211,6 +212,7 @@ Human mode requires the positional `QUERY` argument. In `--stdio` mode, omit the
 ```bash
 poetry run matlock search query "database"
 poetry run matlock search query "database" --search-mode fts_only --granularity file --limit 5
+poetry run matlock search query "database" --search-mode hybrid --min-score 0.03 --limit 20
 printf '{"query": "database", "search_mode": "fts_only"}' | poetry run matlock search query --stdio
 ```
 

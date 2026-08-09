@@ -42,6 +42,30 @@ headers:
 tasks:
   task_text_maxlen: 500     # Characters before truncation (sets overflow=True)
 
+# ── Search ─────────────────────────────────────────
+
+search:
+  indexing:
+    enabled: false
+    batch_size: 100
+
+  chunking:
+    strategy: fixed_token      # fixed_token | markdown_header
+    chunk_size: 500
+    chunk_overlap: 50
+    inject_frontmatter: true
+    frontmatter_template: "[Project: {db.project_id} | File: {sys.file_name} | Status: {fm.status}]\n\n"
+
+  embedding:
+    provider: fastembed        # fastembed | openai-compatible
+    model_name: sentence-transformers/all-MiniLM-L6-v2
+    dimensions: 384
+    # The api_* fields are only used when provider=openai-compatible.
+    # They are ignored when provider=fastembed.
+    api_base_url: null
+    api_base_url_env_var: null
+    api_key_env_var: OPENAI_API_KEY
+
 # ── Parser: task attributes ─────────────────────────
 
 # Attribute definitions consumed by the task extraction engine.

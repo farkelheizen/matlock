@@ -151,7 +151,7 @@ def test_default_search_config(tmp_path: Path) -> None:
     assert config.search.chunking.chunk_size == 500
     assert config.search.chunking.chunk_overlap == 50
     assert config.search.embedding.provider == "fastembed"
-    assert config.search.embedding.model_name == "all-MiniLM-L6-v2"
+    assert config.search.embedding.model_name == "sentence-transformers/all-MiniLM-L6-v2"
     assert config.search.embedding.dimensions == 384
     assert config.search.embedding.api_key_env_var == "OPENAI_API_KEY"
 

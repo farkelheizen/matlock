@@ -171,7 +171,7 @@ class SearchEmbeddingConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     provider: Literal["fastembed", "openai-compatible"] = "fastembed"
-    model_name: str = "all-MiniLM-L6-v2"
+    model_name: str = "sentence-transformers/all-MiniLM-L6-v2"
     dimensions: int = Field(default=384, ge=1)
     api_base_url: str | None = None
     api_base_url_env_var: str | None = None

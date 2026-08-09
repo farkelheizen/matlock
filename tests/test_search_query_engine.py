@@ -235,6 +235,32 @@ def test_hybrid_combines_fts_and_vector_rankings(tmp_path: Path, conn) -> None:
     assert response.results[0].score_breakdown.rrf_score == pytest.approx(response.results[0].score)
 
 
+def test_metadata_query_handles_millisecond_epoch_timestamps(tmp_path: Path, conn) -> None:
+    config = _seed_dataset(conn, tmp_path)
+
+    conn.execute(
+        "UPDATE file SET created = ?, modified = ? WHERE file_path = ?",
+        (1716824777000, 1717545576000, "Notes/alpha.md"),
+    )
+    conn.commit()
+
+    engine = SearchQueryEngine(config, conn, embedding_provider=FakeQueryEmbeddingProvider())
+    response = engine.execute(
+        {
+            "filters": {
+                "project_id": ["proj-alpha"],
+                "project_match_mode": "exact",
+            },
+            "output": {"granularity": "file", "include_content": False, "limit": 1},
+        }
+    )
+
+    assert response.status == "success"
+    assert len(response.results) == 1
+    assert response.results[0].created.startswith("2024-")
+    assert response.results[0].modified.startswith("2024-")
+
+
 def test_project_filters_require_exact_match_mode(tmp_path: Path, conn) -> None:
     config = _seed_dataset(conn, tmp_path)
     engine = SearchQueryEngine(config, conn, embedding_provider=FakeQueryEmbeddingProvider())

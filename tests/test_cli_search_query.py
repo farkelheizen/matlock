@@ -77,6 +77,7 @@ class TestSearchQueryHelp:
         assert result.exit_code == 0
         assert "--stdio" in result.stdout
         assert "--search-mode" in result.stdout
+        assert "--min-score" in result.stdout
 
 
 class TestSearchQueryHumanMode:
@@ -132,3 +133,25 @@ class TestSearchQueryHumanMode:
 
         assert result.exit_code == 0
         assert "Notes/alpha.md" in result.stdout
+
+    def test_human_mode_min_score_filters_results(self, tmp_path: Path):
+        cfg_path, vault, db_path = _make_cfg(tmp_path)
+        seed_search_db(db_path, vault)
+
+        result = runner.invoke(
+            app,
+            [
+                "--config",
+                str(cfg_path),
+                "search",
+                "query",
+                "database",
+                "--search-mode",
+                "fts_only",
+                "--min-score",
+                "2.0",
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert "No matches." in result.stdout
