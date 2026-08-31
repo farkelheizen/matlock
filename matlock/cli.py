@@ -22,8 +22,9 @@ from pathlib import Path
 import typer
 
 from matlock.config import load_config, validate_config_paths
-from matlock.db import get_connection, init_db
+from matlock.db import get_connection, get_file, init_db, set_file_secret_detection
 from matlock.logging_setup import setup_logging
+from matlock.redaction import get_redacted_document, scan_document_for_secrets
 from matlock.search.logging import isolated_search_logging
 from matlock.search.query_cli import (
     EXIT_CODE_EMBEDDING_ERROR,
@@ -132,6 +133,80 @@ def parse(ctx: typer.Context) -> None:
         f"Parse complete: {result.parsed} parsed, {result.skipped} skipped, "
         f"{result.tasks_inserted} tasks inserted, {result.tasks_deleted} tasks deleted"
     )
+
+
+def _normalize_doc_read_path(base_directory: Path, file_path: str) -> tuple[Path, str]:
+    """Resolve one CLI path argument to an in-vault absolute path and DB key."""
+    raw_path = Path(file_path).expanduser()
+    base_resolved = base_directory.resolve()
+    if raw_path.is_absolute():
+        abs_path = raw_path.resolve()
+    else:
+        abs_path = (base_resolved / raw_path).resolve()
+
+    try:
+        relative = abs_path.relative_to(base_resolved)
+    except ValueError as exc:
+        raise ValueError("path must be inside base_directory") from exc
+
+    return abs_path, relative.as_posix()
+
+
+@app.command(name="doc-read")
+def doc_read(
+    ctx: typer.Context,
+    file_path: str = typer.Argument(..., help="Vault-relative or vault-contained absolute file path."),
+) -> None:
+    """Read a tracked document, redacting content when secret state requires it."""
+    cfg = _load_and_validate(ctx.obj[_CONFIG_KEY])
+
+    try:
+        abs_path, db_file_path = _normalize_doc_read_path(cfg.base_directory, file_path)
+    except ValueError as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(code=1)
+
+    conn = get_connection(cfg.db_path)
+    try:
+        init_db(conn)
+        file_row = get_file(conn, db_file_path)
+        if file_row is None:
+            typer.echo(
+                "Error: file is not tracked in the database; run sync and parse first",
+                err=True,
+            )
+            raise typer.Exit(code=1)
+
+        if file_row["deleted"] == 1:
+            typer.echo("Error: file is marked deleted in the database", err=True)
+            raise typer.Exit(code=1)
+
+        has_secrets = file_row["has_secrets"]
+        if has_secrets is None:
+            scan_result = scan_document_for_secrets(abs_path)
+            set_file_secret_detection(
+                conn,
+                db_file_path,
+                has_secrets=scan_result.has_secrets,
+                secret_detection_error=scan_result.secret_detection_error,
+            )
+            conn.commit()
+            has_secrets = 1 if scan_result.has_secrets else 0
+
+        if has_secrets:
+            content = get_redacted_document(abs_path, cfg.cache.redacted_dir)
+        else:
+            content = abs_path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        typer.echo("Error: file does not exist on disk", err=True)
+        raise typer.Exit(code=1)
+    except OSError as exc:
+        typer.echo(f"Error: failed to read file: {exc}", err=True)
+        raise typer.Exit(code=1)
+    finally:
+        conn.close()
+
+    typer.echo(content, nl=False)
 
 
 @app.command(name="map-projects")

@@ -42,7 +42,7 @@ Release Matlock 0.5.0 with `detect-secrets`-based detection and safe document/se
 | SDR-S1 | Completed | Establish dependency, configuration, and persistent contract | Dependency/lock, cache config, file migration/upsert behavior, search result fields, active-plan tracking | `test_config.py`, `test_matlock_config.py`, `test_db.py`, `test_db_search_schema.py`, `test_search_models.py`, `test_search_query_engine.py` |
 | SDR-S2 | Completed | Scan current parsed documents safely | Shared detector adapter and parse integration | `test_redaction.py`, `test_parse.py` |
 | SDR-S3 | Completed | Build redaction cache and protect search | Cache helper, search invalidation/index/query protection | `test_redaction.py`, `test_search_indexer.py`, `test_query_engine.py`, `test_cli_search_query.py`, `test_db_search_schema.py` |
-| SDR-S4 | Not Started | Deliver safe direct file reads | Top-level `doc-read` and legacy-state update | `test_cli_doc_read.py` |
+| SDR-S4 | Completed | Deliver safe direct file reads | Top-level `doc-read` and legacy-state update | `test_cli_doc_read.py` |
 | SDR-S5 | Not Started | Ship the versioned feature | 0.5.0 metadata, changelog, docs scan | full suite and metadata checks |
 
 Status values: `Not Started` | `In Progress` | `Completed` | `Blocked`
@@ -140,9 +140,9 @@ Status values: `Not Started` | `In Progress` | `Completed` | `Blocked`
 - Validation: Focused `poetry run pytest tests/test_redaction.py tests/test_search_indexer.py tests/test_search_query_engine.py tests/test_cli_search_query.py tests/test_db_search_schema.py` passed (36 passed, 1 existing `pytimeparse` deprecation warning). Adjacent `poetry run pytest tests/test_config.py tests/test_db.py tests/test_parse.py tests/test_redaction.py tests/test_search_indexer.py tests/test_search_query_engine.py tests/test_cli_search_query.py tests/test_db_search_schema.py` passed (120 passed, 1 warning). Full `poetry run pytest` passed (855 passed, 1 warning).
 
 ### SDR-S4 Notes
-- Changes made: pending.
+- Changes made: Added top-level `matlock doc-read FILE_PATH` in `matlock/cli.py` with vault-relative and vault-contained absolute path support, strict base-directory containment checks, database-key normalization, and rejection for untracked/deleted files. Added legacy-state handling (`has_secrets IS NULL`) that performs on-demand detection, persists `has_secrets` and `secret_detection_error`, and then emits raw or redacted output accordingly. Added focused CLI coverage in `tests/test_cli_doc_read.py` for clean, unsafe, legacy, absolute-path, and path-safety/error flows. Updated `docs/matlock-cli.md` with command usage, behavior contract, and examples.
 - Deviations: none.
-- Validation: pending.
+- Validation: Focused `poetry run pytest tests/test_cli_doc_read.py` passed (7 passed, 1 existing `pytimeparse` deprecation warning). Adjacent `poetry run pytest tests/test_cli_doc_read.py tests/test_cli_parse.py tests/test_parse.py tests/test_redaction.py tests/test_db.py` passed (101 passed, 1 warning). Full `poetry run pytest` passed (862 passed, 1 warning).
 
 ### SDR-S5 Notes
 - Changes made: pending.

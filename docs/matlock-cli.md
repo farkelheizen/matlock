@@ -61,6 +61,36 @@ poetry run matlock parse
 
 ---
 
+### `matlock doc-read`
+
+Read one tracked document from the vault with secret-safe behavior.
+
+```
+matlock doc-read FILE_PATH [OPTIONS]
+```
+
+| Argument / Option | Description |
+|:------------------|:------------|
+| `FILE_PATH` | Vault-relative path (for example `Notes/today.md`) or an absolute path contained inside `base_directory` |
+| `--config PATH` | Config file location |
+
+Behavior:
+
+- Rejects paths outside `base_directory`.
+- Rejects files not tracked in the `file` table.
+- Rejects files marked deleted in the database.
+- If `file.has_secrets = 0`, emits raw UTF-8 file content.
+- If `file.has_secrets = 1`, emits cache-backed redacted content.
+- If `file.has_secrets IS NULL` (legacy state), runs an on-demand secret scan, persists the state, then emits raw or redacted content based on that result.
+
+**Examples:**
+```bash
+poetry run matlock doc-read Notes/today.md
+poetry run matlock doc-read /absolute/path/inside/your/vault/Notes/today.md
+```
+
+---
+
 ### `matlock map-projects`
 
 **Stage III.** Rebuild the `project`, `super_project`, and `file_project` tables from `config.yaml`. Always a full rebuild.
