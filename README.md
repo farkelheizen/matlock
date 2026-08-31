@@ -116,6 +116,7 @@ Secret safety behavior:
 - Detect-backfill scans existing unknown-state tracked documents and can retry prior scanner-error rows.
 - Search indexing/query and the doc-read command redact unsafe content.
 - Legacy documents (unknown secret state) are scanned lazily and then persisted.
+- Redaction cache files are stored by hash under `cache.redacted_dir/<sha256[:2]>/<sha256[2:4]>/<sha256>.txt`, with backward-compatible reads for older flat cache files.
 
 Project `resources` control which files are associated with a project during `map-projects`:
 

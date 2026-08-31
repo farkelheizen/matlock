@@ -15,10 +15,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Changed
 
 - `matlock detect-backfill --retry-errors` now allows targeted rescans for rows with previous `secret_detection_error` values while preserving confirmed non-error states.
+- Redaction cache files now use a two-level hash-prefix directory layout under `cache.redacted_dir` to distribute cache files across subdirectories.
 
 ### Fixed
 
 - Existing tracked documents with legacy unknown secret state can now be backfilled in bulk without waiting for lazy read/query paths.
+- Existing legacy flat redaction cache files remain readable through fallback lookup.
 
 ---
 

@@ -61,9 +61,13 @@ def get_redacted_document(file_path: str | Path, cache_dir: str | Path) -> str:
     file_hash = hashlib.sha256(raw_bytes).hexdigest()
 
     cache_root = Path(cache_dir).expanduser()
-    cache_file = cache_root / f"{file_hash}.txt"
+    cache_file = _sharded_cache_file(cache_root, file_hash)
     if cache_file.exists():
         return cache_file.read_text(encoding="utf-8")
+
+    legacy_cache_file = _legacy_cache_file(cache_root, file_hash)
+    if legacy_cache_file.exists():
+        return legacy_cache_file.read_text(encoding="utf-8")
 
     scan_result = scan_document_for_secrets(source)
     if scan_result.secret_detection_error is not None:
@@ -75,9 +79,17 @@ def get_redacted_document(file_path: str | Path, cache_dir: str | Path) -> str:
     else:
         redacted_text = _redact_text(original_text, scan_result.findings)
 
-    cache_root.mkdir(parents=True, exist_ok=True)
+    cache_file.parent.mkdir(parents=True, exist_ok=True)
     _atomic_write_text(cache_file, redacted_text)
     return redacted_text
+
+
+def _sharded_cache_file(cache_root: Path, file_hash: str) -> Path:
+    return cache_root / file_hash[:2] / file_hash[2:4] / f"{file_hash}.txt"
+
+
+def _legacy_cache_file(cache_root: Path, file_hash: str) -> Path:
+    return cache_root / f"{file_hash}.txt"
 
 
 def _extract_findings(payload: Any) -> list[SecretFinding]:

@@ -3,8 +3,8 @@
 Use this file to identify the active implementation plan before starting work.
 
 - Active plan: `docs/copilot/plans/20260831-secret-detection-backfill.md`
-- Current step: SDB-S2 (Completed; review and commit approval pending)
-- Next plan: Commit SDB-S2 documentation updates after approval
+- Current step: SDB-S3 (Completed; review and commit approval pending)
+- Next plan: Commit SDB-S3 cache-partitioning updates after approval
 - Last updated: 2026-08-31
 - Owner: Copilot
 

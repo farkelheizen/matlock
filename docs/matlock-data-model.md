@@ -120,6 +120,12 @@ Backfill behavior:
 - Default candidates are active tracked rows where `has_secrets IS NULL`.
 - `--retry-errors` includes rows with `secret_detection_error IS NOT NULL`.
 
+Redaction cache layout:
+
+- Successful redacted document content is cached by raw-byte SHA-256 under `cache.redacted_dir/<sha256[:2]>/<sha256[2:4]>/<sha256>.txt`.
+- Reads check the sharded path first, then the legacy flat fallback `cache.redacted_dir/<sha256>.txt`.
+- Scan failures return placeholders and do not create cache files.
+
 ### `task` table
 
 Stores all extracted task items.

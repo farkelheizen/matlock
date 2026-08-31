@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from contextlib import nullcontext
 from pathlib import Path
 
@@ -101,7 +102,9 @@ def test_get_redacted_document_masks_exact_secret_and_caches(tmp_path: Path, mon
     output = redaction.get_redacted_document(source, cache_dir)
 
     assert output == f"token={REDACTED_PLACEHOLDER}\nkeep=this\n"
-    assert list(cache_dir.glob("*.txt"))
+    file_hash = hashlib.sha256(source.read_bytes()).hexdigest()
+    expected_cache_file = cache_dir / file_hash[:2] / file_hash[2:4] / f"{file_hash}.txt"
+    assert expected_cache_file.exists()
 
 
 def test_get_redacted_document_redacts_full_line_without_secret_value(tmp_path: Path, monkeypatch):
@@ -161,6 +164,54 @@ def test_get_redacted_document_uses_cache_before_rescanning(tmp_path: Path, monk
     second = redaction.get_redacted_document(source, cache_dir)
 
     assert first == second
+
+
+def test_get_redacted_document_prefers_sharded_cache_over_legacy(tmp_path: Path, monkeypatch):
+    source = tmp_path / "note.md"
+    source.write_text("token=abc123\n", encoding="utf-8")
+    cache_dir = tmp_path / "cache"
+    file_hash = hashlib.sha256(source.read_bytes()).hexdigest()
+
+    sharded_cache_file = cache_dir / file_hash[:2] / file_hash[2:4] / f"{file_hash}.txt"
+    sharded_cache_file.parent.mkdir(parents=True, exist_ok=True)
+    sharded_cache_file.write_text("from-sharded", encoding="utf-8")
+
+    legacy_cache_file = cache_dir / f"{file_hash}.txt"
+    legacy_cache_file.parent.mkdir(parents=True, exist_ok=True)
+    legacy_cache_file.write_text("from-legacy", encoding="utf-8")
+
+    monkeypatch.setattr(
+        redaction,
+        "scan_document_for_secrets",
+        lambda _path: (_ for _ in ()).throw(RuntimeError("should not rescan")),
+    )
+
+    output = redaction.get_redacted_document(source, cache_dir)
+
+    assert output == "from-sharded"
+
+
+def test_get_redacted_document_reads_legacy_flat_cache_when_sharded_missing(
+    tmp_path: Path, monkeypatch
+):
+    source = tmp_path / "note.md"
+    source.write_text("token=abc123\n", encoding="utf-8")
+    cache_dir = tmp_path / "cache"
+    file_hash = hashlib.sha256(source.read_bytes()).hexdigest()
+
+    legacy_cache_file = cache_dir / f"{file_hash}.txt"
+    legacy_cache_file.parent.mkdir(parents=True, exist_ok=True)
+    legacy_cache_file.write_text("from-legacy", encoding="utf-8")
+
+    monkeypatch.setattr(
+        redaction,
+        "scan_document_for_secrets",
+        lambda _path: (_ for _ in ()).throw(RuntimeError("should not rescan")),
+    )
+
+    output = redaction.get_redacted_document(source, cache_dir)
+
+    assert output == "from-legacy"
 
 
 def test_get_redacted_document_does_not_cache_scan_failures(tmp_path: Path, monkeypatch):

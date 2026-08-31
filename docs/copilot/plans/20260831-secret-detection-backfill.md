@@ -38,6 +38,7 @@ Provide a safe `matlock detect-backfill` command that resolves secret-detection 
 |---|---|---|---|---|
 | SDB-S1 | Completed | Implement secret-state bulk backfill | Candidate DB helper, backfill stage/result, `detect-backfill` CLI, focused DB/stage/CLI tests | `test_detect_backfill.py`, `test_cli_detect_backfill.py`, `test_db.py` |
 | SDB-S2 | Completed | Document the command | CLI/pipeline/schema/search/README/docs-map updates and Unreleased changelog entry | focused documentation assertions where applicable; full suite |
+| SDB-S3 | Completed | Partition redaction cache by hash prefix | Sharded cache path (`<root>/<h0h1>/<h2h3>/<sha256>.txt`), legacy flat-path read fallback, focused cache-layout tests, and docs update for cache layout behavior | `test_redaction.py`, adjacent secret/search regression tests, full suite |
 
 Status values: `Not Started` | `In Progress` | `Completed` | `Blocked`
 
@@ -83,6 +84,23 @@ Status values: `Not Started` | `In Progress` | `Completed` | `Blocked`
 **Definition of done:**
 - Documentation accurately explains the backfill operation and its boundaries, while release metadata remains at 0.5.0.
 
+### SDB-S3 Hash-Partitioned Redaction Cache
+**Files (expected):**
+- `matlock/redaction.py`
+- `tests/test_redaction.py`
+- `README.md`
+- `docs/matlock-data-model.md`
+
+**Implementation notes:**
+- Write successful redaction cache files under a deterministic two-level hash fanout path: `<redacted_dir>/<sha256[:2]>/<sha256[2:4]>/<sha256>.txt`.
+- Keep backward-compatible cache reads by checking the sharded path first, then the legacy flat path (`<redacted_dir>/<sha256>.txt`).
+- Preserve existing fail-closed safety behavior: scan failures return a full-document placeholder and are not cached.
+- Preserve existing cache key semantics (SHA-256 of raw source bytes) so cache invalidation behavior remains content-addressed.
+- Update documentation where cache layout is described to reflect the sharded storage and legacy fallback behavior.
+
+**Definition of done:**
+- Redaction cache files are sharded by hash prefix, legacy flat cache entries remain readable, and all existing safety semantics are preserved.
+
 ---
 
 ## Acceptance Criteria
@@ -93,6 +111,7 @@ Status values: `Not Started` | `In Progress` | `Completed` | `Blocked`
 - Unavailable files are reported as skipped without mutation.
 - The operation leaves tasks, `needs_parsing`, source text, search rows, and cache files unchanged.
 - User-facing documentation and Unreleased changelog entry explain the new command.
+- Redaction cache writes are sharded by hash prefix while maintaining backward-compatible reads for legacy flat cache entries.
 - Each step passes focused, adjacent, and full Poetry test gates before review.
 
 ## Risks / Notes
@@ -107,6 +126,9 @@ Status values: `Not Started` | `In Progress` | `Completed` | `Blocked`
 2. Adjacent SDB-S1: `poetry run pytest tests/test_parse.py tests/test_redaction.py tests/test_cli_doc_read.py tests/test_search_indexer.py tests/test_search_query_engine.py`
 3. Full suite: `poetry run pytest`
 4. Manual temporary-vault smoke: invoke default command, verify only unknown rows change; invoke `--retry-errors`, verify only errored rows are retried.
+5. Focused SDB-S3: `poetry run pytest tests/test_redaction.py`
+6. Adjacent SDB-S3: `poetry run pytest tests/test_parse.py tests/test_cli_doc_read.py tests/test_search_indexer.py tests/test_search_query_engine.py`
+7. Full suite: `poetry run pytest`
 
 Record results:
 - Focused: pending.
@@ -122,6 +144,7 @@ Record results:
 - Retry behavior: `--retry-errors` adds only files with `secret_detection_error`, including any unknown rows.
 - Filesystem failure policy: skip and retain state; do not conflate unavailable files with scanner errors.
 - Scope boundary: redaction cache population and search reindexing remain owned by existing lazy read/index workflows.
+- Redaction cache storage layout uses two-level hash-prefix fanout, with legacy flat-path reads retained for compatibility.
 - Commit cadence: request approval after each completed step, then commit only its scoped changes.
 
 ## Step Notes Log
@@ -135,6 +158,11 @@ Record results:
 - Changes made: Added `Unreleased` changelog entries for secret-state backfill and retry semantics. Updated user-facing command and architecture docs to include `matlock detect-backfill [--retry-errors]`, including default candidate selection, retry behavior, unavailable-file skip behavior, and explicit non-effects (no reparse/cache/reindex). Updated reference routing in `docs/copilot/copilot-docs-reference.md` and added README quick-start/CLI examples for backfill workflows.
 - Deviations: none.
 - Validation: Focused `poetry run pytest tests/test_cli_detect_backfill.py tests/test_detect_backfill.py` passed (6 passed, 1 existing `pytimeparse` deprecation warning). Adjacent `poetry run pytest tests/test_parse.py tests/test_redaction.py tests/test_cli_doc_read.py tests/test_search_indexer.py tests/test_search_query_engine.py` passed (64 passed, 1 warning). Full `poetry run pytest` passed (868 passed, 1 warning).
+
+### SDB-S3 Notes
+- Changes made: Updated redaction cache storage to use a two-level SHA-256 prefix fanout path under `cache.redacted_dir` (`<sha256[:2]>/<sha256[2:4]>/<sha256>.txt`) for new writes. Added backward-compatible reads that check sharded path first and then legacy flat-path cache entries. Preserved existing fail-closed placeholder behavior for scanner failures (no cache writes). Added focused tests for sharded cache creation, sharded-vs-legacy precedence, and legacy fallback reads. Updated README, data-model documentation, and Unreleased changelog entries to reflect the new cache layout and compatibility behavior.
+- Deviations: none.
+- Validation: Focused `poetry run pytest tests/test_redaction.py` passed (9 passed, 1 existing `pytimeparse` deprecation warning). Adjacent `poetry run pytest tests/test_parse.py tests/test_cli_doc_read.py tests/test_search_indexer.py tests/test_search_query_engine.py` passed (57 passed, 1 warning). Full `poetry run pytest` passed (870 passed, 1 warning).
 
 ---
 
