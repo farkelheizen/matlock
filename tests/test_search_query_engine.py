@@ -6,7 +6,14 @@ from pathlib import Path
 import pytest
 
 from matlock.config import MatlockConfig
-from matlock.db import get_connection, init_db, replace_search_chunks, upsert_file, upsert_search_vector
+from matlock.db import (
+    get_connection,
+    init_db,
+    replace_search_chunks,
+    set_file_secret_detection,
+    upsert_file,
+    upsert_search_vector,
+)
 from matlock.search.query_engine import SearchQueryEngine
 
 
@@ -196,6 +203,27 @@ def test_fts_only_returns_ranked_chunk_matches(tmp_path: Path, conn) -> None:
     assert response.results[0].chunk_details is not None
     assert response.results[0].chunk_details.chunk_id == "Notes/alpha.md#0001"
     assert response.results[0].score_breakdown.fts_rank == 1
+
+
+def test_search_response_includes_stored_secret_detection_metadata(tmp_path: Path, conn) -> None:
+    config = _seed_dataset(conn, tmp_path)
+    set_file_secret_detection(conn, "Notes/alpha.md", True, "scanner failed")
+    conn.commit()
+
+    response = SearchQueryEngine(
+        config,
+        conn,
+        embedding_provider=FakeQueryEmbeddingProvider(),
+    ).execute(
+        {
+            "query": "database optimization",
+            "search_mode": "fts_only",
+            "output": {"granularity": "chunk", "limit": 1},
+        }
+    )
+
+    assert response.results[0].has_secrets is True
+    assert response.results[0].secret_detection_error == "scanner failed"
 
 
 def test_vector_only_uses_embedding_similarity(tmp_path: Path, conn) -> None:

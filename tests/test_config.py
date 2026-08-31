@@ -23,6 +23,11 @@ def test_config_maxlens_are_integers():
     assert isinstance(config["headers"]["header_text_maxlen"], int)
 
 
+def test_config_has_redacted_cache_directory():
+    config = load_config()
+    assert config["cache"]["redacted_dir"] == "~/.matlock/cache/redacted/"
+
+
 def test_config_aliases_contains_date_key():
     config = load_config()
     attributes = config["tasks"]["attributes"]

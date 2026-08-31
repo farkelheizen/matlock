@@ -149,7 +149,12 @@ def test_init_db_creates_search_schema(conn):
     file_columns = {
         row[1] for row in conn.execute("PRAGMA table_info(file)").fetchall()
     }
-    assert {"search_indexed_at", "search_index_hash"}.issubset(file_columns)
+    assert {
+        "search_indexed_at",
+        "search_index_hash",
+        "has_secrets",
+        "secret_detection_error",
+    }.issubset(file_columns)
 
     tables = {
         row["name"]
@@ -195,7 +200,13 @@ def test_init_db_migrates_legacy_database(tmp_path: Path):
         ).fetchall()
     }
 
-    assert {"deleted_date", "search_indexed_at", "search_index_hash"}.issubset(file_columns)
+    assert {
+        "deleted_date",
+        "search_indexed_at",
+        "search_index_hash",
+        "has_secrets",
+        "secret_detection_error",
+    }.issubset(file_columns)
     assert "status" in project_columns
     assert {"search_chunks", "search_fts", "search_vec"}.issubset(tables)
     conn.close()

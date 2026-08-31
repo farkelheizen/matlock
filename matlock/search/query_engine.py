@@ -33,6 +33,8 @@ class ChunkMatch:
     frontmatter: dict[str, Any]
     created: str
     modified: str
+    has_secrets: bool | None
+    secret_detection_error: str | None
     score: float
     score_breakdown: SearchScoreBreakdown
 
@@ -239,6 +241,8 @@ class SearchQueryEngine:
                 created=match.created,
                 modified=match.modified,
                 frontmatter=match.frontmatter,
+                has_secrets=match.has_secrets,
+                secret_detection_error=match.secret_detection_error,
                 chunk_details={
                     "chunk_id": match.chunk_id,
                     "chunk_index": match.chunk_index,
@@ -306,6 +310,8 @@ class SearchQueryEngine:
                     created=best_match.created,
                     modified=best_match.modified,
                     frontmatter=best_match.frontmatter,
+                    has_secrets=best_match.has_secrets,
+                    secret_detection_error=best_match.secret_detection_error,
                     file_details={
                         "total_matching_chunks": len(file_matches),
                         "content": self._file_content(
@@ -334,6 +340,7 @@ class SearchQueryEngine:
         filter_clause, params = build_file_filter_clause(request.filters)
         sql = (
             "SELECT f.file_path, f.created, f.modified, f.modified_date, f.meta_data,"
+            "       f.has_secrets, f.secret_detection_error,"
             "       (SELECT fp.project_id FROM file_project fp"
             "         WHERE fp.file_path = f.file_path ORDER BY fp.project_id LIMIT 1) AS project_id,"
             "       (SELECT p.super_project_id FROM file_project fp"
@@ -361,6 +368,8 @@ class SearchQueryEngine:
                 created=_normalize_db_timestamp(row["created"]),
                 modified=_normalize_db_timestamp(row["modified"]),
                 frontmatter=_load_frontmatter(row["meta_data"]),
+                has_secrets=_normalize_nullable_bool(row["has_secrets"]),
+                secret_detection_error=row["secret_detection_error"],
                 file_details={
                     "total_matching_chunks": max(int(row["total_chunks"] or 0), 1),
                     "content": self._file_content(
@@ -393,6 +402,7 @@ class SearchQueryEngine:
         sql = (
             "SELECT sc.chunk_id, sc.file_id AS file_path, sc.chunk_index, sc.content,"
             "       f.created, f.modified, f.modified_date, f.meta_data,"
+            "       f.has_secrets, f.secret_detection_error,"
             "       (SELECT fp.project_id FROM file_project fp"
             "         WHERE fp.file_path = f.file_path ORDER BY fp.project_id LIMIT 1) AS project_id,"
             "       (SELECT p.super_project_id FROM file_project fp"
@@ -426,6 +436,7 @@ class SearchQueryEngine:
         select_prefix = (
             "SELECT sc.chunk_id, sc.file_id AS file_path, sc.chunk_index, sc.content,"
             "       f.created, f.modified, f.modified_date, f.meta_data,"
+            "       f.has_secrets, f.secret_detection_error,"
             "       (SELECT fp.project_id FROM file_project fp"
             "         WHERE fp.file_path = f.file_path ORDER BY fp.project_id LIMIT 1) AS project_id,"
             "       (SELECT p.super_project_id FROM file_project fp"
@@ -464,6 +475,8 @@ class SearchQueryEngine:
             frontmatter=_load_frontmatter(row["meta_data"]),
             created=_normalize_db_timestamp(row["created"]),
             modified=_normalize_db_timestamp(row["modified"]),
+            has_secrets=_normalize_nullable_bool(row["has_secrets"]),
+            secret_detection_error=row["secret_detection_error"],
             score=score,
             score_breakdown=score_breakdown,
         )
@@ -581,6 +594,12 @@ def _normalize_db_timestamp(value: object) -> str:
             parsed = parsed.replace(tzinfo=UTC)
         return parsed.replace(microsecond=0).isoformat().replace("+00:00", "Z")
     raise TypeError(f"unsupported timestamp value: {value!r}")
+
+
+def _normalize_nullable_bool(value: object) -> bool | None:
+    if value is None:
+        return None
+    return bool(value)
 
 
 def _decode_embedding(raw: bytes | str) -> list[float]:

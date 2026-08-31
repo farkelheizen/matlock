@@ -142,6 +142,19 @@ class TasksConfig(BaseModel):
     task_text_maxlen: int = 500
 
 
+class CacheConfig(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    redacted_dir: Path = Field(
+        default_factory=lambda: Path("~/.matlock/cache/redacted").expanduser()
+    )
+
+    @field_validator("redacted_dir", mode="before")
+    @classmethod
+    def _expand_user_directory(cls, value: object) -> Path:
+        return Path(str(value)).expanduser()
+
+
 class SearchIndexingConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -229,6 +242,7 @@ class MatlockConfig(BaseModel):
     dashboard_recent_changes_limit: int = Field(default=10, ge=1)
     headers: HeadersConfig = Field(default_factory=HeadersConfig)
     tasks: TasksConfig = Field(default_factory=TasksConfig)
+    cache: CacheConfig = Field(default_factory=CacheConfig)
     search: SearchConfig = Field(default_factory=SearchConfig)
     task_attributes: dict[str, TaskAttributeConfig] = Field(default_factory=dict)
     super_projects: list[SuperProjectConfig] = Field(default_factory=list)
