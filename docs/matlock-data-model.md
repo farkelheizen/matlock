@@ -114,6 +114,12 @@ Tracks every Markdown file under `base_directory`.
 | `has_secrets` | INTEGER |                  | Nullable detection state: `NULL` unknown legacy state, `0` confirmed clean, `1` secrets found or scan failed |
 | `secret_detection_error` | TEXT |            | Nullable scanner failure detail set only when secret detection errors occur |
 
+Backfill behavior:
+
+- `matlock detect-backfill` updates only `has_secrets` and `secret_detection_error` for candidate rows.
+- Default candidates are active tracked rows where `has_secrets IS NULL`.
+- `--retry-errors` includes rows with `secret_detection_error IS NOT NULL`.
+
 ### `task` table
 
 Stores all extracted task items.

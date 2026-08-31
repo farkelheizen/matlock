@@ -8,6 +8,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `matlock detect-backfill` command to scan active tracked files with unknown secret state (`has_secrets IS NULL`) and persist detection outcomes without requiring re-parse.
+
+### Changed
+
+- `matlock detect-backfill --retry-errors` now allows targeted rescans for rows with previous `secret_detection_error` values while preserving confirmed non-error states.
+
+### Fixed
+
+- Existing tracked documents with legacy unknown secret state can now be backfilled in bulk without waiting for lazy read/query paths.
+
 ---
 
 ## [0.5.0] — 2026-08-31

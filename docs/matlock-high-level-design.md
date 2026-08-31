@@ -35,6 +35,7 @@ Each stage is a discrete, independently invocable command. Stages communicate **
 Run all five stages in sequence with `matlock run-all`.
 
 For direct reads with the same safety guarantees, use `matlock doc-read <file_path>`.
+For bulk legacy-state resolution, use `matlock detect-backfill [--retry-errors]`.
 
 Matlock Search is additive rather than replacing the core pipeline:
 

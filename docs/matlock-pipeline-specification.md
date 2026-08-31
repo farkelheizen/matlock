@@ -87,6 +87,34 @@ Extract task data from files flagged by the `sync` stage and persist results to 
 
 ---
 
+## Secret Detection Backfill (Standalone Utility)
+
+**Module:** `matlock/stages/detect_backfill.py`
+**Command:** `matlock detect-backfill`
+
+### Responsibility
+
+Resolve legacy or errored secret-detection state in bulk without re-parsing tasks.
+
+### Logic
+
+1. Select active, non-generated files:
+   - Default: `has_secrets IS NULL`.
+   - With `--retry-errors`: `has_secrets IS NULL OR secret_detection_error IS NOT NULL`.
+2. For each candidate, attempt to open the tracked file path under `base_directory`.
+3. If file access fails, skip it and keep existing DB state.
+4. Otherwise, run `scan_document_for_secrets()` and persist `has_secrets` plus `secret_detection_error`.
+5. Keep fail-closed scanner semantics (`has_secrets = 1` when scanning fails).
+
+### What it does NOT do
+
+- It does not modify `needs_parsing`.
+- It does not update tasks.
+- It does not create redaction cache files.
+- It does not run search indexing.
+
+---
+
 ## Stage III — `map-projects` (The Project Mapper)
 
 **Module:** `matlock/stages/map_projects.py`

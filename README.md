@@ -34,6 +34,7 @@ poetry run matlock run-all --index-search
 # Or run each stage individually
 poetry run matlock sync
 poetry run matlock parse
+poetry run matlock detect-backfill
 poetry run matlock doc-read Notes/today.md
 poetry run matlock map-projects
 poetry run matlock rollup
@@ -112,6 +113,7 @@ projects:
 Secret safety behavior:
 
 - Parse records document-level secret detection state.
+- Detect-backfill scans existing unknown-state tracked documents and can retry prior scanner-error rows.
 - Search indexing/query and the doc-read command redact unsafe content.
 - Legacy documents (unknown secret state) are scanned lazily and then persisted.
 
@@ -201,6 +203,22 @@ poetry run matlock sync --force
 ```bash
 poetry run matlock parse
 ```
+
+### `matlock detect-backfill`
+
+Scan tracked files to populate or retry persisted secret-detection state.
+
+```bash
+poetry run matlock detect-backfill
+poetry run matlock detect-backfill --retry-errors
+```
+
+Behavior:
+
+- Default mode scans only active, non-generated tracked files with `has_secrets IS NULL`.
+- `--retry-errors` additionally rescans rows where `secret_detection_error IS NOT NULL`.
+- Missing/unreadable files are reported as skipped and retain existing state.
+- The command does not re-parse tasks, generate redaction cache files, or reindex search.
 
 ### `matlock map-projects`
 

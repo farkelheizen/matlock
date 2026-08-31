@@ -37,7 +37,7 @@ Provide a safe `matlock detect-backfill` command that resolves secret-detection 
 | Step ID | Status | Goal | Planned Changes | Test Coverage |
 |---|---|---|---|---|
 | SDB-S1 | Completed | Implement secret-state bulk backfill | Candidate DB helper, backfill stage/result, `detect-backfill` CLI, focused DB/stage/CLI tests | `test_detect_backfill.py`, `test_cli_detect_backfill.py`, `test_db.py` |
-| SDB-S2 | Not Started | Document the command | CLI/pipeline/schema/search/README/docs-map updates and Unreleased changelog entry | focused documentation assertions where applicable; full suite |
+| SDB-S2 | Completed | Document the command | CLI/pipeline/schema/search/README/docs-map updates and Unreleased changelog entry | focused documentation assertions where applicable; full suite |
 
 Status values: `Not Started` | `In Progress` | `Completed` | `Blocked`
 
@@ -132,9 +132,9 @@ Record results:
 - Validation: Initial test-first probe failed as expected because `matlock.stages.detect_backfill` did not yet exist. Focused `poetry run pytest tests/test_detect_backfill.py tests/test_cli_detect_backfill.py tests/test_db.py` passed (48 passed, 1 existing `pytimeparse` deprecation warning). Adjacent `poetry run pytest tests/test_parse.py tests/test_redaction.py tests/test_cli_doc_read.py tests/test_search_indexer.py tests/test_search_query_engine.py` passed (64 passed, 1 warning). Full `poetry run pytest` passed (868 passed, 1 warning). Diagnostics reported no errors in changed modules or focused tests.
 
 ### SDB-S2 Notes
-- Changes made: pending.
+- Changes made: Added `Unreleased` changelog entries for secret-state backfill and retry semantics. Updated user-facing command and architecture docs to include `matlock detect-backfill [--retry-errors]`, including default candidate selection, retry behavior, unavailable-file skip behavior, and explicit non-effects (no reparse/cache/reindex). Updated reference routing in `docs/copilot/copilot-docs-reference.md` and added README quick-start/CLI examples for backfill workflows.
 - Deviations: none.
-- Validation: pending.
+- Validation: Focused `poetry run pytest tests/test_cli_detect_backfill.py tests/test_detect_backfill.py` passed (6 passed, 1 existing `pytimeparse` deprecation warning). Adjacent `poetry run pytest tests/test_parse.py tests/test_redaction.py tests/test_cli_doc_read.py tests/test_search_indexer.py tests/test_search_query_engine.py` passed (64 passed, 1 warning). Full `poetry run pytest` passed (868 passed, 1 warning).
 
 ---
 

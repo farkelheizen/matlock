@@ -61,6 +61,34 @@ poetry run matlock parse
 
 ---
 
+### `matlock detect-backfill`
+
+Backfill secret-detection state for tracked vault documents.
+
+```
+matlock detect-backfill [OPTIONS]
+```
+
+| Option | Default | Description |
+|:-------|:--------|:------------|
+| `--retry-errors` | False | Also re-scan active tracked files where a previous secret scan stored `secret_detection_error` |
+| `--config PATH` | `./config.yaml` | Config file location |
+
+Behavior:
+
+- Default mode scans only active, non-generated tracked files with `has_secrets IS NULL`.
+- `--retry-errors` expands candidate selection to include rows with prior scanner errors.
+- Missing/unreadable files are skipped and keep their prior DB state.
+- The command updates only `has_secrets` and `secret_detection_error`; it does not re-parse, reindex search, or write redaction cache files.
+
+**Examples:**
+```bash
+poetry run matlock detect-backfill
+poetry run matlock detect-backfill --retry-errors
+```
+
+---
+
 ### `matlock doc-read`
 
 Read one tracked document from the vault with secret-safe behavior.

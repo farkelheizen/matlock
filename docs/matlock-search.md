@@ -32,6 +32,8 @@ Search integrates with document-level secret detection state persisted on each `
 - Legacy files with unknown state (`has_secrets IS NULL`) are resolved lazily during indexing/query and then persisted.
 - If lazy secret-state resolution fails, behavior remains fail closed and raw content is not emitted.
 
+For bulk pre-resolution before search operations, run `matlock detect-backfill` (or `matlock detect-backfill --retry-errors`) to persist state for legacy/errored rows ahead of indexing/query requests.
+
 ---
 
 ## Indexing Flow
