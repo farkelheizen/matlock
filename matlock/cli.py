@@ -37,6 +37,7 @@ from matlock.search.query_cli import (
 )
 from matlock.server import run_server
 from matlock.stages.map_projects import run_map_projects
+from matlock.stages.detect_backfill import run_detect_backfill
 from matlock.stages.parse import run_parse
 from matlock.stages.report import run_report
 from matlock.stages.rollup import run_rollup
@@ -207,6 +208,32 @@ def doc_read(
         conn.close()
 
     typer.echo(content, nl=False)
+
+
+@app.command(name="detect-backfill")
+def detect_backfill(
+    ctx: typer.Context,
+    retry_errors: bool = typer.Option(
+        False,
+        "--retry-errors",
+        help="Also retry files whose previous secret scan failed.",
+    ),
+) -> None:
+    """Backfill secret-detection state for existing tracked documents."""
+    cfg = _load_and_validate(ctx.obj[_CONFIG_KEY])
+
+    conn = get_connection(cfg.db_path)
+    try:
+        init_db(conn)
+        result = run_detect_backfill(cfg, conn, retry_errors=retry_errors)
+    finally:
+        conn.close()
+
+    typer.echo(
+        "Secret detection backfill complete: "
+        f"{result.scanned} scanned, {result.skipped} skipped, "
+        f"{result.retried} retried, {result.errors} errors"
+    )
 
 
 @app.command(name="map-projects")

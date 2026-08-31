@@ -362,6 +362,24 @@ def set_file_secret_detection(
     )
 
 
+def get_files_needing_secret_detection(
+    conn: sqlite3.Connection,
+    *,
+    retry_errors: bool = False,
+) -> list[sqlite3.Row]:
+    """Return active file rows with unknown state, optionally including scan errors."""
+    state_filter = "has_secrets IS NULL"
+    if retry_errors:
+        state_filter = "(has_secrets IS NULL OR secret_detection_error IS NOT NULL)"
+    return conn.execute(
+        "SELECT * FROM file"
+        " WHERE deleted = 0"
+        "   AND is_generated = 0"
+        f"   AND {state_filter}"
+        " ORDER BY file_path"
+    ).fetchall()
+
+
 def set_needs_parsing(
     conn: sqlite3.Connection, file_path: str, value: int
 ) -> None:
