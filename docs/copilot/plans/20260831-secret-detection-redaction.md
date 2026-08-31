@@ -40,7 +40,7 @@ Release Matlock 0.5.0 with `detect-secrets`-based detection and safe document/se
 | Step ID | Status | Goal | Planned Changes | Test Coverage |
 |---|---|---|---|---|
 | SDR-S1 | Completed | Establish dependency, configuration, and persistent contract | Dependency/lock, cache config, file migration/upsert behavior, search result fields, active-plan tracking | `test_config.py`, `test_matlock_config.py`, `test_db.py`, `test_db_search_schema.py`, `test_search_models.py`, `test_search_query_engine.py` |
-| SDR-S2 | Not Started | Scan current parsed documents safely | Shared detector adapter and parse integration | `test_redaction.py`, `test_parse.py` |
+| SDR-S2 | Completed | Scan current parsed documents safely | Shared detector adapter and parse integration | `test_redaction.py`, `test_parse.py` |
 | SDR-S3 | Not Started | Build redaction cache and protect search | Cache helper, search invalidation/index/query protection | `test_redaction.py`, `test_search_indexer.py`, `test_query_engine.py`, `test_cli_search_query.py`, `test_db_search_schema.py` |
 | SDR-S4 | Not Started | Deliver safe direct file reads | Top-level `doc-read` and legacy-state update | `test_cli_doc_read.py` |
 | SDR-S5 | Not Started | Ship the versioned feature | 0.5.0 metadata, changelog, docs scan | full suite and metadata checks |
@@ -130,9 +130,9 @@ Status values: `Not Started` | `In Progress` | `Completed` | `Blocked`
 - Validation: Focused `poetry run pytest tests/test_config.py tests/test_matlock_config.py tests/test_db.py tests/test_db_search_schema.py tests/test_search_models.py tests/test_search_query_engine.py` passed (121 passed, 1 existing `pytimeparse` deprecation warning). Adjacent `poetry run pytest tests/test_config.py tests/test_db.py tests/test_parse.py tests/test_search_indexer.py tests/test_search_query_engine.py tests/test_cli_search_query.py` passed (94 passed, 1 warning). Full `poetry run pytest` passed (838 passed, 1 warning). `poetry check --lock` passed. The installed Poetry release does not support `poetry lock --check`, so its supported lock check was used.
 
 ### SDR-S2 Notes
-- Changes made: pending.
+- Changes made: Added `matlock/redaction.py` with a typed detect-secrets adapter (`SecretFinding`, `SecretScanResult`, `scan_document_for_secrets`) that treats non-empty `results` entries as findings and fail-closes to `has_secrets=True` on scanner exceptions. Integrated parsing to run secret scanning only after successful extraction and persist `has_secrets` and `secret_detection_error` while preserving existing poison-cache behavior for extraction errors. Added scanner-focused tests in `tests/test_redaction.py` and parse-stage scan persistence/fail-closed tests in `tests/test_parse.py`.
 - Deviations: none.
-- Validation: pending.
+- Validation: Focused `poetry run pytest tests/test_redaction.py tests/test_parse.py` passed (37 passed, 1 existing `pytimeparse` deprecation warning). Adjacent `poetry run pytest tests/test_config.py tests/test_db.py tests/test_parse.py tests/test_redaction.py tests/test_search_indexer.py tests/test_search_query_engine.py tests/test_cli_search_query.py` passed (103 passed, 1 warning). Full `poetry run pytest` passed (845 passed, 1 warning).
 
 ### SDR-S3 Notes
 - Changes made: pending.

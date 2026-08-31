@@ -3,8 +3,8 @@
 Use this file to identify the active implementation plan before starting work.
 
 - Active plan: `docs/copilot/plans/20260831-secret-detection-redaction.md`
-- Current step: SDR-S1 (Completed; review and commit approval pending)
-- Next plan: SDR-S2 after SDR-S1 review approval and commit
+- Current step: SDR-S2 (Completed; review and commit approval pending)
+- Next plan: SDR-S3 after SDR-S2 review approval and commit
 - Last updated: 2026-08-31
 - Owner: Copilot
 

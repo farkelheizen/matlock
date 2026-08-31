@@ -1,10 +1,10 @@
-"""
-Matlock parse stage.
+"""Matlock parse stage.
 
 Reads all files flagged ``needs_parsing = 1`` from the ``file`` table,
 runs ``extract_tasks_from_markdown`` on each, and persists the results
-to the ``task`` table.  ``file`` metadata (``word_count``, ``meta_data``,
-``needs_parsing``) is updated after each successful extraction.
+to the ``task`` table. ``file`` metadata (``word_count``, ``meta_data``,
+``needs_parsing``, and secret-detection state) is updated after each
+successful extraction.
 
 Public API:
     run_parse(config, conn) -> ParseResult
@@ -17,6 +17,7 @@ import datetime
 import json
 import logging
 import sqlite3
+from pathlib import Path
 
 from matlock.config import MatlockConfig
 from matlock.db import (
@@ -28,6 +29,7 @@ from matlock.db import (
 from matlock.extractor import extract_tasks_from_markdown
 from matlock.models import ParsedMarkdownTask
 from matlock.parser import parse_front_matter
+from matlock.redaction import SecretScanResult, scan_document_for_secrets
 
 log = logging.getLogger(__name__)
 
@@ -72,8 +74,7 @@ def _json_default(obj: object) -> str:
 
 
 def _build_extractor_config(config: MatlockConfig) -> dict:
-    """Convert ``MatlockConfig`` into the ``config_dict`` dict expected by
-    ``extract_tasks_from_markdown``."""
+    """Convert ``MatlockConfig`` into extractor configuration values."""
     attributes: dict = {}
     for name, attr in config.task_attributes.items():
         entry: dict = {"type": attr.type}
@@ -96,7 +97,7 @@ def _build_extractor_config(config: MatlockConfig) -> dict:
 
 
 def _task_to_dict(file_path: str, task: ParsedMarkdownTask) -> dict:
-    """Map a ``ParsedMarkdownTask`` to a ``task`` table column dict."""
+    """Map one parsed task into the ``task`` table column dictionary."""
     attrs = task.attributes
     return {
         "task_id": task.task_id,
@@ -116,6 +117,19 @@ def _task_to_dict(file_path: str, task: ParsedMarkdownTask) -> dict:
     }
 
 
+def _scan_file_for_secrets(file_path: str, abs_path: Path) -> SecretScanResult:
+    """Run secret scanning with a final fail-closed guardrail."""
+    try:
+        return scan_document_for_secrets(abs_path)
+    except Exception as exc:
+        log.warning("parse: secret scan failed for %s", file_path, exc_info=True)
+        return SecretScanResult(
+            has_secrets=True,
+            secret_detection_error=str(exc),
+            findings=(),
+        )
+
+
 # ---------------------------------------------------------------------------
 # Public stage function
 # ---------------------------------------------------------------------------
@@ -129,10 +143,9 @@ def run_parse(
 
     For each flagged file:
     1. Read the file from disk and run ``extract_tasks_from_markdown``.
-    2. On success: delete stale tasks, insert new tasks, update ``file``
-       metadata (``word_count``, ``meta_data``), set ``needs_parsing = 0``.
-    3. On exception: increment ``skipped``; leave DB unchanged for that file
-       (``needs_parsing`` remains ``1``).
+    2. On success: delete stale tasks, insert new tasks, scan for secrets, update
+       ``file`` metadata and secret fields, then set ``needs_parsing = 0``.
+    3. On extraction exception: increment ``skipped`` and leave ``needs_parsing = 1``.
 
     A single ``conn.commit()`` covers all successful writes at the end.
     Does not call ``validate_config_paths()`` — that is the CLI's responsibility.
@@ -166,10 +179,11 @@ def run_parse(
 
         _POISON_CACHE.pop(file_path, None)
 
-        # --- DB writes (only reached on success) ---
+        # --- DB writes (only reached on successful extraction) ---
         _, body = parse_front_matter(content)
         word_count = len(body.split())
         meta_json = json.dumps(parsed_file.meta_data, default=_json_default)
+        scan_result = _scan_file_for_secrets(file_path, abs_path)
 
         old_tasks = get_tasks_for_file(conn, file_path)
         delete_tasks_for_file(conn, file_path)
@@ -180,9 +194,16 @@ def run_parse(
             result.tasks_inserted += 1
 
         conn.execute(
-            "UPDATE file SET needs_parsing = 0, word_count = ?, meta_data = ?"
+            "UPDATE file SET needs_parsing = 0, word_count = ?, meta_data = ?,"
+            " has_secrets = ?, secret_detection_error = ?"
             " WHERE file_path = ?",
-            (word_count, meta_json, file_path),
+            (
+                word_count,
+                meta_json,
+                1 if scan_result.has_secrets else 0,
+                scan_result.secret_detection_error,
+                file_path,
+            ),
         )
         log.debug("parse: parsed %s (%d tasks)", file_path, len(parsed_file.tasks))
         result.parsed += 1
@@ -190,6 +211,9 @@ def run_parse(
     conn.commit()
     log.info(
         "parse complete: parsed=%d skipped=%d tasks_inserted=%d tasks_deleted=%d",
-        result.parsed, result.skipped, result.tasks_inserted, result.tasks_deleted,
+        result.parsed,
+        result.skipped,
+        result.tasks_inserted,
+        result.tasks_deleted,
     )
     return result
