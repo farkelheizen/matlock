@@ -34,6 +34,7 @@ poetry run matlock run-all --index-search
 # Or run each stage individually
 poetry run matlock sync
 poetry run matlock parse
+poetry run matlock doc-read Notes/today.md
 poetry run matlock map-projects
 poetry run matlock rollup
 poetry run matlock report
@@ -68,6 +69,9 @@ headers:
 
 tasks:
   task_text_maxlen: 500
+
+cache:
+  redacted_dir: ~/.matlock/cache/redacted
 
 task_attributes:
   due_date:
@@ -104,6 +108,12 @@ projects:
       - type: FILE
         path: Projects/Backend API.md
 ```
+
+Secret safety behavior:
+
+- Parse records document-level secret detection state.
+- Search indexing/query and the doc-read command redact unsafe content.
+- Legacy documents (unknown secret state) are scanned lazily and then persisted.
 
 Project `resources` control which files are associated with a project during `map-projects`:
 

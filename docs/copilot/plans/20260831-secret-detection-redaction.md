@@ -43,7 +43,7 @@ Release Matlock 0.5.0 with `detect-secrets`-based detection and safe document/se
 | SDR-S2 | Completed | Scan current parsed documents safely | Shared detector adapter and parse integration | `test_redaction.py`, `test_parse.py` |
 | SDR-S3 | Completed | Build redaction cache and protect search | Cache helper, search invalidation/index/query protection | `test_redaction.py`, `test_search_indexer.py`, `test_query_engine.py`, `test_cli_search_query.py`, `test_db_search_schema.py` |
 | SDR-S4 | Completed | Deliver safe direct file reads | Top-level `doc-read` and legacy-state update | `test_cli_doc_read.py` |
-| SDR-S5 | Not Started | Ship the versioned feature | 0.5.0 metadata, changelog, docs scan | full suite and metadata checks |
+| SDR-S5 | Completed | Ship the versioned feature | 0.5.0 metadata, changelog, docs scan | full suite and metadata checks |
 
 Status values: `Not Started` | `In Progress` | `Completed` | `Blocked`
 
@@ -145,9 +145,10 @@ Status values: `Not Started` | `In Progress` | `Completed` | `Blocked`
 - Validation: Focused `poetry run pytest tests/test_cli_doc_read.py` passed (7 passed, 1 existing `pytimeparse` deprecation warning). Adjacent `poetry run pytest tests/test_cli_doc_read.py tests/test_cli_parse.py tests/test_parse.py tests/test_redaction.py tests/test_db.py` passed (101 passed, 1 warning). Full `poetry run pytest` passed (862 passed, 1 warning).
 
 ### SDR-S5 Notes
-- Changes made: pending.
+- Changes made: Bumped release metadata to 0.5.0 in `pyproject.toml` and added exported package version `matlock.__version__` in `matlock/__init__.py`. Added a 0.5.0 changelog section summarizing secret detection, redaction cache, doc-read, and search protection behavior. Performed the targeted docs scan gate and updated affected references in `README.md`, `docs/matlock-cli.md`, `docs/matlock-configuration.md`, `docs/matlock-data-model.md`, `docs/matlock-pipeline-specification.md`, `docs/matlock-search.md`, `docs/matlock-high-level-design.md`, and `docs/copilot/copilot-docs-reference.md` to document cache configuration, secret-state fields, safe doc-read behavior, and secret-safe search indexing/querying.
+- Changes made: There is no tracked `examples/` directory in this repository. Per plan scope, applicable usage examples were updated in `README.md` and `docs/matlock-cli.md`.
 - Deviations: none.
-- Validation: pending.
+- Validation: Metadata gate `poetry check --lock` passed. Focused `poetry run pytest tests/test_cli_doc_read.py tests/test_redaction.py tests/test_search_indexer.py tests/test_search_query_engine.py` passed (30 passed, 1 existing `pytimeparse` deprecation warning). Adjacent `poetry run pytest tests/test_config.py tests/test_db.py tests/test_parse.py tests/test_cli_doc_read.py tests/test_cli_search_query.py tests/test_search_indexer.py tests/test_search_query_engine.py` passed (113 passed, 1 warning). Full `poetry run pytest` passed (862 passed, 1 warning).
 
 ## Copilot Execution Protocol
 

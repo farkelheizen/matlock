@@ -10,6 +10,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ---
 
+## [0.5.0] — 2026-08-31
+
+### Added
+
+- `matlock doc-read FILE_PATH` command for safe direct document reads from tracked vault files.
+- Secret-detection persistence fields on the `file` record lifecycle: `has_secrets` and `secret_detection_error`.
+- Redaction cache support via `cache.redacted_dir` with SHA-256 keyed redacted document files.
+
+### Changed
+
+- Parse stage now performs fail-closed secret detection after successful extraction and persists document-level detection state.
+- Search indexing now prevents new raw-secret leakage by indexing redacted content for unsafe files and clearing stale chunks immediately when file hashes change.
+- Search query output now enforces safe content delivery by redacting unsafe file and chunk payloads.
+
+### Fixed
+
+- Legacy documents with unknown secret state are now resolved lazily during read/query flows, persisted, and handled with the same fail-closed safety behavior as newly parsed files.
+
+---
+
 ## [0.4.1] — 2026-08-09
 
 ### Added

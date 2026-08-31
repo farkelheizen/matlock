@@ -1,6 +1,6 @@
 # Matlock CLI Reference
 
-**Version:** 0.3.x
+**Version:** 0.5.x
 
 Matlock is invoked via the `matlock` command (registered as a Poetry script entrypoint). All commands accept `--config PATH` to specify a non-default `config.yaml` location.
 

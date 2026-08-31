@@ -1,5 +1,5 @@
 # Copilot Docs Reference Map (matlock)
-> Docs baseline: 0.3.x
+> Docs baseline: 0.5.x
 
 Use this file as the fast lookup index before implementation.
 
@@ -23,6 +23,8 @@ Use this file as the fast lookup index before implementation.
    - Open: `docs/matlock-scan-projects.md`
 9. **Need the implementation roadmap or a phase plan?**
    - Open: `docs/roadmap/index.md`, then the relevant phase plan doc.
+10. **Need secret-detection/redaction behavior, redaction cache, or safe direct reads?**
+   - Open: `docs/matlock-cli.md`, `docs/matlock-search.md`, `docs/matlock-data-model.md`, `docs/matlock-configuration.md`
 
 ---
 
@@ -37,6 +39,7 @@ Use this file as the fast lookup index before implementation.
 | config.yaml schema, task attributes, project definitions, path resolution, logging, search config | `docs/matlock-configuration.md` | `docs/matlock-data-model.md`, `docs/matlock-search.md` |
 | Jinja2 report templates, dashboard types, template variables, heatmap logic | `docs/matlock-generated-reports.md` | `docs/matlock-high-level-design.md` |
 | CLI commands, flags, `matlock server`, `matlock search`, entrypoint registration | `docs/matlock-cli.md` | `docs/matlock-pipeline-specification.md`, `docs/matlock-search.md` |
+| Secret detection state, redaction cache, and safe `doc-read` behavior | `docs/matlock-cli.md` | `docs/matlock-search.md`, `docs/matlock-data-model.md`, `docs/matlock-configuration.md` |
 | `scan-projects`: scanning logic, ScannedFile, ProjectCandidate, output modes, YAML schema | `docs/matlock-scan-projects.md` | `docs/matlock-cli.md`, `docs/matlock-configuration.md` |
 | Implementation phases, roadmap overview | `docs/roadmap/index.md` | Phase plan docs in `docs/roadmap/` |
 
@@ -52,6 +55,7 @@ Use this file as the fast lookup index before implementation.
 - **report, Jinja2, _Matlock/, dashboard, is_generated** → `matlock-generated-reports.md`, `matlock-pipeline-specification.md`
 - **server, watchdog, debouncer, scheduler, daemon, midnight** → `matlock-cli.md`, `matlock-pipeline-specification.md`
 - **search, search index, search query, stdio, search_mode, granularity, surrounding_chunks, search.log** → `matlock-search.md`, `matlock-cli.md`, `matlock-configuration.md`
+- **doc-read, has_secrets, secret_detection_error, redacted_dir, detect-secrets** → `matlock-cli.md`, `matlock-data-model.md`, `matlock-configuration.md`, `matlock-search.md`
 - **search_chunks, search_fts, search_vec, search_indexed_at, search_index_hash, embeddings** → `matlock-data-model.md`, `matlock-search.md`
 - **index-search, index-search-continuous, background indexing, hybrid search, metadata_only** → `matlock-search.md`, `matlock-cli.md`, `matlock-pipeline-specification.md`
 - **config.yaml, base_directory, output_directory, db_path, debounce_seconds** → `matlock-configuration.md`

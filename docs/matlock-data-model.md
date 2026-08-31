@@ -1,6 +1,6 @@
 # Matlock Data Model
 
-**Version:** 0.3.x
+**Version:** 0.5.x
 
 This document defines the in-memory Python models produced by the parser engine and the SQLite database schema that persists all pipeline data.
 
@@ -79,6 +79,11 @@ Matlock Search uses two Pydantic contracts for machine-facing request/response t
 | `results[]` | `SearchResponseResult` | Per-file or per-chunk result rows, including score breakdown and normalized timestamps. |
 | `error` | `SearchError \| None` | Structured error payload for non-success responses. |
 
+`SearchResponseResult` includes document safety metadata copied from the `file` table:
+
+- `has_secrets`: `NULL` (legacy unknown), `0` (clean), `1` (secrets found or scan failed).
+- `secret_detection_error`: optional scanner error text. Populated only when detection fails.
+
 ---
 
 ## Database Models (SQLite)
@@ -106,6 +111,8 @@ Tracks every Markdown file under `base_directory`.
 | `deleted_date`  | TEXT    |                  | YYYY-MM-DD when the file was first detected as deleted (set by `sync`; NULL for active files) |
 | `search_indexed_at` | TEXT |                | RFC3339 timestamp for the last successful search indexing pass |
 | `search_index_hash` | TEXT |                | File SHA-256 captured during the last successful search indexing pass |
+| `has_secrets` | INTEGER |                  | Nullable detection state: `NULL` unknown legacy state, `0` confirmed clean, `1` secrets found or scan failed |
+| `secret_detection_error` | TEXT |            | Nullable scanner failure detail set only when secret detection errors occur |
 
 ### `task` table
 

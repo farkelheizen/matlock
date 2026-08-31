@@ -1,6 +1,6 @@
 # Matlock: High-Level Design
 
-**Version:** 0.3.x
+**Version:** 0.5.x
 **Motto:** "I'm just looking at the evidence… and the evidence says you're procrastinating."
 
 ## 1. Core Philosophy
@@ -11,6 +11,7 @@ Matlock is a pipeline-driven task extractor, report generator, and optional loca
 - **Comprehensible:** A "worker-per-task" script pipeline where every stage is a standalone, independently runnable command. Shared state lives entirely in a single SQLite database.
 - **Performance:** Incremental sync via SHA-256 hashing — only modified files are re-parsed. Full-vault re-scans are always available via explicit CLI flags.
 - **Local-First Search:** Optional chunk, FTS, and embedding-backed search stays on the same SQLite foundation and remains opt-in at runtime.
+- **Secret-Safe Retrieval:** Secret detection state controls whether search/doc reads emit raw or redacted content.
 
 ## 2. 2-Tier Project Hierarchy
 
@@ -32,6 +33,8 @@ Each stage is a discrete, independently invocable command. Stages communicate **
 | V     | `matlock report`     | Render Jinja2 Markdown dashboards to `_Matlock/`                 |
 
 Run all five stages in sequence with `matlock run-all`.
+
+For direct reads with the same safety guarantees, use `matlock doc-read <file_path>`.
 
 Matlock Search is additive rather than replacing the core pipeline:
 
@@ -90,6 +93,11 @@ The optional search subsystem adds local retrieval without changing the existing
 |:--------|:--------|
 | `matlock search index` | Build or refresh local chunk, FTS, and embedding-backed search state |
 | `matlock search query` | Query the local index in human mode or strict `--stdio` JSON mode |
+
+Secret-safe behavior applies to search results and direct document reads:
+
+- Unsafe documents are indexed and returned as redacted content.
+- Legacy unknown-state documents are resolved lazily and persisted.
 
 Search indexing excludes generated and soft-deleted files, honors per-file frontmatter overrides, and can run from `run-all` or `server` entrypoints.
 
