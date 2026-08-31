@@ -15,6 +15,7 @@ from matlock.db import (
     upsert_search_vector,
 )
 from matlock.search.query_engine import SearchQueryEngine
+from matlock.redaction import SecretScanResult
 
 
 class FakeQueryEmbeddingProvider:
@@ -313,3 +314,104 @@ def test_project_filters_require_exact_match_mode(tmp_path: Path, conn) -> None:
         }
     )
     assert [result.file_path for result in response.results] == ["Notes/gamma.md"]
+
+
+def test_chunk_response_uses_redacted_content_for_secret_file(tmp_path: Path, conn, monkeypatch):
+    config = _seed_dataset(conn, tmp_path)
+    set_file_secret_detection(conn, "Notes/alpha.md", True, None)
+    conn.commit()
+
+    monkeypatch.setattr(
+        "matlock.search.query_engine.get_redacted_document",
+        lambda _path, _cache_dir: "[REDACTED]",
+    )
+
+    response = SearchQueryEngine(
+        config,
+        conn,
+        embedding_provider=FakeQueryEmbeddingProvider(),
+    ).execute(
+        {
+            "query": "database optimization",
+            "search_mode": "fts_only",
+            "output": {"granularity": "chunk", "include_content": True, "limit": 1},
+        }
+    )
+
+    result = response.results[0]
+    assert result.file_path == "Notes/alpha.md"
+    assert result.chunk_details is not None
+    assert result.chunk_details.content == "[REDACTED]"
+    assert result.frontmatter == {}
+
+
+def test_file_response_uses_redacted_content_for_secret_file(tmp_path: Path, conn, monkeypatch):
+    config = _seed_dataset(conn, tmp_path)
+    set_file_secret_detection(conn, "Notes/alpha.md", True, None)
+    conn.commit()
+
+    monkeypatch.setattr(
+        "matlock.search.query_engine.get_redacted_document",
+        lambda _path, _cache_dir: "safe redacted text",
+    )
+
+    response = SearchQueryEngine(
+        config,
+        conn,
+        embedding_provider=FakeQueryEmbeddingProvider(),
+    ).execute(
+        {
+            "query": "database optimization",
+            "search_mode": "fts_only",
+            "output": {"granularity": "file", "include_content": True, "limit": 1},
+        }
+    )
+
+    result = response.results[0]
+    assert result.file_details is not None
+    assert result.file_details.content == "safe redacted text"
+    assert result.frontmatter == {}
+
+
+def test_legacy_file_secret_state_is_scanned_lazily(tmp_path: Path, conn, monkeypatch):
+    config = _seed_dataset(conn, tmp_path)
+
+    conn.execute(
+        "UPDATE file SET has_secrets = NULL, secret_detection_error = NULL WHERE file_path = ?",
+        ("Notes/alpha.md",),
+    )
+    conn.commit()
+
+    monkeypatch.setattr(
+        "matlock.search.query_engine.scan_document_for_secrets",
+        lambda _path: SecretScanResult(
+            has_secrets=True,
+            secret_detection_error="scan failed",
+            findings=(),
+        ),
+    )
+    monkeypatch.setattr(
+        "matlock.search.query_engine.get_redacted_document",
+        lambda _path, _cache_dir: "[REDACTED]",
+    )
+
+    response = SearchQueryEngine(
+        config,
+        conn,
+        embedding_provider=FakeQueryEmbeddingProvider(),
+    ).execute(
+        {
+            "query": "database optimization",
+            "search_mode": "fts_only",
+            "output": {"granularity": "file", "include_content": True, "limit": 1},
+        }
+    )
+
+    row = conn.execute(
+        "SELECT has_secrets, secret_detection_error FROM file WHERE file_path = ?",
+        ("Notes/alpha.md",),
+    ).fetchone()
+    assert row["has_secrets"] == 1
+    assert row["secret_detection_error"] == "scan failed"
+    assert response.results[0].file_details is not None
+    assert response.results[0].file_details.content == "[REDACTED]"

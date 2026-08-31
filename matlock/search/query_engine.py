@@ -10,6 +10,10 @@ from time import perf_counter
 from typing import Any
 
 from matlock.config import MatlockConfig
+from matlock.db import set_file_secret_detection
+from matlock.parser import parse_front_matter
+from matlock.redaction import REDACTED_PLACEHOLDER, get_redacted_document, scan_document_for_secrets
+from matlock.search.chunking import chunk_markdown
 from matlock.search.embedding import EmbeddingProvider, create_embedding_provider
 from matlock.search.models import (
     MatlockSearchRequest,
@@ -52,6 +56,8 @@ class SearchQueryEngine:
         self._config = config
         self._conn = conn
         self._embedding_provider = embedding_provider
+        self._secret_state_cache: dict[str, tuple[bool, str | None]] = {}
+        self._redacted_chunks_cache: dict[str, list[str]] = {}
 
     def execute(
         self,
@@ -246,10 +252,15 @@ class SearchQueryEngine:
                 chunk_details={
                     "chunk_id": match.chunk_id,
                     "chunk_index": match.chunk_index,
-                    "total_chunks": len(chunk_cache.get(match.file_path, [])) or 1,
-                    "content": match.content if request.output.include_content else None,
+                    "total_chunks": self._total_chunks(match, chunk_cache),
+                    "content": self._response_chunk_content(
+                        match,
+                        include_content=request.output.include_content,
+                    ),
                     "before": self._neighbor_texts(
                         chunk_cache.get(match.file_path, []),
+                        match.file_path,
+                        match.has_secrets is True,
                         match.chunk_index,
                         before=True,
                         count=request.output.surrounding_chunks,
@@ -257,6 +268,8 @@ class SearchQueryEngine:
                     ),
                     "after": self._neighbor_texts(
                         chunk_cache.get(match.file_path, []),
+                        match.file_path,
+                        match.has_secrets is True,
                         match.chunk_index,
                         before=False,
                         count=request.output.surrounding_chunks,
@@ -316,6 +329,7 @@ class SearchQueryEngine:
                         "total_matching_chunks": len(file_matches),
                         "content": self._file_content(
                             file_path,
+                            unsafe=best_match.has_secrets is True,
                             include_content=request.output.include_content,
                         ),
                     },
@@ -357,29 +371,36 @@ class SearchQueryEngine:
 
         total_matches = len(rows)
         paginated_rows = self._paginate(rows, request.output.offset, request.output.limit)
-        results = [
-            SearchResponseResult(
-                file_path=row["file_path"],
-                absolute_path=(self._config.base_directory / row["file_path"]),
-                project_id=row["project_id"],
-                super_project_id=row["super_project_id"],
-                score=1.0,
-                score_breakdown=SearchScoreBreakdown(),
-                created=_normalize_db_timestamp(row["created"]),
-                modified=_normalize_db_timestamp(row["modified"]),
-                frontmatter=_load_frontmatter(row["meta_data"]),
-                has_secrets=_normalize_nullable_bool(row["has_secrets"]),
-                secret_detection_error=row["secret_detection_error"],
-                file_details={
-                    "total_matching_chunks": max(int(row["total_chunks"] or 0), 1),
-                    "content": self._file_content(
-                        row["file_path"],
-                        include_content=request.output.include_content,
-                    ),
-                },
+        results = []
+        for row in paginated_rows:
+            has_secrets, secret_detection_error = self._resolve_secret_state(
+                row["file_path"],
+                row["has_secrets"],
+                row["secret_detection_error"],
             )
-            for row in paginated_rows
-        ]
+            results.append(
+                SearchResponseResult(
+                    file_path=row["file_path"],
+                    absolute_path=(self._config.base_directory / row["file_path"]),
+                    project_id=row["project_id"],
+                    super_project_id=row["super_project_id"],
+                    score=1.0,
+                    score_breakdown=SearchScoreBreakdown(),
+                    created=_normalize_db_timestamp(row["created"]),
+                    modified=_normalize_db_timestamp(row["modified"]),
+                    frontmatter={} if has_secrets else _load_frontmatter(row["meta_data"]),
+                    has_secrets=has_secrets,
+                    secret_detection_error=secret_detection_error,
+                    file_details={
+                        "total_matching_chunks": max(int(row["total_chunks"] or 0), 1),
+                        "content": self._file_content(
+                            row["file_path"],
+                            unsafe=has_secrets,
+                            include_content=request.output.include_content,
+                        ),
+                    },
+                )
+            )
 
         return MatlockSearchResponse(
             status="success",
@@ -465,18 +486,27 @@ class SearchQueryEngine:
         score: float,
         score_breakdown: SearchScoreBreakdown,
     ) -> ChunkMatch:
+        has_secrets, secret_detection_error = self._resolve_secret_state(
+            row["file_path"],
+            row["has_secrets"],
+            row["secret_detection_error"],
+        )
         return ChunkMatch(
             file_path=row["file_path"],
             chunk_id=row["chunk_id"],
             chunk_index=int(row["chunk_index"]),
-            content=row["content"],
+            content=(
+                self._redacted_chunk_content(row["file_path"], int(row["chunk_index"]))
+                if has_secrets
+                else row["content"]
+            ),
             project_id=row["project_id"],
             super_project_id=row["super_project_id"],
-            frontmatter=_load_frontmatter(row["meta_data"]),
+            frontmatter={} if has_secrets else _load_frontmatter(row["meta_data"]),
             created=_normalize_db_timestamp(row["created"]),
             modified=_normalize_db_timestamp(row["modified"]),
-            has_secrets=_normalize_nullable_bool(row["has_secrets"]),
-            secret_detection_error=row["secret_detection_error"],
+            has_secrets=has_secrets,
+            secret_detection_error=secret_detection_error,
             score=score,
             score_breakdown=score_breakdown,
         )
@@ -512,6 +542,8 @@ class SearchQueryEngine:
     def _neighbor_texts(
         self,
         rows: list[sqlite3.Row],
+        file_path: str,
+        unsafe: bool,
         chunk_index: int,
         *,
         before: bool,
@@ -520,15 +552,24 @@ class SearchQueryEngine:
     ) -> list[str]:
         if count <= 0 or not include_content:
             return []
+        if unsafe:
+            redacted_chunks = self._redacted_chunks(file_path)
+            if before:
+                start = max(chunk_index - count, 0)
+                return redacted_chunks[start:chunk_index]
+            end = chunk_index + 1 + count
+            return redacted_chunks[chunk_index + 1 : end]
         if before:
             start = max(chunk_index - count, 0)
             return [row["content"] for row in rows[start:chunk_index]]
         end = chunk_index + 1 + count
         return [row["content"] for row in rows[chunk_index + 1 : end]]
 
-    def _file_content(self, file_path: str, *, include_content: bool) -> str:
+    def _file_content(self, file_path: str, *, unsafe: bool, include_content: bool) -> str:
         if not include_content:
             return ""
+        if unsafe:
+            return self._redacted_document(file_path)
         abs_path = self._config.base_directory / file_path
         try:
             return abs_path.read_text(encoding="utf-8")
@@ -537,6 +578,80 @@ class SearchQueryEngine:
 
     def _paginate(self, values: list[Any], offset: int, limit: int) -> list[Any]:
         return values[offset : offset + limit]
+
+    def _resolve_secret_state(
+        self,
+        file_path: str,
+        has_secrets_value: object,
+        secret_detection_error: str | None,
+    ) -> tuple[bool, str | None]:
+        cached = self._secret_state_cache.get(file_path)
+        if cached is not None:
+            return cached
+
+        has_secrets = _normalize_nullable_bool(has_secrets_value)
+        if has_secrets is None:
+            scan_result = scan_document_for_secrets(self._config.base_directory / file_path)
+            set_file_secret_detection(
+                self._conn,
+                file_path,
+                scan_result.has_secrets,
+                scan_result.secret_detection_error,
+            )
+            self._conn.commit()
+            resolved = (scan_result.has_secrets, scan_result.secret_detection_error)
+        else:
+            resolved = (has_secrets, secret_detection_error)
+
+        self._secret_state_cache[file_path] = resolved
+        return resolved
+
+    def _redacted_document(self, file_path: str) -> str:
+        return get_redacted_document(
+            self._config.base_directory / file_path,
+            self._config.cache.redacted_dir,
+        )
+
+    def _redacted_chunks(self, file_path: str) -> list[str]:
+        cached = self._redacted_chunks_cache.get(file_path)
+        if cached is not None:
+            return cached
+
+        content = self._redacted_document(file_path)
+        try:
+            _, body = parse_front_matter(content)
+        except Exception:
+            body = content
+        chunks = chunk_markdown(
+            body,
+            strategy=self._config.search.chunking.strategy,
+            chunk_size=self._config.search.chunking.chunk_size,
+            chunk_overlap=self._config.search.chunking.chunk_overlap,
+        )
+        if not chunks:
+            chunks = [REDACTED_PLACEHOLDER]
+        self._redacted_chunks_cache[file_path] = chunks
+        return chunks
+
+    def _redacted_chunk_content(self, file_path: str, chunk_index: int) -> str:
+        chunks = self._redacted_chunks(file_path)
+        if chunk_index < 0 or chunk_index >= len(chunks):
+            return REDACTED_PLACEHOLDER
+        return chunks[chunk_index]
+
+    def _response_chunk_content(self, match: ChunkMatch, *, include_content: bool) -> str | None:
+        if not include_content:
+            return None
+        return match.content
+
+    def _total_chunks(
+        self,
+        match: ChunkMatch,
+        chunk_cache: dict[str, list[sqlite3.Row]],
+    ) -> int:
+        if match.has_secrets:
+            return len(self._redacted_chunks(match.file_path))
+        return len(chunk_cache.get(match.file_path, [])) or 1
 
 
 def execute_search(

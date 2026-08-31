@@ -17,6 +17,7 @@ from matlock.db import (
     upsert_search_vector,
 )
 from matlock.search.indexer import run_search_indexing
+from matlock.redaction import SecretScanResult
 
 
 class FakeEmbeddingProvider:
@@ -265,3 +266,58 @@ def test_orphan_cleanup_purges_missing_file_rows(tmp_path: Path, conn):
     assert get_search_chunks_for_file(conn, "Notes/orphaned.md") == []
     assert conn.execute("SELECT * FROM search_vec").fetchall() == []
     assert get_file(conn, "Notes/orphaned.md") is None
+
+
+def test_secret_bearing_file_indexes_redacted_content(tmp_path: Path, conn, monkeypatch):
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    config = _config(vault, tmp_path)
+    provider = FakeEmbeddingProvider()
+    _seed_file(
+        conn,
+        vault,
+        "Notes/private.md",
+        "api_key=SECRET123\nkeep=this\n",
+        has_secrets=1,
+    )
+
+    monkeypatch.setattr(
+        "matlock.search.indexer.get_redacted_document",
+        lambda _path, _cache_dir: "api_key=[REDACTED]\nkeep=this\n",
+    )
+
+    run_search_indexing(config, conn, embedding_provider=provider)
+
+    chunks = get_search_chunks_for_file(conn, "Notes/private.md")
+    assert chunks
+    assert "SECRET123" not in chunks[0]["content"]
+    assert "[REDACTED]" in chunks[0]["content"]
+
+
+def test_unknown_secret_state_is_scanned_and_persisted_before_index(tmp_path: Path, conn, monkeypatch):
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    config = _config(vault, tmp_path)
+    provider = FakeEmbeddingProvider()
+    _seed_file(conn, vault, "Notes/unknown.md", "token=SECRET\n")
+
+    monkeypatch.setattr(
+        "matlock.search.indexer.scan_document_for_secrets",
+        lambda _path: SecretScanResult(
+            has_secrets=True,
+            secret_detection_error="scan failed",
+            findings=(),
+        ),
+    )
+    monkeypatch.setattr(
+        "matlock.search.indexer.get_redacted_document",
+        lambda _path, _cache_dir: "[REDACTED]\n",
+    )
+
+    run_search_indexing(config, conn, embedding_provider=provider)
+
+    row = get_file(conn, "Notes/unknown.md")
+    chunks = get_search_chunks_for_file(conn, "Notes/unknown.md")
+    assert row["has_secrets"] == 1
+    assert row["secret_detection_error"] == "scan failed"
+    assert chunks[0]["content"].strip() == "[REDACTED]"

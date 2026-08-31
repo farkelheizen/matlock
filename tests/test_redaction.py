@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from contextlib import nullcontext
+from pathlib import Path
 
 import matlock.redaction as redaction
+from matlock.redaction import REDACTED_PLACEHOLDER, SecretFinding, SecretScanResult
 
 
 class _FakeSecretsCollection:
@@ -72,3 +74,111 @@ def test_scan_document_for_secrets_fail_closed_on_exception(monkeypatch):
     assert result.has_secrets is True
     assert "invalid start byte" in (result.secret_detection_error or "")
     assert result.findings == ()
+
+
+def test_get_redacted_document_masks_exact_secret_and_caches(tmp_path: Path, monkeypatch):
+    source = tmp_path / "note.md"
+    source.write_text("token=abc123\nkeep=this\n", encoding="utf-8")
+    cache_dir = tmp_path / "cache"
+
+    monkeypatch.setattr(
+        redaction,
+        "scan_document_for_secrets",
+        lambda _path: SecretScanResult(
+            has_secrets=True,
+            secret_detection_error=None,
+            findings=(
+                SecretFinding(
+                    line_number=1,
+                    secret_value="abc123",
+                    hashed_secret=None,
+                    secret_type="test",
+                ),
+            ),
+        ),
+    )
+
+    output = redaction.get_redacted_document(source, cache_dir)
+
+    assert output == f"token={REDACTED_PLACEHOLDER}\nkeep=this\n"
+    assert list(cache_dir.glob("*.txt"))
+
+
+def test_get_redacted_document_redacts_full_line_without_secret_value(tmp_path: Path, monkeypatch):
+    source = tmp_path / "note.md"
+    source.write_text("token=abc123\nkeep=this\n", encoding="utf-8")
+
+    monkeypatch.setattr(
+        redaction,
+        "scan_document_for_secrets",
+        lambda _path: SecretScanResult(
+            has_secrets=True,
+            secret_detection_error=None,
+            findings=(
+                SecretFinding(
+                    line_number=1,
+                    secret_value=None,
+                    hashed_secret="hash",
+                    secret_type="test",
+                ),
+            ),
+        ),
+    )
+
+    output = redaction.get_redacted_document(source, tmp_path / "cache")
+
+    assert output == f"{REDACTED_PLACEHOLDER}\nkeep=this\n"
+
+
+def test_get_redacted_document_uses_cache_before_rescanning(tmp_path: Path, monkeypatch):
+    source = tmp_path / "note.md"
+    source.write_text("token=abc123\n", encoding="utf-8")
+    cache_dir = tmp_path / "cache"
+
+    monkeypatch.setattr(
+        redaction,
+        "scan_document_for_secrets",
+        lambda _path: SecretScanResult(
+            has_secrets=True,
+            secret_detection_error=None,
+            findings=(
+                SecretFinding(
+                    line_number=1,
+                    secret_value="abc123",
+                    hashed_secret=None,
+                    secret_type="test",
+                ),
+            ),
+        ),
+    )
+    first = redaction.get_redacted_document(source, cache_dir)
+
+    monkeypatch.setattr(
+        redaction,
+        "scan_document_for_secrets",
+        lambda _path: (_ for _ in ()).throw(RuntimeError("should not rescan")),
+    )
+    second = redaction.get_redacted_document(source, cache_dir)
+
+    assert first == second
+
+
+def test_get_redacted_document_does_not_cache_scan_failures(tmp_path: Path, monkeypatch):
+    source = tmp_path / "note.md"
+    source.write_text("token=abc123\nkeep=this\n", encoding="utf-8")
+    cache_dir = tmp_path / "cache"
+
+    monkeypatch.setattr(
+        redaction,
+        "scan_document_for_secrets",
+        lambda _path: SecretScanResult(
+            has_secrets=True,
+            secret_detection_error="scan failed",
+            findings=(),
+        ),
+    )
+
+    output = redaction.get_redacted_document(source, cache_dir)
+
+    assert output == f"{REDACTED_PLACEHOLDER}\n{REDACTED_PLACEHOLDER}"
+    assert not cache_dir.exists()

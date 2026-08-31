@@ -206,6 +206,7 @@ CREATE TRIGGER IF NOT EXISTS file_search_reset_on_hash_change
 AFTER UPDATE OF sha256 ON file
 WHEN new.sha256 IS NOT old.sha256
 BEGIN
+    DELETE FROM search_chunks WHERE file_id = new.file_path;
     UPDATE file
        SET search_indexed_at = NULL,
            search_index_hash = NULL

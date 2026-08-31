@@ -41,7 +41,7 @@ Release Matlock 0.5.0 with `detect-secrets`-based detection and safe document/se
 |---|---|---|---|---|
 | SDR-S1 | Completed | Establish dependency, configuration, and persistent contract | Dependency/lock, cache config, file migration/upsert behavior, search result fields, active-plan tracking | `test_config.py`, `test_matlock_config.py`, `test_db.py`, `test_db_search_schema.py`, `test_search_models.py`, `test_search_query_engine.py` |
 | SDR-S2 | Completed | Scan current parsed documents safely | Shared detector adapter and parse integration | `test_redaction.py`, `test_parse.py` |
-| SDR-S3 | Not Started | Build redaction cache and protect search | Cache helper, search invalidation/index/query protection | `test_redaction.py`, `test_search_indexer.py`, `test_query_engine.py`, `test_cli_search_query.py`, `test_db_search_schema.py` |
+| SDR-S3 | Completed | Build redaction cache and protect search | Cache helper, search invalidation/index/query protection | `test_redaction.py`, `test_search_indexer.py`, `test_query_engine.py`, `test_cli_search_query.py`, `test_db_search_schema.py` |
 | SDR-S4 | Not Started | Deliver safe direct file reads | Top-level `doc-read` and legacy-state update | `test_cli_doc_read.py` |
 | SDR-S5 | Not Started | Ship the versioned feature | 0.5.0 metadata, changelog, docs scan | full suite and metadata checks |
 
@@ -135,9 +135,9 @@ Status values: `Not Started` | `In Progress` | `Completed` | `Blocked`
 - Validation: Focused `poetry run pytest tests/test_redaction.py tests/test_parse.py` passed (37 passed, 1 existing `pytimeparse` deprecation warning). Adjacent `poetry run pytest tests/test_config.py tests/test_db.py tests/test_parse.py tests/test_redaction.py tests/test_search_indexer.py tests/test_search_query_engine.py tests/test_cli_search_query.py` passed (103 passed, 1 warning). Full `poetry run pytest` passed (845 passed, 1 warning).
 
 ### SDR-S3 Notes
-- Changes made: pending.
+- Changes made: Expanded `matlock/redaction.py` with cache-backed `get_redacted_document`, exact-value masking, line-level fallback masking, and fail-closed full-document placeholders when scanning fails. Updated search hash-change trigger logic to purge stale search chunks immediately. Integrated search indexing to lazily resolve unknown secret state, persist results, and index redacted content for unsafe files while skipping frontmatter-prefix injection for those redacted chunks. Integrated query-time safeguards to lazily resolve unknown secret state, persist it, suppress unsafe frontmatter payloads, and return redacted chunk/file content for unsafe documents.
 - Deviations: none.
-- Validation: pending.
+- Validation: Focused `poetry run pytest tests/test_redaction.py tests/test_search_indexer.py tests/test_search_query_engine.py tests/test_cli_search_query.py tests/test_db_search_schema.py` passed (36 passed, 1 existing `pytimeparse` deprecation warning). Adjacent `poetry run pytest tests/test_config.py tests/test_db.py tests/test_parse.py tests/test_redaction.py tests/test_search_indexer.py tests/test_search_query_engine.py tests/test_cli_search_query.py tests/test_db_search_schema.py` passed (120 passed, 1 warning). Full `poetry run pytest` passed (855 passed, 1 warning).
 
 ### SDR-S4 Notes
 - Changes made: pending.

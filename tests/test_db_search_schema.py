@@ -357,6 +357,11 @@ def test_mark_file_deleted_cleans_search_rows(conn):
 
 def test_upsert_file_clears_search_freshness_when_hash_changes(conn):
     upsert_file(conn, _file_row())
+    replace_search_chunks(
+        conn,
+        "Notes/foo.md",
+        [{"chunk_id": "Notes/foo.md#0", "chunk_index": 0, "content": "alpha"}],
+    )
     mark_file_search_indexed(conn, "Notes/foo.md", "2026-01-02T00:00:00Z")
     conn.commit()
 
@@ -366,3 +371,4 @@ def test_upsert_file_clears_search_freshness_when_hash_changes(conn):
     row = get_file(conn, "Notes/foo.md")
     assert row["search_indexed_at"] is None
     assert row["search_index_hash"] is None
+    assert get_search_chunks_for_file(conn, "Notes/foo.md") == []
