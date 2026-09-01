@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import yaml
+import pytest
 from typer.testing import CliRunner
 
 from matlock.cli import app
@@ -155,3 +156,37 @@ class TestSearchQueryHumanMode:
 
         assert result.exit_code == 0
         assert "No matches." in result.stdout
+
+    def test_human_mode_redacts_secret_file_content(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        cfg_path, vault, db_path = _make_cfg(tmp_path)
+        seed_search_db(db_path, vault)
+
+        conn = get_connection(db_path)
+        conn.execute(
+            "UPDATE file SET has_secrets = 1 WHERE file_path = ?",
+            ("Notes/alpha.md",),
+        )
+        conn.commit()
+        conn.close()
+
+        monkeypatch.setattr(
+            "matlock.search.query_engine.get_redacted_document",
+            lambda _path, _cache_dir: "[REDACTED]",
+        )
+
+        result = runner.invoke(
+            app,
+            [
+                "--config",
+                str(cfg_path),
+                "search",
+                "query",
+                "database",
+                "--search-mode",
+                "fts_only",
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert "[REDACTED]" in result.stdout
+        assert "Database optimization notes" not in result.stdout

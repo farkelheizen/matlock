@@ -1,6 +1,6 @@
 # Matlock Configuration
 
-**Version:** 0.3.x
+**Version:** 0.5.x
 
 All Matlock configuration lives in a single `config.yaml` file — one per "second brain" vault. It combines application-level settings (paths, DB connection, project structure) with task-attribute parsing rules.
 
@@ -78,6 +78,13 @@ headers:
 
 tasks:
   task_text_maxlen: 500     # Characters before truncation (sets overflow=True)
+
+# ────────────────────────────────────────────────────
+# Redaction cache
+# ────────────────────────────────────────────────────
+
+cache:
+  redacted_dir: ~/.matlock/cache/redacted
 
 # ────────────────────────────────────────────────────
 # Search
@@ -255,6 +262,12 @@ This matches only `Projects/Planning.md`.
 |:------|:-----|:--------|:------------|
 | `search.indexing.enabled` | bool | `false` | Search feature toggle stored in config. Search work remains opt-in at runtime via `matlock search ...`, `run-all --index-search`, or server search flags. |
 | `search.indexing.batch_size` | int | `100` | Commit cadence for search indexing writes. Must be `>= 1`. |
+
+### Redaction Cache
+
+| Field | Type | Default | Description |
+|:------|:-----|:--------|:------------|
+| `cache.redacted_dir` | string | `~/.matlock/cache/redacted` | Directory used to store SHA-256 keyed redacted document copies. `~` is expanded and the directory is created lazily on first redaction write. |
 
 ### Search Chunking
 

@@ -1,6 +1,6 @@
 # Matlock CLI Reference
 
-**Version:** 0.3.x
+**Version:** 0.5.x
 
 Matlock is invoked via the `matlock` command (registered as a Poetry script entrypoint). All commands accept `--config PATH` to specify a non-default `config.yaml` location.
 
@@ -57,6 +57,64 @@ matlock parse [OPTIONS]
 **Example:**
 ```bash
 poetry run matlock parse
+```
+
+---
+
+### `matlock detect-backfill`
+
+Backfill secret-detection state for tracked vault documents.
+
+```
+matlock detect-backfill [OPTIONS]
+```
+
+| Option | Default | Description |
+|:-------|:--------|:------------|
+| `--retry-errors` | False | Also re-scan active tracked files where a previous secret scan stored `secret_detection_error` |
+| `--config PATH` | `./config.yaml` | Config file location |
+
+Behavior:
+
+- Default mode scans only active, non-generated tracked files with `has_secrets IS NULL`.
+- `--retry-errors` expands candidate selection to include rows with prior scanner errors.
+- Missing/unreadable files are skipped and keep their prior DB state.
+- The command updates only `has_secrets` and `secret_detection_error`; it does not re-parse, reindex search, or write redaction cache files.
+
+**Examples:**
+```bash
+poetry run matlock detect-backfill
+poetry run matlock detect-backfill --retry-errors
+```
+
+---
+
+### `matlock doc-read`
+
+Read one tracked document from the vault with secret-safe behavior.
+
+```
+matlock doc-read FILE_PATH [OPTIONS]
+```
+
+| Argument / Option | Description |
+|:------------------|:------------|
+| `FILE_PATH` | Vault-relative path (for example `Notes/today.md`) or an absolute path contained inside `base_directory` |
+| `--config PATH` | Config file location |
+
+Behavior:
+
+- Rejects paths outside `base_directory`.
+- Rejects files not tracked in the `file` table.
+- Rejects files marked deleted in the database.
+- If `file.has_secrets = 0`, emits raw UTF-8 file content.
+- If `file.has_secrets = 1`, emits cache-backed redacted content.
+- If `file.has_secrets IS NULL` (legacy state), runs an on-demand secret scan, persists the state, then emits raw or redacted content based on that result.
+
+**Examples:**
+```bash
+poetry run matlock doc-read Notes/today.md
+poetry run matlock doc-read /absolute/path/inside/your/vault/Notes/today.md
 ```
 
 ---

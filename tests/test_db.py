@@ -12,6 +12,7 @@ from matlock.db import (
     get_file,
     get_files_needing_parsing,
     mark_file_search_indexed,
+    set_file_secret_detection,
     get_tasks_for_file,
     init_db,
     mark_file_deleted,
@@ -218,6 +219,40 @@ def test_upsert_file_updates_existing(conn):
     assert get_file(conn, "Notes/foo.md")["sha256"] == "new_hash"
 
 
+def test_secret_detection_state_can_be_written_and_read(conn):
+    upsert_file(conn, _file_row())
+    set_file_secret_detection(conn, "Notes/foo.md", True, "scanner failed")
+    conn.commit()
+
+    row = get_file(conn, "Notes/foo.md")
+    assert row["has_secrets"] == 1
+    assert row["secret_detection_error"] == "scanner failed"
+
+
+def test_upsert_file_preserves_secret_detection_state_for_same_hash(conn):
+    upsert_file(conn, _file_row())
+    set_file_secret_detection(conn, "Notes/foo.md", False)
+    conn.commit()
+
+    upsert_file(conn, _file_row(modified=3000))
+    conn.commit()
+
+    assert get_file(conn, "Notes/foo.md")["has_secrets"] == 0
+
+
+def test_upsert_file_resets_secret_detection_state_for_changed_hash(conn):
+    upsert_file(conn, _file_row())
+    set_file_secret_detection(conn, "Notes/foo.md", True, "scanner failed")
+    conn.commit()
+
+    upsert_file(conn, _file_row(sha256="new-hash"))
+    conn.commit()
+
+    row = get_file(conn, "Notes/foo.md")
+    assert row["has_secrets"] is None
+    assert row["secret_detection_error"] is None
+
+
 def test_get_file_returns_none_for_missing(conn):
     assert get_file(conn, "nonexistent.md") is None
 
@@ -234,11 +269,14 @@ def test_get_files_needing_parsing(conn):
 
 def test_mark_file_deleted(conn):
     upsert_file(conn, _file_row())
+    set_file_secret_detection(conn, "Notes/foo.md", True, "scanner failed")
     conn.commit()
     mark_file_deleted(conn, "Notes/foo.md")
     conn.commit()
     row = get_file(conn, "Notes/foo.md")
     assert row["deleted"] == 1
+    assert row["has_secrets"] is None
+    assert row["secret_detection_error"] is None
     # deleted_date defaults to today
     import datetime
     assert row["deleted_date"] == datetime.date.today().isoformat()
@@ -289,6 +327,19 @@ def test_upsert_file_preserves_search_freshness_when_hash_unchanged(conn):
     row = get_file(conn, "Notes/foo.md")
     assert row["search_indexed_at"] == "2026-01-02T03:04:05Z"
     assert row["search_index_hash"] == "abc123"
+
+
+def test_generated_file_upsert_clears_secret_detection_state(conn):
+    upsert_file(conn, _file_row())
+    set_file_secret_detection(conn, "Notes/foo.md", True, "scanner failed")
+    conn.commit()
+
+    upsert_file(conn, _file_row(is_generated=1))
+    conn.commit()
+
+    row = get_file(conn, "Notes/foo.md")
+    assert row["has_secrets"] is None
+    assert row["secret_detection_error"] is None
 
 
 # ---------------------------------------------------------------------------

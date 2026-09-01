@@ -13,9 +13,11 @@ from matlock.db import (
     get_files_needing_search_indexing,
     mark_file_search_indexed,
     replace_search_chunks,
+    set_file_secret_detection,
     upsert_search_vector,
 )
 from matlock.parser import parse_front_matter
+from matlock.redaction import get_redacted_document, scan_document_for_secrets
 from matlock.search.chunking import chunk_markdown
 from matlock.search.embedding import (
     EmbeddingProvider,
@@ -76,11 +78,23 @@ def run_search_indexing(
             result.failed_files += 1
             continue
 
+        has_secrets, secret_detection_error = _resolve_secret_state(
+            conn,
+            row,
+            abs_path,
+        )
+        if has_secrets:
+            content = get_redacted_document(abs_path, config.cache.redacted_dir)
+
         try:
             frontmatter, body = parse_front_matter(content)
         except Exception:
-            frontmatter = _load_row_metadata(row)
-            body = content
+            if has_secrets:
+                frontmatter = {}
+                body = content
+            else:
+                frontmatter = _load_row_metadata(row)
+                body = content
 
         overrides = _get_search_overrides(frontmatter)
         if overrides.exclude:
@@ -106,6 +120,7 @@ def run_search_indexing(
             chunk_texts,
             frontmatter,
             config,
+            inject_frontmatter=not has_secrets,
         )
 
         replace_search_chunks(conn, file_path, prepared_chunks)
@@ -145,6 +160,25 @@ def run_search_indexing(
     result.orphaned_files_purged = purged
     conn.commit()
     return result
+
+
+def _resolve_secret_state(
+    conn: sqlite3.Connection,
+    row: sqlite3.Row,
+    abs_path: Path,
+) -> tuple[bool, str | None]:
+    has_secrets = _normalize_nullable_bool(row["has_secrets"])
+    if has_secrets is not None:
+        return has_secrets, row["secret_detection_error"]
+
+    scan_result = scan_document_for_secrets(abs_path)
+    set_file_secret_detection(
+        conn,
+        row["file_path"],
+        scan_result.has_secrets,
+        scan_result.secret_detection_error,
+    )
+    return scan_result.has_secrets, scan_result.secret_detection_error
 
 
 def _get_active_files(conn: sqlite3.Connection) -> list[sqlite3.Row]:
@@ -193,9 +227,10 @@ def _prepare_chunk_rows(
     chunk_texts: list[str],
     frontmatter: dict[str, Any],
     config: MatlockConfig,
+    inject_frontmatter: bool,
 ) -> list[dict[str, Any]]:
     template_prefix = ""
-    if config.search.chunking.inject_frontmatter:
+    if config.search.chunking.inject_frontmatter and inject_frontmatter:
         template_prefix = render_frontmatter_template(
             config.search.chunking.frontmatter_template,
             frontmatter=frontmatter,
@@ -259,6 +294,12 @@ def _purge_orphaned_search_rows(conn: sqlite3.Connection) -> int:
     for file_id in file_ids:
         clear_file_search_state(conn, file_id)
     return len(file_ids)
+
+
+def _normalize_nullable_bool(value: object) -> bool | None:
+    if value is None:
+        return None
+    return bool(value)
 
 
 __all__ = [

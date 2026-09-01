@@ -2,11 +2,11 @@
 
 Use this file to identify the active implementation plan before starting work.
 
-- Active plan: `docs/copilot/plans/20260506-spec-driven-runtime-hardening.md`
-- Current step: complete (SDR-S1 through SDR-S5 completed)
-- Next plan: none
-- Last updated: 2026-05-06
-- Owner: Copilot
+- Active plan: `docs/copilot/plans/20260831-secret-detection-backfill.md`
+- Current step: SDB-S4 (Completed; review and commit approval pending)
+- Next plan: Commit SDB-S4 detection compatibility fix after approval
+- Last updated: 2026-08-31
+- Owner: CopilotWhat 
 
 ## Update Rules
 

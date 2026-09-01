@@ -17,6 +17,7 @@ from matlock.db import (
     init_db,
     upsert_file,
 )
+from matlock.redaction import SecretScanResult
 from matlock.stages.parse import ParseResult, _build_extractor_config, run_parse
 from matlock.stages.sync import run_sync
 
@@ -275,6 +276,91 @@ class TestRunParseInsert:
         assert result.tasks_inserted == 0
         tasks = get_tasks_for_file(conn, "prose.md")
         assert tasks == []
+
+    def test_secret_detection_state_saved_when_scan_clean(self, tmp_path: Path):
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        config = _make_config(vault, tmp_path)
+        conn = _conn()
+        _seed_file(conn, "note.md", _MD_WITH_TASKS, vault)
+
+        with patch(
+            "matlock.stages.parse.scan_document_for_secrets",
+            return_value=SecretScanResult(
+                has_secrets=False,
+                secret_detection_error=None,
+                findings=(),
+            ),
+        ):
+            run_parse(config, conn)
+
+        row = get_file(conn, "note.md")
+        assert row["has_secrets"] == 0
+        assert row["secret_detection_error"] is None
+
+    def test_secret_detection_state_saved_when_scan_finds_secret(self, tmp_path: Path):
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        config = _make_config(vault, tmp_path)
+        conn = _conn()
+        _seed_file(conn, "note.md", _MD_WITH_TASKS, vault)
+
+        with patch(
+            "matlock.stages.parse.scan_document_for_secrets",
+            return_value=SecretScanResult(
+                has_secrets=True,
+                secret_detection_error=None,
+                findings=(),
+            ),
+        ):
+            run_parse(config, conn)
+
+        row = get_file(conn, "note.md")
+        assert row["has_secrets"] == 1
+        assert row["secret_detection_error"] is None
+
+    def test_secret_scan_error_fails_closed_without_parse_skip(self, tmp_path: Path):
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        config = _make_config(vault, tmp_path)
+        conn = _conn()
+        _seed_file(conn, "note.md", _MD_WITH_TASKS, vault)
+
+        with patch(
+            "matlock.stages.parse.scan_document_for_secrets",
+            return_value=SecretScanResult(
+                has_secrets=True,
+                secret_detection_error="scan failed",
+                findings=(),
+            ),
+        ):
+            result = run_parse(config, conn)
+
+        row = get_file(conn, "note.md")
+        assert result.parsed == 1
+        assert result.skipped == 0
+        assert row["needs_parsing"] == 0
+        assert row["has_secrets"] == 1
+        assert row["secret_detection_error"] == "scan failed"
+
+    def test_unexpected_secret_scan_exception_is_captured(self, tmp_path: Path):
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        config = _make_config(vault, tmp_path)
+        conn = _conn()
+        _seed_file(conn, "note.md", _MD_WITH_TASKS, vault)
+
+        with patch(
+            "matlock.stages.parse.scan_document_for_secrets",
+            side_effect=RuntimeError("scanner exploded"),
+        ):
+            result = run_parse(config, conn)
+
+        row = get_file(conn, "note.md")
+        assert result.parsed == 1
+        assert result.skipped == 0
+        assert row["has_secrets"] == 1
+        assert row["secret_detection_error"] == "scanner exploded"
 
 
 # ---------------------------------------------------------------------------

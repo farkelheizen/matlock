@@ -60,7 +60,9 @@ CREATE TABLE IF NOT EXISTS file (
     word_count    INTEGER,
     meta_data     TEXT,
     is_generated  INTEGER DEFAULT 0,
-    needs_parsing INTEGER DEFAULT 1
+    needs_parsing INTEGER DEFAULT 1,
+    has_secrets   INTEGER,
+    secret_detection_error TEXT
 );
 
 CREATE TABLE IF NOT EXISTS task (
@@ -204,6 +206,7 @@ CREATE TRIGGER IF NOT EXISTS file_search_reset_on_hash_change
 AFTER UPDATE OF sha256 ON file
 WHEN new.sha256 IS NOT old.sha256
 BEGIN
+    DELETE FROM search_chunks WHERE file_id = new.file_path;
     UPDATE file
        SET search_indexed_at = NULL,
            search_index_hash = NULL
@@ -243,6 +246,10 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE file ADD COLUMN search_indexed_at TEXT")
     if "search_index_hash" not in existing_file_cols:
         conn.execute("ALTER TABLE file ADD COLUMN search_index_hash TEXT")
+    if "has_secrets" not in existing_file_cols:
+        conn.execute("ALTER TABLE file ADD COLUMN has_secrets INTEGER")
+    if "secret_detection_error" not in existing_file_cols:
+        conn.execute("ALTER TABLE file ADD COLUMN secret_detection_error TEXT")
 
     conn.executescript(_SEARCH_SCHEMA)
 
@@ -266,6 +273,8 @@ _FILE_COLUMNS = (
     "meta_data",
     "is_generated",
     "needs_parsing",
+    "has_secrets",
+    "secret_detection_error",
 )
 
 _UPSERT_FILE = (
@@ -277,7 +286,7 @@ _UPSERT_FILE = (
     + ", ".join(
         f"{column} = excluded.{column}"
         for column in _FILE_COLUMNS
-        if column != "file_path"
+        if column not in {"file_path", "has_secrets", "secret_detection_error"}
     )
     + ", deleted_date = CASE"
     + " WHEN excluded.deleted = 0 THEN NULL"
@@ -290,12 +299,23 @@ _UPSERT_FILE = (
     + " WHEN excluded.deleted = 1 OR excluded.is_generated = 1 THEN NULL"
     + " WHEN file.sha256 IS excluded.sha256 THEN file.search_index_hash"
     + " ELSE NULL END"
+    + ", has_secrets = CASE"
+    + " WHEN excluded.deleted = 1 OR excluded.is_generated = 1 THEN NULL"
+    + " WHEN file.sha256 IS excluded.sha256 THEN file.has_secrets"
+    + " ELSE NULL END"
+    + ", secret_detection_error = CASE"
+    + " WHEN excluded.deleted = 1 OR excluded.is_generated = 1 THEN NULL"
+    + " WHEN file.sha256 IS excluded.sha256 THEN file.secret_detection_error"
+    + " ELSE NULL END"
 )
 
 
 def upsert_file(conn: sqlite3.Connection, file_dict: dict) -> None:
-    """Insert or fully replace a row in the ``file`` table."""
-    conn.execute(_UPSERT_FILE, file_dict)
+    """Insert a file row or update it while preserving valid scan state."""
+    values = dict(file_dict)
+    values.setdefault("has_secrets", None)
+    values.setdefault("secret_detection_error", None)
+    conn.execute(_UPSERT_FILE, values)
 
 
 def get_file(conn: sqlite3.Connection, file_path: str) -> sqlite3.Row | None:
@@ -322,9 +342,42 @@ def mark_file_deleted(
     import datetime as _dt
     date_val = deleted_date or _dt.date.today().isoformat()
     conn.execute(
-        "UPDATE file SET deleted = 1, deleted_date = ? WHERE file_path = ?",
+        "UPDATE file SET deleted = 1, deleted_date = ?, has_secrets = NULL,"
+        " secret_detection_error = NULL WHERE file_path = ?",
         (date_val, file_path),
     )
+
+
+def set_file_secret_detection(
+    conn: sqlite3.Connection,
+    file_path: str,
+    has_secrets: bool,
+    secret_detection_error: str | None = None,
+) -> None:
+    """Persist a completed document secret-detection outcome."""
+    conn.execute(
+        "UPDATE file SET has_secrets = ?, secret_detection_error = ?"
+        " WHERE file_path = ?",
+        (1 if has_secrets else 0, secret_detection_error, file_path),
+    )
+
+
+def get_files_needing_secret_detection(
+    conn: sqlite3.Connection,
+    *,
+    retry_errors: bool = False,
+) -> list[sqlite3.Row]:
+    """Return active file rows with unknown state, optionally including scan errors."""
+    state_filter = "has_secrets IS NULL"
+    if retry_errors:
+        state_filter = "(has_secrets IS NULL OR secret_detection_error IS NOT NULL)"
+    return conn.execute(
+        "SELECT * FROM file"
+        " WHERE deleted = 0"
+        "   AND is_generated = 0"
+        f"   AND {state_filter}"
+        " ORDER BY file_path"
+    ).fetchall()
 
 
 def set_needs_parsing(

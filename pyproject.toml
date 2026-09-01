@@ -1,6 +1,6 @@
 [project]
 name = "matlock"
-version = "0.4.1"
+version = "0.5.0"
 description = "Pipeline-driven task extractor and report generator for Markdown second brains"
 readme = "README.md"
 license = "Apache-2.0"
@@ -29,7 +29,8 @@ dependencies = [
     "typer[all] (>=0.25.0,<0.26.0)",
     "jinja2 (>=3.1.6,<4.0.0)",
     "watchdog (>=6.0.0,<7.0.0)",
-    "fastembed (>=0.8.0,<0.9.0)"
+    "fastembed (>=0.8.0,<0.9.0)",
+    "detect-secrets (>=1.5.0,<2.0.0)"
 ]
 
 [project.urls]

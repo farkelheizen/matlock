@@ -187,6 +187,8 @@ class SearchResponseResult(BaseModel):
     created: str
     modified: str
     frontmatter: dict[str, Any] = Field(default_factory=dict)
+    has_secrets: bool | None = None
+    secret_detection_error: str | None = None
     chunk_details: SearchChunkDetails | None = None
     file_details: SearchFileDetails | None = None
 

@@ -106,6 +106,34 @@ def test_response_normalizes_paths_and_datetimes() -> None:
     assert result.modified == "2026-08-09T12:05:00Z"
 
 
+def test_response_serializes_secret_detection_metadata() -> None:
+    response = MatlockSearchResponse(
+        status="success",
+        stats={
+            "total_matches": 1,
+            "returned_matches": 1,
+            "query_time_ms": 0.0,
+            "search_mode_executed": "metadata_only",
+        },
+        results=[
+            {
+                "file_path": "Notes/private.md",
+                "absolute_path": "/tmp/private.md",
+                "score": 1.0,
+                "created": "2026-08-09T12:00:00Z",
+                "modified": "2026-08-09T12:00:00Z",
+                "has_secrets": True,
+                "secret_detection_error": "scanner failed",
+                "file_details": {"total_matching_chunks": 1},
+            }
+        ],
+    )
+
+    result = response.model_dump()["results"][0]
+    assert result["has_secrets"] is True
+    assert result["secret_detection_error"] == "scanner failed"
+
+
 def test_response_rejects_both_detail_blocks() -> None:
     with pytest.raises(ValidationError, match="chunk_details"):
         MatlockSearchResponse(

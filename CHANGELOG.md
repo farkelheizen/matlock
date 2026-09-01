@@ -8,6 +8,41 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `matlock detect-backfill` command to scan active tracked files with unknown secret state (`has_secrets IS NULL`) and persist detection outcomes without requiring re-parse.
+
+### Changed
+
+- `matlock detect-backfill --retry-errors` now allows targeted rescans for rows with previous `secret_detection_error` values while preserving confirmed non-error states.
+- Redaction cache files now use a two-level hash-prefix directory layout under `cache.redacted_dir` to distribute cache files across subdirectories.
+
+### Fixed
+
+- Existing tracked documents with legacy unknown secret state can now be backfilled in bulk without waiting for lazy read/query paths.
+- Existing legacy flat redaction cache files remain readable through fallback lookup.
+- Secret detection now correctly parses the direct `SecretsCollection.json()` payload shape (`file -> findings`) to avoid false clean classifications.
+
+---
+
+## [0.5.0] — 2026-08-31
+
+### Added
+
+- `matlock doc-read FILE_PATH` command for safe direct document reads from tracked vault files.
+- Secret-detection persistence fields on the `file` record lifecycle: `has_secrets` and `secret_detection_error`.
+- Redaction cache support via `cache.redacted_dir` with SHA-256 keyed redacted document files.
+
+### Changed
+
+- Parse stage now performs fail-closed secret detection after successful extraction and persists document-level detection state.
+- Search indexing now prevents new raw-secret leakage by indexing redacted content for unsafe files and clearing stale chunks immediately when file hashes change.
+- Search query output now enforces safe content delivery by redacting unsafe file and chunk payloads.
+
+### Fixed
+
+- Legacy documents with unknown secret state are now resolved lazily during read/query flows, persisted, and handled with the same fail-closed safety behavior as newly parsed files.
+
 ---
 
 ## [0.4.1] — 2026-08-09

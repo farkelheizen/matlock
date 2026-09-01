@@ -1,6 +1,6 @@
 # Matlock Pipeline Specification
 
-**Version:** 0.3.x
+**Version:** 0.5.x
 
 This document specifies the behavior of Matlock's five core pipeline stages plus the optional local search hooks that integrate with them. Each core stage is a discrete, independently invocable unit. Stages communicate **exclusively** through the SQLite database; no core stage imports or calls another directly.
 
@@ -61,9 +61,14 @@ Extract task data from files flagged by the `sync` stage and persist results to 
    a. Delete all existing rows in `task` where `file_path` matches (full replace).
    b. Read the file from disk.
    c. Run `extract_tasks_from_markdown(content, config)` to produce a `ParsedMarkdownFile`.
-   d. Insert each `ParsedMarkdownTask` from the result into the `task` table.
-   e. Set `needs_parsing = 0` on the `file` row.
-   f. Update `word_count`, `length`, `meta_data`, `sha256` on the `file` row from the parsed result.
+   d. Run document-level secret detection and persist `has_secrets` plus `secret_detection_error`.
+      - Findings set `has_secrets = 1`.
+      - Clean scans set `has_secrets = 0`.
+      - Scanner exceptions fail closed (`has_secrets = 1`) and persist scanner error text.
+      - Scanner failures do not poison a successfully parsed file.
+   e. Insert each `ParsedMarkdownTask` from the result into the `task` table.
+   f. Set `needs_parsing = 0` on the `file` row.
+   g. Update `word_count`, `length`, `meta_data`, `sha256` on the `file` row from the parsed result.
 3. If extraction raises an unhandled exception for a file: record/update poison cache for `(file_path, sha256)`, log the error, leave `needs_parsing = 1`, continue to the next file.
 4. On successful extraction, clear poison state for that `file_path`.
 
@@ -79,6 +84,34 @@ Extract task data from files flagged by the `sync` stage and persist results to 
 - It does not modify project mappings.
 - It does not generate any reports.
 - It does not persist poison-cache state across process restarts.
+
+---
+
+## Secret Detection Backfill (Standalone Utility)
+
+**Module:** `matlock/stages/detect_backfill.py`
+**Command:** `matlock detect-backfill`
+
+### Responsibility
+
+Resolve legacy or errored secret-detection state in bulk without re-parsing tasks.
+
+### Logic
+
+1. Select active, non-generated files:
+   - Default: `has_secrets IS NULL`.
+   - With `--retry-errors`: `has_secrets IS NULL OR secret_detection_error IS NOT NULL`.
+2. For each candidate, attempt to open the tracked file path under `base_directory`.
+3. If file access fails, skip it and keep existing DB state.
+4. Otherwise, run `scan_document_for_secrets()` and persist `has_secrets` plus `secret_detection_error`.
+5. Keep fail-closed scanner semantics (`has_secrets = 1` when scanning fails).
+
+### What it does NOT do
+
+- It does not modify `needs_parsing`.
+- It does not update tasks.
+- It does not create redaction cache files.
+- It does not run search indexing.
 
 ---
 
@@ -253,10 +286,11 @@ Build or refresh local search state for active, non-generated Markdown files.
    - `exclude: true` clears search rows and marks the file as indexed without chunk/vector writes.
    - `force_index: true` forces re-indexing even when freshness appears current.
 4. Chunk the body text using the configured chunking strategy and optional frontmatter/context template prefix.
-5. Replace `search_chunks` rows for the file and synchronize `search_fts` through triggers.
-6. Generate embeddings for each chunk and upsert `search_vec` rows.
-7. Mark the file's `search_indexed_at` and `search_index_hash`, batching commits according to `search.indexing.batch_size`.
-8. Purge orphaned search rows whose owning file is deleted or generated.
+5. For unsafe files (`has_secrets = 1`), replace raw body text with cached redacted content before chunk persistence.
+6. Replace `search_chunks` rows for the file and synchronize `search_fts` through triggers.
+7. Generate embeddings for each chunk and upsert `search_vec` rows.
+8. Mark the file's `search_indexed_at` and `search_index_hash`, batching commits according to `search.indexing.batch_size`.
+9. Purge orphaned search rows whose owning file is deleted or generated.
 
 ### `matlock search query`
 
@@ -273,6 +307,7 @@ Execute `metadata_only`, `fts_only`, `vector_only`, or `hybrid` search requests 
 - `--stdio` mode reads a JSON request from stdin and emits a JSON response only to stdout.
 - Deterministic exit codes are reserved for success (`0`), input/schema failures (`1`), storage failures (`2`), and embedding-provider failures (`3`).
 - Search query logging is isolated away from stdout so machine callers can parse responses safely.
+- Unsafe file/chunk content is emitted as redacted text in both human and machine responses.
 
 ---
 

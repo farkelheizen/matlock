@@ -1,6 +1,6 @@
 # Matlock Search
 
-**Version:** 0.3.x
+**Version:** 0.5.x
 
 Matlock Search is an optional local-first retrieval subsystem layered on top of the core pipeline. It uses the same SQLite database as the rest of Matlock and adds chunk, FTS, and embedding-backed search state without changing the default behavior of non-search commands.
 
@@ -22,6 +22,17 @@ Related orchestration hooks:
 - `matlock server --index-search-continuous` keeps polling for stale search work in a background thread.
 
 Search remains opt-in. If you never call the search commands or flags, the core sync/parse/map-projects/rollup/report workflow behaves as before.
+
+## Secret-Safe Content Handling
+
+Search integrates with document-level secret detection state persisted on each `file` row.
+
+- Unsafe files (`has_secrets = 1`) are indexed from redacted content rather than raw source bytes.
+- Query responses redact unsafe matched chunks, neighbors, and file-level payloads in both human output and JSON transport.
+- Legacy files with unknown state (`has_secrets IS NULL`) are resolved lazily during indexing/query and then persisted.
+- If lazy secret-state resolution fails, behavior remains fail closed and raw content is not emitted.
+
+For bulk pre-resolution before search operations, run `matlock detect-backfill` (or `matlock detect-backfill --retry-errors`) to persist state for legacy/errored rows ahead of indexing/query requests.
 
 ---
 

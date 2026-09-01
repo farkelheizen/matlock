@@ -126,6 +126,18 @@ def test_default_task_maxlen(tmp_path: Path) -> None:
     assert load_config(cfg_file).tasks.task_text_maxlen == 500
 
 
+def test_default_redacted_cache_directory_expands_home(tmp_path: Path) -> None:
+    cfg_file = _write_config(tmp_path, _minimal_data())
+    assert load_config(cfg_file).cache.redacted_dir == Path.home() / ".matlock/cache/redacted"
+
+
+def test_configured_redacted_cache_directory_expands_home(tmp_path: Path) -> None:
+    data = _minimal_data()
+    data["cache"] = {"redacted_dir": "~/custom-redactions"}
+
+    assert load_config(_write_config(tmp_path, data)).cache.redacted_dir == Path.home() / "custom-redactions"
+
+
 def test_default_super_projects_empty(tmp_path: Path) -> None:
     cfg_file = _write_config(tmp_path, _minimal_data())
     assert load_config(cfg_file).super_projects == []

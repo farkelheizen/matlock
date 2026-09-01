@@ -2,6 +2,9 @@
   "headers": {
     "header_text_maxlen": 200
   },
+  "cache": {
+    "redacted_dir": "~/.matlock/cache/redacted/"
+  },
   "tasks": {
     "task_text_maxlen": 200,
     "attributes": {
