@@ -39,6 +39,7 @@ Provide a safe `matlock detect-backfill` command that resolves secret-detection 
 | SDB-S1 | Completed | Implement secret-state bulk backfill | Candidate DB helper, backfill stage/result, `detect-backfill` CLI, focused DB/stage/CLI tests | `test_detect_backfill.py`, `test_cli_detect_backfill.py`, `test_db.py` |
 | SDB-S2 | Completed | Document the command | CLI/pipeline/schema/search/README/docs-map updates and Unreleased changelog entry | focused documentation assertions where applicable; full suite |
 | SDB-S3 | Completed | Partition redaction cache by hash prefix | Sharded cache path (`<root>/<h0h1>/<h2h3>/<sha256>.txt`), legacy flat-path read fallback, focused cache-layout tests, and docs update for cache layout behavior | `test_redaction.py`, adjacent secret/search regression tests, full suite |
+| SDB-S4 | Completed | Fix detect-secrets payload extraction compatibility | Accept direct `SecretsCollection.json()` file->findings payload shape (and legacy wrapped shape), add regression tests, and update release notes | `test_redaction.py`, adjacent secret/search regression tests, full suite |
 
 Status values: `Not Started` | `In Progress` | `Completed` | `Blocked`
 
@@ -163,6 +164,11 @@ Record results:
 - Changes made: Updated redaction cache storage to use a two-level SHA-256 prefix fanout path under `cache.redacted_dir` (`<sha256[:2]>/<sha256[2:4]>/<sha256>.txt`) for new writes. Added backward-compatible reads that check sharded path first and then legacy flat-path cache entries. Preserved existing fail-closed placeholder behavior for scanner failures (no cache writes). Added focused tests for sharded cache creation, sharded-vs-legacy precedence, and legacy fallback reads. Updated README, data-model documentation, and Unreleased changelog entries to reflect the new cache layout and compatibility behavior.
 - Deviations: none.
 - Validation: Focused `poetry run pytest tests/test_redaction.py` passed (9 passed, 1 existing `pytimeparse` deprecation warning). Adjacent `poetry run pytest tests/test_parse.py tests/test_cli_doc_read.py tests/test_search_indexer.py tests/test_search_query_engine.py` passed (57 passed, 1 warning). Full `poetry run pytest` passed (870 passed, 1 warning).
+
+### SDB-S4 Notes
+- Changes made: Updated secret finding extraction in `matlock/redaction.py` to support the direct detect-secrets API payload shape (`file_path -> findings[]`) while preserving compatibility with wrapped `{results: {...}}` payloads. Added regression coverage in `tests/test_redaction.py` for both payload shapes and retained cache/fail-closed behavior assertions. Added an Unreleased changelog fix note documenting the false-clean classification fix.
+- Deviations: none.
+- Validation: Focused `poetry run pytest tests/test_redaction.py` passed (10 passed, 1 existing `pytimeparse` deprecation warning). Adjacent `poetry run pytest tests/test_parse.py tests/test_cli_doc_read.py tests/test_search_indexer.py tests/test_search_query_engine.py` passed (57 passed, 1 warning). Full `poetry run pytest` passed (871 passed, 1 warning). Real-file verification: `scan_document_for_secrets('/Volumes/Lab1/Obsidian/Bill2/Daily/2026/08/2026-08-31.md')` now reports `has_secrets=True` with 7 findings.
 
 ---
 

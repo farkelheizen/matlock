@@ -96,12 +96,16 @@ def _extract_findings(payload: Any) -> list[SecretFinding]:
     if not isinstance(payload, dict):
         return []
 
-    results = payload.get("results")
-    if not isinstance(results, dict):
-        return []
+    # detect-secrets API payloads are typically file-path -> findings list.
+    # Keep compatibility with any wrapped {"results": {...}} payload shape.
+    results_obj = payload.get("results")
+    if isinstance(results_obj, dict):
+        result_sets = results_obj.values()
+    else:
+        result_sets = payload.values()
 
     findings: list[SecretFinding] = []
-    for file_findings in results.values():
+    for file_findings in result_sets:
         if not isinstance(file_findings, list):
             continue
         for finding in file_findings:

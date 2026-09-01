@@ -10,7 +10,7 @@ from matlock.redaction import REDACTED_PLACEHOLDER, SecretFinding, SecretScanRes
 
 class _FakeSecretsCollection:
     def __init__(self, payload: dict | None = None, scan_error: Exception | None = None):
-        self._payload = payload or {"results": {}}
+        self._payload = payload or {}
         self._scan_error = scan_error
 
     def scan_file(self, _path: str) -> None:
@@ -34,15 +34,13 @@ def test_scan_document_for_secrets_clean_file(monkeypatch):
 
 def test_scan_document_for_secrets_detected_findings(monkeypatch):
     payload = {
-        "results": {
-            "note.md": [
-                {
-                    "line_number": 4,
-                    "hashed_secret": "abc123",
-                    "type": "Base64 High Entropy String",
-                }
-            ]
-        }
+        "note.md": [
+            {
+                "line_number": 4,
+                "hashed_secret": "abc123",
+                "type": "Base64 High Entropy String",
+            }
+        ]
     }
     monkeypatch.setattr(
         redaction,
@@ -59,6 +57,35 @@ def test_scan_document_for_secrets_detected_findings(monkeypatch):
     assert result.findings[0].line_number == 4
     assert result.findings[0].hashed_secret == "abc123"
     assert result.findings[0].secret_type == "Base64 High Entropy String"
+
+
+def test_scan_document_for_secrets_accepts_wrapped_results_payload(monkeypatch):
+    payload = {
+        "results": {
+            "note.md": [
+                {
+                    "line_number": 2,
+                    "hashed_secret": "xyz999",
+                    "type": "Secret Keyword",
+                }
+            ]
+        }
+    }
+    monkeypatch.setattr(
+        redaction,
+        "SecretsCollection",
+        lambda: _FakeSecretsCollection(payload=payload),
+    )
+    monkeypatch.setattr(redaction, "default_settings", lambda: nullcontext())
+
+    result = redaction.scan_document_for_secrets("note.md")
+
+    assert result.has_secrets is True
+    assert result.secret_detection_error is None
+    assert len(result.findings) == 1
+    assert result.findings[0].line_number == 2
+    assert result.findings[0].hashed_secret == "xyz999"
+    assert result.findings[0].secret_type == "Secret Keyword"
 
 
 def test_scan_document_for_secrets_fail_closed_on_exception(monkeypatch):

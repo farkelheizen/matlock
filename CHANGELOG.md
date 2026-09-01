@@ -21,6 +21,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Existing tracked documents with legacy unknown secret state can now be backfilled in bulk without waiting for lazy read/query paths.
 - Existing legacy flat redaction cache files remain readable through fallback lookup.
+- Secret detection now correctly parses the direct `SecretsCollection.json()` payload shape (`file -> findings`) to avoid false clean classifications.
 
 ---
 
