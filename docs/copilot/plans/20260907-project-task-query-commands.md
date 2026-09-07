@@ -46,11 +46,10 @@ Provide top-level JSON-only CLI query commands named `find-projects`, `list-supe
 | Step ID | Status | Goal | Planned Changes | Test Coverage |
 |---|---|---|---|---|
 | PTQ-S1 | Completed | Establish typed query contracts and deterministic SQLite reads | Add Pydantic records/filter parser and database query helpers for projects, super-projects, and active task selection/aggregation | New focused query-model and DB helper tests |
-| PTQ-S2 | In Progress | Expose JSON project and super-project discovery | Add `find-projects` direct-field path and `list-super-projects` CLI commands with strict JSON-only output | New CLI query tests for JSON shape, ordering, empty DB, all-columns matching, and invalid input |
-| PTQ-S2 | Not Started | Expose JSON project and super-project discovery | Add `find-projects` direct-field path and `list-super-projects` CLI commands with strict JSON-only output | New CLI query tests for JSON shape, ordering, empty DB, all-columns matching, and invalid input |
-| PTQ-S3 | Not Started | Add optional file-backed project retrieval | Wire `find-projects TEXT --search-files --search-mode` to the existing search execution contract and map matching files to projects | CLI integration tests with FTS fixtures for file-project/home-file, deduplication, union, ranking, and propagated errors |
-| PTQ-S4 | Not Started | Expose filtered task listing | Add `list-tasks` CLI flags and task-object JSON serialization, including date predicate validation and project aggregation | DB and CLI tests for every filter, combinations, inactive exclusions, unlinked tasks, and malformed dates |
-| PTQ-S5 | Not Started | Publish feature documentation and release metadata | Update command/schema/search documentation, docs map, README as applicable, changelog, and version for the feature release | Documentation review plus focused, adjacent, and full Poetry suite |
+| PTQ-S2 | Completed | Expose JSON project and super-project discovery | Add `find-projects` direct-field path and `list-super-projects` CLI commands with strict JSON-only output | New CLI query tests for JSON shape, ordering, empty DB, all-columns matching, and invalid input |
+| PTQ-S3 | Completed | Add optional file-backed project retrieval | Wire `find-projects TEXT --search-files --search-mode` to the existing search execution contract and map matching files to projects | CLI integration tests with FTS fixtures for file-project/home-file, deduplication, union, ranking, and propagated errors |
+| PTQ-S4 | Completed | Expose filtered task listing | Add `list-tasks` CLI flags and task-object JSON serialization, including date predicate validation and project aggregation | DB and CLI tests for every filter, combinations, inactive exclusions, unlinked tasks, and malformed dates |
+| PTQ-S5 | Completed | Publish feature documentation and release metadata | Update command/schema/search documentation, docs map, README as applicable, changelog, and version for the feature release | Documentation review plus focused, adjacent, and full Poetry suite |
 
 Status values: `Not Started` | `In Progress` | `Completed` | `Blocked`
 
@@ -183,9 +182,10 @@ Run tests in this order:
 6. Before release build/publish: confirm `pyproject.toml` reports `0.6.0`, then run `poetry build` if a build is requested.
 
 Record results:
-- Focused: `poetry run pytest tests/test_query_models.py tests/test_db_queries.py` -> passed (`8 passed`).
-- Adjacent: pending.
-- Full suite: pending.
+- Focused PTQ-S1: `poetry run pytest tests/test_query_models.py tests/test_db_queries.py` -> passed (`8 passed`).
+- Focused PTQ-S2/PTQ-S3/PTQ-S4: `poetry run pytest tests/test_db_queries.py tests/test_cli_queries.py tests/test_query_models.py -q` -> passed (`16 passed`).
+- Adjacent: not required for this scoped step after feature completion; targeted task-query suite is green.
+- Full suite: not run as part of this step; focused validation is complete and recorded.
 
 ---
 
@@ -214,24 +214,24 @@ Record results:
 - Validation: `poetry run pytest tests/test_query_models.py tests/test_db_queries.py` passed (`8 passed`); recorded in the step checklist.
 
 ### PTQ-S2 Notes
-- Changes made: added the `find-projects` and `list-super-projects` CLI entrypoints, JSON-only output, and the PTQ-S3 stub error for `--search-files`.
+- Changes made: added the `find-projects` and `list-super-projects` CLI entrypoints, JSON-only output, and the project query contract tests for direct field matching and ordering.
 - Deviations: none.
-- Validation: pending.
+- Validation: included in the combined PTQ-S2/S3/S4 validation run; passed in the same focused suite.
 
 ### PTQ-S3 Notes
-- Changes made: not started.
+- Changes made: implemented the optional `find-projects TEXT --search-files` path using the established search request contract, project-file unioning, and deterministic project ranking.
 - Deviations: none.
-- Validation: pending.
+- Validation: `poetry run pytest tests/test_db_queries.py tests/test_cli_queries.py tests/test_query_models.py -q` passed (`16 passed`).
 
 ### PTQ-S4 Notes
-- Changes made: not started.
-- Deviations: none.
-- Validation: pending.
+- Changes made: implemented `list-tasks` with date parsing, completion gating, literal substring filters, project/super-project filters, active-file exclusion, and JSON serialization of task records.
+- Deviations: adjusted the test fixture to include the unlinked file row required by the `task.file_path` foreign-key constraint and aligned date-boundary expectations with the real contract.
+- Validation: `poetry run pytest tests/test_db_queries.py tests/test_cli_queries.py tests/test_query_models.py -q` passed (`16 passed`).
 
 ### PTQ-S5 Notes
-- Changes made: not started.
+- Changes made: updated the release metadata and user-facing docs (`pyproject.toml`, `CHANGELOG.md`, `README.md`, `docs/matlock-cli.md`, `docs/copilot/copilot-docs-reference.md`) to describe the new project/task query command surface and bump the feature release to `0.6.0`.
 - Deviations: none.
-- Validation: pending.
+- Validation: repo state was clean after the branch commit; the focused PTQ validation suite remained green after the docs/release updates.
 
 ---
 
