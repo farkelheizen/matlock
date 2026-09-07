@@ -11,8 +11,11 @@ Sentinel: ``"__UNKNOWN__"`` is used as the ``project_id`` value in
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from pathlib import Path
+
+from matlock.query_models import ProjectRecord, SuperProjectRecord, TaskRecord
 
 UNKNOWN_PROJECT = "__UNKNOWN__"
 
@@ -707,3 +710,153 @@ _UPSERT_DAILY_TASK = (
 def upsert_daily_task(conn: sqlite3.Connection, row: dict) -> None:
     """Insert or replace a row in the ``daily_task`` table."""
     conn.execute(_UPSERT_DAILY_TASK, row)
+
+
+# ---------------------------------------------------------------------------
+# query helpers for CLI project/task listing
+# ---------------------------------------------------------------------------
+
+_SQLITE_TRUE = 1
+
+
+def _like_escape(value: str) -> str:
+    """Escape SQLite LIKE metacharacters so literal substring matching works."""
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _serialize_task_record(row: sqlite3.Row) -> TaskRecord:
+    project_rows = conn = None
+    # Placeholder kept for compatibility with task aggregation below.
+    return TaskRecord.model_validate({
+        "task_id": row["task_id"],
+        "file_path": row["file_path"],
+        "parent_task_id": row["parent_task_id"],
+        "created_date": row["created_date"],
+        "due_date": row["due_date"],
+        "est_comp_date": row["est_comp_date"],
+        "act_comp_date": row["act_comp_date"],
+        "checked": row["checked"],
+        "task_text": row["task_text"],
+        "overflow": row["overflow"],
+        "headers": row["headers"],
+        "attributes": row["attributes"],
+        "errors": row["errors"],
+        "twin_index": row["twin_index"],
+        "project_ids": row["project_ids"],
+    })
+
+
+def _decode_json_field(value: str | None, *, field_name: str) -> Any:
+    if value in (None, ""):
+        return [] if field_name in {"headers", "errors"} else {}
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Invalid JSON in {field_name}: {value!r}") from exc
+    return parsed
+
+
+def fetch_projects(conn: sqlite3.Connection, *, term: str | None = None) -> list[ProjectRecord]:
+    """Return all project rows, optionally filtered by a literal case-insensitive substring across all project columns."""
+    if term is None:
+        rows = conn.execute(
+            "SELECT project_id, super_project_id, title, home_file, priority, status, start_date, due_date FROM project ORDER BY project_id ASC"
+        ).fetchall()
+    else:
+        escaped = _like_escape(term)
+        pattern = f"%{escaped}%"
+        rows = conn.execute(
+            "SELECT project_id, super_project_id, title, home_file, priority, status, start_date, due_date FROM project WHERE "
+            "LOWER(COALESCE(CAST(project_id AS TEXT), '')) LIKE LOWER(?) ESCAPE '\\' OR "
+            "LOWER(COALESCE(CAST(super_project_id AS TEXT), '')) LIKE LOWER(?) ESCAPE '\\' OR "
+            "LOWER(COALESCE(CAST(title AS TEXT), '')) LIKE LOWER(?) ESCAPE '\\' OR "
+            "LOWER(COALESCE(CAST(home_file AS TEXT), '')) LIKE LOWER(?) ESCAPE '\\' OR "
+            "LOWER(COALESCE(CAST(priority AS TEXT), '')) LIKE LOWER(?) ESCAPE '\\' OR "
+            "LOWER(COALESCE(CAST(status AS TEXT), '')) LIKE LOWER(?) ESCAPE '\\' OR "
+            "LOWER(COALESCE(CAST(start_date AS TEXT), '')) LIKE LOWER(?) ESCAPE '\\' OR "
+            "LOWER(COALESCE(CAST(due_date AS TEXT), '')) LIKE LOWER(?) ESCAPE '\\' "
+            "ORDER BY project_id ASC",
+            (pattern, pattern, pattern, pattern, pattern, pattern, pattern, pattern),
+        ).fetchall()
+
+    return [ProjectRecord.model_validate(dict(row)) for row in rows]
+
+
+def fetch_super_projects(conn: sqlite3.Connection) -> list[SuperProjectRecord]:
+    """Return all super-project rows ordered by the primary key."""
+    rows = conn.execute(
+        "SELECT super_project_id, title, priority FROM super_project ORDER BY super_project_id ASC"
+    ).fetchall()
+    return [SuperProjectRecord.model_validate(dict(row)) for row in rows]
+
+
+def fetch_active_tasks(
+    conn: sqlite3.Connection,
+    *,
+    filters: dict | None = None,
+) -> list[TaskRecord]:
+    """Return active, non-generated tasks with project IDs aggregated and JSON fields decoded."""
+    filters = filters or {}
+    clauses: list[str] = [
+        "t.file_path IN (SELECT file_path FROM file WHERE deleted = 0 AND is_generated = 0)",
+    ]
+    params: list[Any] = []
+
+    if filters.get("task_text"):
+        term = _like_escape(filters["task_text"])
+        clauses.append("LOWER(CAST(t.task_text AS TEXT)) LIKE LOWER(?)")
+        params.append(f"%{term}%")
+
+    if filters.get("headers"):
+        term = _like_escape(filters["headers"])
+        clauses.append("LOWER(CAST(t.headers AS TEXT)) LIKE LOWER(?)")
+        params.append(f"%{term}%")
+
+    if filters.get("attributes"):
+        term = _like_escape(filters["attributes"])
+        clauses.append("LOWER(CAST(t.attributes AS TEXT)) LIKE LOWER(?)")
+        params.append(f"%{term}%")
+
+    if filters.get("checked") is not None:
+        clauses.append("t.checked = ?")
+        params.append(_SQLITE_TRUE if filters["checked"] else 0)
+
+    if filters.get("project_ids"):
+        placeholders = ", ".join("?" for _ in filters["project_ids"])
+        clauses.append(f"EXISTS (SELECT 1 FROM file_project fp WHERE fp.file_path = t.file_path AND fp.project_id IN ({placeholders}))")
+        params.extend(filters["project_ids"])
+
+    if filters.get("super_project_ids"):
+        placeholders = ", ".join("?" for _ in filters["super_project_ids"])
+        clauses.append(
+            f"EXISTS (SELECT 1 FROM file_project fp JOIN project p ON p.project_id = fp.project_id WHERE fp.file_path = t.file_path AND p.super_project_id IN ({placeholders}))"
+        )
+        params.extend(filters["super_project_ids"])
+
+    sql = (
+        "SELECT t.*, COALESCE(("
+        " SELECT GROUP_CONCAT(fp.project_id, ',') FROM ("
+        "   SELECT DISTINCT fp.project_id FROM file_project fp WHERE fp.file_path = t.file_path"
+        " ) fp"
+        " ), '') AS project_ids FROM task t WHERE "
+        + " AND ".join(clauses) +
+        " ORDER BY t.file_path ASC, t.task_id ASC"
+    )
+    rows = conn.execute(sql, params).fetchall()
+    result: list[TaskRecord] = []
+    for row in rows:
+        raw_project_ids = row["project_ids"]
+        if raw_project_ids:
+            project_ids = [pid for pid in raw_project_ids.split(",") if pid]
+        else:
+            project_ids = []
+
+        task_dict = {**dict(row)}
+        task_dict["headers"] = _decode_json_field(task_dict.get("headers"), field_name="headers")
+        task_dict["attributes"] = _decode_json_field(task_dict.get("attributes"), field_name="attributes")
+        task_dict["errors"] = _decode_json_field(task_dict.get("errors"), field_name="errors")
+        task_dict["checked"] = bool(task_dict.get("checked") or 0)
+        task_dict["overflow"] = bool(task_dict.get("overflow") or 0)
+        task_dict["project_ids"] = sorted(set(project_ids))
+        result.append(TaskRecord.model_validate(task_dict))
+    return result
