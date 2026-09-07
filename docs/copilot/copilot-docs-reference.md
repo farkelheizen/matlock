@@ -15,6 +15,10 @@ Use this file as the fast lookup index before implementation.
    - Open: `docs/matlock-data-model.md`
 5. **Need config.yaml schema (paths, task attributes, projects, search config)?**
    - Open: `docs/matlock-configuration.md`
+5b. **Need the end-user Markdown syntax for writing task attributes (due dates, priority, estimates, etc.)?**
+   - Open: `docs/matlock-task-attributes.md`
+5c. **Need the default frontmatter keys recognized on project/definition pages (title, priority, status, dates, resources, etc.)?**
+   - Open: `docs/matlock-frontmatter-metadata.md`
 6. **Need report template structure or dashboard fields?**
    - Open: `docs/matlock-generated-reports.md`
 7. **Need CLI command reference (flags, entrypoint)?**
@@ -39,6 +43,8 @@ Use this file as the fast lookup index before implementation.
 | Pipeline stage logic: sync, parse, map-projects, rollup, report, server, opt-in search indexing hooks | `docs/matlock-pipeline-specification.md` | `docs/matlock-data-model.md`, `docs/matlock-high-level-design.md`, `docs/matlock-search.md` |
 | SQLite schema, in-memory models, search contracts, table columns, PRAGMA config | `docs/matlock-data-model.md` | `docs/matlock-pipeline-specification.md`, `docs/matlock-search.md` |
 | config.yaml schema, task attributes, project definitions, path resolution, logging, search config | `docs/matlock-configuration.md` | `docs/matlock-data-model.md`, `docs/matlock-search.md` |
+| End-user Markdown syntax for task attributes (aliases, curly-brace form, date/time/domain types) | `docs/matlock-task-attributes.md` | `docs/matlock-configuration.md` |
+| Default frontmatter keys for project pages (title, priority, status, dates, resources, projects) | `docs/matlock-frontmatter-metadata.md` | `docs/matlock-scan-projects.md`, `docs/matlock-configuration.md` |
 | Jinja2 report templates, dashboard types, template variables, heatmap logic | `docs/matlock-generated-reports.md` | `docs/matlock-high-level-design.md` |
 | CLI commands, flags, `matlock server`, `matlock search`, entrypoint registration | `docs/matlock-cli.md` | `docs/matlock-pipeline-specification.md`, `docs/matlock-search.md` |
 | Secret detection state, redaction cache, and safe `doc-read` behavior | `docs/matlock-cli.md` | `docs/matlock-search.md`, `docs/matlock-data-model.md`, `docs/matlock-configuration.md` |

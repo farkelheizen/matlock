@@ -26,6 +26,15 @@ from matlock.search.ranking import cosine_similarity, hybrid_rrf_score
 from matlock.search.sql_filters import build_file_filter_clause
 
 
+def _to_fts5_match_query(raw_query: str) -> str:
+    """Build a safe FTS5 MATCH string, quoting each token so operator
+    characters (``-``, ``:``, ``"``, ``*``, ``(``, ``)``) in user input
+    can't be parsed as FTS5 query syntax (e.g. column filters)."""
+    tokens = raw_query.split()
+    quoted = [f'"{token.replace(chr(34), chr(34) * 2)}"' for token in tokens]
+    return " ".join(quoted)
+
+
 @dataclass(slots=True)
 class ChunkMatch:
     file_path: str
@@ -419,6 +428,9 @@ class SearchQueryEngine:
     def _fetch_fts_rows(self, request: MatlockSearchRequest) -> list[sqlite3.Row]:
         if not request.query:
             return []
+        fts_query = _to_fts5_match_query(request.query)
+        if not fts_query:
+            return []
         filter_clause, params = build_file_filter_clause(request.filters)
         sql = (
             "SELECT sc.chunk_id, sc.file_id AS file_path, sc.chunk_index, sc.content,"
@@ -436,7 +448,7 @@ class SearchQueryEngine:
             " WHERE f.deleted = 0 AND f.is_generated = 0"
             "   AND search_fts MATCH ?"
         )
-        query_params: list[Any] = [request.query]
+        query_params: list[Any] = [fts_query]
         if filter_clause:
             sql += f" AND {filter_clause}"
             query_params.extend(params)
