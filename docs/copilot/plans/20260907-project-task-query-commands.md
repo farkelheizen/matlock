@@ -46,6 +46,7 @@ Provide top-level JSON-only CLI query commands named `find-projects`, `list-supe
 | Step ID | Status | Goal | Planned Changes | Test Coverage |
 |---|---|---|---|---|
 | PTQ-S1 | Completed | Establish typed query contracts and deterministic SQLite reads | Add Pydantic records/filter parser and database query helpers for projects, super-projects, and active task selection/aggregation | New focused query-model and DB helper tests |
+| PTQ-S2 | In Progress | Expose JSON project and super-project discovery | Add `find-projects` direct-field path and `list-super-projects` CLI commands with strict JSON-only output | New CLI query tests for JSON shape, ordering, empty DB, all-columns matching, and invalid input |
 | PTQ-S2 | Not Started | Expose JSON project and super-project discovery | Add `find-projects` direct-field path and `list-super-projects` CLI commands with strict JSON-only output | New CLI query tests for JSON shape, ordering, empty DB, all-columns matching, and invalid input |
 | PTQ-S3 | Not Started | Add optional file-backed project retrieval | Wire `find-projects TEXT --search-files --search-mode` to the existing search execution contract and map matching files to projects | CLI integration tests with FTS fixtures for file-project/home-file, deduplication, union, ranking, and propagated errors |
 | PTQ-S4 | Not Started | Expose filtered task listing | Add `list-tasks` CLI flags and task-object JSON serialization, including date predicate validation and project aggregation | DB and CLI tests for every filter, combinations, inactive exclusions, unlinked tasks, and malformed dates |
@@ -213,7 +214,7 @@ Record results:
 - Validation: `poetry run pytest tests/test_query_models.py tests/test_db_queries.py` passed (`8 passed`); recorded in the step checklist.
 
 ### PTQ-S2 Notes
-- Changes made: not started.
+- Changes made: added the `find-projects` and `list-super-projects` CLI entrypoints, JSON-only output, and the PTQ-S3 stub error for `--search-files`.
 - Deviations: none.
 - Validation: pending.
 

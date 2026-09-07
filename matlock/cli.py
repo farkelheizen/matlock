@@ -16,13 +16,21 @@ Usage:
 from __future__ import annotations
 
 import datetime
+import json
 import sys
 from pathlib import Path
 
 import typer
 
 from matlock.config import load_config, validate_config_paths
-from matlock.db import get_connection, get_file, init_db, set_file_secret_detection
+from matlock.db import (
+    fetch_projects,
+    fetch_super_projects,
+    get_connection,
+    get_file,
+    init_db,
+    set_file_secret_detection,
+)
 from matlock.logging_setup import setup_logging
 from matlock.redaction import get_redacted_document, scan_document_for_secrets
 from matlock.search.logging import isolated_search_logging
@@ -151,6 +159,61 @@ def _normalize_doc_read_path(base_directory: Path, file_path: str) -> tuple[Path
         raise ValueError("path must be inside base_directory") from exc
 
     return abs_path, relative.as_posix()
+
+
+@app.command(name="find-projects")
+def find_projects(
+    ctx: typer.Context,
+    text: str | None = typer.Argument(
+        None,
+        help="Optional literal text filter for project records.",
+    ),
+    search_files: bool = typer.Option(
+        False,
+        "--search-files",
+        help="Optional indexed-file project search; currently not yet supported.",
+    ),
+    search_mode: str = typer.Option(
+        "hybrid",
+        "--search-mode",
+        help="Search mode to use when --search-files is enabled.",
+    ),
+) -> None:
+    """Return project rows as JSON. Optionally filter by literal text."""
+    cfg = _load_and_validate(ctx.obj[_CONFIG_KEY])
+
+    if search_files:
+        typer.echo(
+            "Error: --search-files is not yet supported; this step is reserved for PTQ-S3.",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    conn = get_connection(cfg.db_path)
+    try:
+        init_db(conn)
+        rows = fetch_projects(conn, term=text)
+    finally:
+        conn.close()
+
+    payload = [row.model_dump(mode="json") for row in rows]
+    typer.echo(json.dumps(payload), nl=False)
+
+
+@app.command(name="list-super-projects")
+def list_super_projects(ctx: typer.Context) -> None:
+    """Return all super-project rows as JSON."""
+    cfg = _load_and_validate(ctx.obj[_CONFIG_KEY])
+
+    conn = get_connection(cfg.db_path)
+    try:
+        init_db(conn)
+        rows = fetch_super_projects(conn)
+    finally:
+        conn.close()
+
+    payload = [row.model_dump(mode="json") for row in rows]
+    typer.echo(json.dumps(payload), nl=False)
 
 
 @app.command(name="doc-read")
