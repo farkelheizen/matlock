@@ -38,3 +38,13 @@ _Matlock/
 # Matlock 
 docs_local
 docs_local/
+
+matlock.code-workspace
+
+search_docs/
+
+.github/agents/search-*.md
+
+.github/skills/*
+
+.github/skill-templates/*

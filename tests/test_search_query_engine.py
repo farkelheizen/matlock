@@ -206,6 +206,22 @@ def test_fts_only_returns_ranked_chunk_matches(tmp_path: Path, conn) -> None:
     assert response.results[0].score_breakdown.fts_rank == 1
 
 
+def test_fts_only_treats_operator_like_user_input_as_search_terms(tmp_path: Path, conn) -> None:
+    config = _seed_dataset(conn, tmp_path)
+    engine = SearchQueryEngine(config, conn, embedding_provider=FakeQueryEmbeddingProvider())
+
+    response = engine.execute(
+        {
+            "query": "database: maintenance",
+            "search_mode": "fts_only",
+            "output": {"granularity": "chunk", "limit": 10},
+        }
+    )
+
+    assert response.status == "success"
+    assert [result.file_path for result in response.results] == ["Notes/beta.md"]
+
+
 def test_search_response_includes_stored_secret_detection_metadata(tmp_path: Path, conn) -> None:
     config = _seed_dataset(conn, tmp_path)
     set_file_secret_detection(conn, "Notes/alpha.md", True, "scanner failed")

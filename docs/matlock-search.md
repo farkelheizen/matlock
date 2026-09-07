@@ -88,6 +88,7 @@ Output controls:
 - `granularity: file` collapses results to the file level.
 - `include_content` controls whether matched text is returned.
 - Empty or missing `query` values are normalized to `metadata_only`.
+- In FTS-backed modes, query tokens are treated as literal search terms. Characters such as `:`, `-`, `*`, quotes, and parentheses do not enable SQLite FTS operators or column filters.
 
 Project filters currently execute as exact matching even though the request contract accepts additional `project_match_mode` values for forward compatibility.
 

@@ -1,6 +1,6 @@
 [project]
 name = "matlock"
-version = "0.5.1"
+version = "0.5.2"
 description = "Pipeline-driven task extractor and report generator for Markdown second brains"
 readme = "README.md"
 license = "Apache-2.0"

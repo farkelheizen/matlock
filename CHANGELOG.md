@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ---
 
+## [0.5.2] — 2026-09-07
+
+### Added
+
+- Vault-author reference documentation for task-line attributes and recognized project-page frontmatter metadata.
+
+### Fixed
+
+- Search queries now treat FTS operator-like characters in user input as literal search terms, preventing malformed queries and unintended FTS column filters.
+
+---
+
 ## [0.5.1] — 2026-09-01
 
 ### Added
