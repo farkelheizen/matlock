@@ -119,6 +119,79 @@ poetry run matlock doc-read /absolute/path/inside/your/vault/Notes/today.md
 
 ---
 
+### `matlock find-projects`
+
+Return project records as JSON. Without a positional term, it emits the complete project table in `project_id` order. With a term, it performs a case-insensitive literal substring match across every project-column value. When `--search-files` is included, it also unions in projects associated with indexed files and ranks those by the best file match score.
+
+```
+matlock find-projects [TEXT] [OPTIONS]
+```
+
+| Argument / Option | Default | Description |
+|:------------------|:--------|:------------|
+| `TEXT` | None | Optional project text filter |
+| `--search-files` | False | Include projects connected to matching indexed files |
+| `--search-mode {hybrid,fts_only,vector_only}` | `hybrid` | Search mode reused by the existing search contract |
+| `--config PATH` | `./config.yaml` | Config file location |
+
+**Examples:**
+```bash
+poetry run matlock find-projects
+poetry run matlock find-projects "alpha"
+poetry run matlock find-projects "alpha" --search-files --search-mode hybrid
+```
+
+---
+
+### `matlock list-super-projects`
+
+Return every `super_project` row as JSON.
+
+```
+matlock list-super-projects [OPTIONS]
+```
+
+| Option | Default | Description |
+|:-------|:--------|:------------|
+| `--config PATH` | `./config.yaml` | Config file location |
+
+**Example:**
+```bash
+poetry run matlock list-super-projects
+```
+
+---
+
+### `matlock list-tasks`
+
+Return active, non-generated tasks as JSON, optionally filtered by date, completion, text, headers, attributes, project IDs, and super-project IDs.
+
+```
+matlock list-tasks [OPTIONS]
+```
+
+| Option | Default | Description |
+|:-------|:--------|:------------|
+| `--due-date VALUE` | repeated | Repeatable ISO date predicate such as `>=2026-01-01` |
+| `--est-comp-date VALUE` | repeated | Repeatable estimated completion predicate |
+| `--act-comp-date VALUE` | repeated | Repeatable actual completion predicate |
+| `--checked / --unchecked` | none | Filter by completion state |
+| `--task-text TEXT` | None | Case-insensitive literal substring match |
+| `--headers TEXT` | None | Case-insensitive literal JSON-list match |
+| `--attributes TEXT` | None | Case-insensitive literal JSON-object match |
+| `--project-id VALUE` | repeated | Repeatable project filter |
+| `--super-project-id VALUE` | repeated | Repeatable super-project filter |
+| `--config PATH` | `./config.yaml` | Config file location |
+
+**Examples:**
+```bash
+poetry run matlock list-tasks
+poetry run matlock list-tasks --checked --task-text "review"
+poetry run matlock list-tasks --project-id backend --due-date ">=2026-01-01"
+```
+
+---
+
 ### `matlock map-projects`
 
 **Stage III.** Rebuild the `project`, `super_project`, and `file_project` tables from `config.yaml`. Always a full rebuild.

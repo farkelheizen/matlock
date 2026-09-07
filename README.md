@@ -40,6 +40,12 @@ poetry run matlock map-projects
 poetry run matlock rollup
 poetry run matlock report
 
+# Query project and task records directly from SQLite-backed metadata
+poetry run matlock find-projects
+poetry run matlock find-projects "alpha"
+poetry run matlock list-super-projects
+poetry run matlock list-tasks --checked --task-text "review"
+
 # Or build/query the local search index directly
 poetry run matlock search index
 poetry run matlock search query "database"
@@ -220,6 +226,34 @@ Behavior:
 - `--retry-errors` additionally rescans rows where `secret_detection_error IS NOT NULL`.
 - Missing/unreadable files are reported as skipped and retain existing state.
 - The command does not re-parse tasks, generate redaction cache files, or reindex search.
+
+### `matlock find-projects`
+
+Return project records as a JSON list. Without a term it returns all projects; with a term it performs a case-insensitive literal substring match across all project columns. Add `--search-files` and `--search-mode` to union direct matches with projects associated with matching indexed files.
+
+```bash
+poetry run matlock find-projects
+poetry run matlock find-projects "alpha"
+poetry run matlock find-projects "alpha" --search-files --search-mode hybrid
+```
+
+### `matlock list-super-projects`
+
+Return every super-project row as a JSON list.
+
+```bash
+poetry run matlock list-super-projects
+```
+
+### `matlock list-tasks`
+
+Return active, non-generated task rows as JSON. Supports repeatable `--due-date`, `--est-comp-date`, and `--act-comp-date` predicates, `--checked/--unchecked`, `--task-text`, `--headers`, `--attributes`, `--project-id`, and `--super-project-id` filters.
+
+```bash
+poetry run matlock list-tasks
+poetry run matlock list-tasks --checked --task-text "review"
+poetry run matlock list-tasks --project-id backend --due-date ">=2026-01-01"
+```
 
 ### `matlock map-projects`
 

@@ -66,6 +66,7 @@ Use this file as the fast lookup index before implementation.
 - **search, search index, search query, stdio, search_mode, granularity, surrounding_chunks, search.log** → `matlock-search.md`, `matlock-cli.md`, `matlock-configuration.md`
 - **doc-read, has_secrets, secret_detection_error, redacted_dir, detect-secrets** → `matlock-cli.md`, `matlock-data-model.md`, `matlock-configuration.md`, `matlock-search.md`
 - **detect-backfill, retry-errors, legacy secret state, scanner retry** → `matlock-cli.md`, `matlock-pipeline-specification.md`, `matlock-data-model.md`
+- **find-projects, list-super-projects, list-tasks, project query, task query, search-files, due_date, act_comp_date, est_comp_date** → `matlock-cli.md`, `matlock-data-model.md`, `matlock-search.md`
 - **search_chunks, search_fts, search_vec, search_indexed_at, search_index_hash, embeddings** → `matlock-data-model.md`, `matlock-search.md`
 - **index-search, index-search-continuous, background indexing, hybrid search, metadata_only** → `matlock-search.md`, `matlock-cli.md`, `matlock-pipeline-specification.md`
 - **config.yaml, base_directory, output_directory, db_path, debounce_seconds** → `matlock-configuration.md`

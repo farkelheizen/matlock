@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ---
 
+## [0.6.0] — 2026-09-07
+
+### Added
+
+- `matlock find-projects` for JSON project lookup with direct field matching and optional file-backed project discovery via the existing search engine.
+- `matlock list-super-projects` for JSON super-project enumeration.
+- `matlock list-tasks` for filtered JSON task queries with date, completion, text, attribute, and project/super-project constraints.
+
+### Changed
+
+- Query output now follows deterministic project/task JSON contracts with decoded JSON fields and stable ordering across CLI result payloads.
+- README and CLI docs now document the query command surface alongside the rest of the Matlock pipeline.
+
+### Fixed
+
+- Task filtering now validates date predicates before SQL execution and excludes soft-deleted/generated files from default task queries while preserving unlinked tasks.
+
+---
+
 ## [0.5.2] — 2026-09-07
 
 ### Added
