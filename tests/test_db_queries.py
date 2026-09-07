@@ -77,4 +77,37 @@ def test_fetch_active_tasks_filters_deleted_and_generated_files_and_decodes_json
     assert rows[0].checked is True
     assert rows[0].overflow is True
 
+    filtered = fetch_active_tasks(conn, filters={
+        "due_date": [{"field": "due_date", "operator": ">=", "value": "2026-03-01"}],
+        "checked": True,
+        "task_text": "alpha",
+        "project_ids": ["p-1"],
+    })
+    assert [row.task_id for row in filtered] == ["t-1"]
+
+    conn.close()
+
+
+def test_fetch_active_tasks_applies_duplicate_and_date_filters() -> None:
+    conn = get_connection(":memory:")
+    init_db(conn)
+
+    conn.execute("INSERT INTO file (file_path, sha256, file_ext, created, modified, modified_date, deleted, length, word_count, meta_data, is_generated, needs_parsing) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", ("notes/a.md", "hash-a", ".md", 1, 1, "2026-01-01", 0, 1, 1, "{}", 0, 0))
+    conn.execute("INSERT INTO file (file_path, sha256, file_ext, created, modified, modified_date, deleted, length, word_count, meta_data, is_generated, needs_parsing) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", ("notes/b.md", "hash-b", ".md", 1, 1, "2026-01-01", 0, 1, 1, "{}", 0, 0))
+    conn.execute("INSERT INTO project (project_id, super_project_id, title, home_file, priority, status, start_date, due_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", ("p-1", None, "Alpha", "notes/a.md", "P1", "Active", "2026-01-01", None))
+    conn.execute("INSERT INTO project (project_id, super_project_id, title, home_file, priority, status, start_date, due_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", ("p-2", None, "Beta", "notes/b.md", "P2", "Active", "2026-01-01", None))
+    conn.execute("INSERT INTO file_project (file_path, project_id) VALUES (?, ?)", ("notes/a.md", "p-1"))
+    conn.execute("INSERT INTO file_project (file_path, project_id) VALUES (?, ?)", ("notes/a.md", "p-2"))
+    conn.execute("INSERT INTO file_project (file_path, project_id) VALUES (?, ?)", ("notes/b.md", "p-2"))
+
+    _insert_task(conn, task_id="t-1", file_path="notes/a.md", task_text="Alpha task", checked=1, due_date="2026-03-02", headers='["ops"]', attributes='{"owner": "ops"}')
+    _insert_task(conn, task_id="t-2", file_path="notes/b.md", task_text="Beta task", checked=0, due_date="2026-03-04", headers='["ops"]', attributes='{"owner": "ops"}')
+    conn.commit()
+
+    rows = fetch_active_tasks(conn, filters={
+        "due_date": [{"field": "due_date", "operator": ">=", "value": "2026-03-03"}, {"field": "due_date", "operator": "<", "value": "2026-03-05"}],
+        "project_ids": ["p-2"],
+    })
+    assert [row.task_id for row in rows] == ["t-2"]
+
     conn.close()

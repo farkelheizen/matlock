@@ -13,9 +13,16 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from datetime import date
 from pathlib import Path
 
-from matlock.query_models import ProjectRecord, SuperProjectRecord, TaskRecord
+from matlock.query_models import (
+    DatePredicate,
+    ProjectRecord,
+    SuperProjectRecord,
+    TaskRecord,
+    parse_date_predicate,
+)
 
 UNKNOWN_PROJECT = "__UNKNOWN__"
 
@@ -802,6 +809,29 @@ def fetch_active_tasks(
     ]
     params: list[Any] = []
 
+    def _append_date_predicates(field_name: str, raw_predicates: Any) -> None:
+        if not raw_predicates:
+            return
+        for raw in raw_predicates:
+            if isinstance(raw, DatePredicate):
+                pred = raw
+            elif isinstance(raw, dict):
+                pred = DatePredicate.model_validate({
+                    "field": raw.get("field", field_name),
+                    "operator": raw.get("operator", "="),
+                    "value": raw.get("value"),
+                })
+            elif isinstance(raw, str):
+                pred = parse_date_predicate(raw, field_name)
+            else:
+                raise ValueError(f"Invalid date predicate for {field_name}: {raw!r}")
+
+            if pred.field != field_name:
+                pred = DatePredicate(field=field_name, operator=pred.operator, value=pred.value)
+            clause = f"t.{field_name} {pred.operator} ?"
+            clauses.append(clause)
+            params.append(pred.value.isoformat())
+
     if filters.get("task_text"):
         term = _like_escape(filters["task_text"])
         clauses.append("LOWER(CAST(t.task_text AS TEXT)) LIKE LOWER(?)")
@@ -820,6 +850,9 @@ def fetch_active_tasks(
     if filters.get("checked") is not None:
         clauses.append("t.checked = ?")
         params.append(_SQLITE_TRUE if filters["checked"] else 0)
+
+    for field_name in ("due_date", "est_comp_date", "act_comp_date"):
+        _append_date_predicates(field_name, filters.get(field_name))
 
     if filters.get("project_ids"):
         placeholders = ", ".join("?" for _ in filters["project_ids"])

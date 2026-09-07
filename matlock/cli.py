@@ -24,6 +24,7 @@ import typer
 
 from matlock.config import load_config, validate_config_paths
 from matlock.db import (
+    fetch_active_tasks,
     fetch_projects,
     fetch_super_projects,
     get_connection,
@@ -32,6 +33,7 @@ from matlock.db import (
     set_file_secret_detection,
 )
 from matlock.logging_setup import setup_logging
+from matlock.query_models import ProjectRecord, parse_date_predicate
 from matlock.redaction import get_redacted_document, scan_document_for_secrets
 from matlock.search.logging import isolated_search_logging
 from matlock.search.query_cli import (
@@ -161,6 +163,17 @@ def _normalize_doc_read_path(base_directory: Path, file_path: str) -> tuple[Path
     return abs_path, relative.as_posix()
 
 
+def _project_ids_for_file(conn, file_path: str) -> list[str]:
+    """Return all project IDs connected to a file via file_project or home_file."""
+    rows = conn.execute(
+        "SELECT DISTINCT project_id FROM file_project WHERE file_path = ?"
+        " UNION "
+        "SELECT project_id FROM project WHERE home_file = ?",
+        (file_path, file_path),
+    ).fetchall()
+    return [row["project_id"] for row in rows if row["project_id"]]
+
+
 @app.command(name="find-projects")
 def find_projects(
     ctx: typer.Context,
@@ -171,7 +184,7 @@ def find_projects(
     search_files: bool = typer.Option(
         False,
         "--search-files",
-        help="Optional indexed-file project search; currently not yet supported.",
+        help="Use the configured search engine to find project-associated files.",
     ),
     search_mode: str = typer.Option(
         "hybrid",
@@ -182,22 +195,71 @@ def find_projects(
     """Return project rows as JSON. Optionally filter by literal text."""
     cfg = _load_and_validate(ctx.obj[_CONFIG_KEY])
 
-    if search_files:
-        typer.echo(
-            "Error: --search-files is not yet supported; this step is reserved for PTQ-S3.",
-            err=True,
-        )
-        raise typer.Exit(code=1)
-
     conn = get_connection(cfg.db_path)
     try:
         init_db(conn)
+
+        if search_files:
+            if not text or not text.strip():
+                typer.echo("Error: text is required when --search-files is used", err=True)
+                raise typer.Exit(code=1)
+
+            outcome = run_search_request(
+                cfg,
+                conn,
+                {
+                    "query": text,
+                    "search_mode": search_mode,
+                    "output": {
+                        "granularity": "file",
+                        "limit": 100000,
+                        "include_content": False,
+                    },
+                },
+            )
+            if outcome.exit_code != 0:
+                error_message = "search request failed"
+                if outcome.response.error is not None:
+                    error_message = outcome.response.error.message
+                typer.echo(f"Error: {error_message}", err=True)
+                raise typer.Exit(code=outcome.exit_code)
+
+            file_scores: dict[str, float] = {}
+            for result in outcome.response.results:
+                for project_id in _project_ids_for_file(conn, result.file_path):
+                    file_scores[project_id] = max(file_scores.get(project_id, 0.0), float(result.score))
+
+            direct_rows = fetch_projects(conn, term=text)
+            direct_ids = {row.project_id for row in direct_rows}
+            file_hit_ids = set(file_scores)
+            ranked_file_ids = [
+                project_id for project_id, _ in sorted(file_scores.items(), key=lambda item: (-item[1], item[0]))
+            ]
+            direct_only_ids = sorted(direct_ids - file_hit_ids)
+            ordered_project_ids = ranked_file_ids + direct_only_ids
+            if not ordered_project_ids:
+                payload = []
+            else:
+                placeholders = ", ".join("?" for _ in ordered_project_ids)
+                rows = conn.execute(
+                    "SELECT project_id, super_project_id, title, home_file, priority, status, start_date, due_date FROM project WHERE project_id IN ("
+                    + placeholders
+                    + ")",
+                    ordered_project_ids,
+                ).fetchall()
+                project_by_id = {row["project_id"]: row for row in rows}
+                payload = []
+                for project_id in ordered_project_ids:
+                    if project_id in project_by_id:
+                        payload.append(ProjectRecord.model_validate(dict(project_by_id[project_id])).model_dump(mode="json"))
+            typer.echo(json.dumps(payload), nl=False)
+            return
+
         rows = fetch_projects(conn, term=text)
+        payload = [row.model_dump(mode="json") for row in rows]
+        typer.echo(json.dumps(payload), nl=False)
     finally:
         conn.close()
-
-    payload = [row.model_dump(mode="json") for row in rows]
-    typer.echo(json.dumps(payload), nl=False)
 
 
 @app.command(name="list-super-projects")
@@ -209,6 +271,58 @@ def list_super_projects(ctx: typer.Context) -> None:
     try:
         init_db(conn)
         rows = fetch_super_projects(conn)
+    finally:
+        conn.close()
+
+    payload = [row.model_dump(mode="json") for row in rows]
+    typer.echo(json.dumps(payload), nl=False)
+
+
+@app.command(name="list-tasks")
+def list_tasks(
+    ctx: typer.Context,
+    due_date: list[str] = typer.Option([], "--due-date", help="Repeatable ISO date comparison like >=2026-01-01."),
+    est_comp_date: list[str] = typer.Option([], "--est-comp-date", help="Repeatable estimated completion date filter."),
+    act_comp_date: list[str] = typer.Option([], "--act-comp-date", help="Repeatable actual completion date filter."),
+    checked: bool | None = typer.Option(None, "--checked/--unchecked", help="Filter tasks by checked state."),
+    task_text: str | None = typer.Option(None, "--task-text", help="Case-insensitive literal task text match."),
+    headers: str | None = typer.Option(None, "--headers", help="Case-insensitive literal header JSON match."),
+    attributes: str | None = typer.Option(None, "--attributes", help="Case-insensitive literal attribute JSON match."),
+    project_ids: list[str] = typer.Option([], "--project-id", help="Repeatable project filter."),
+    super_project_ids: list[str] = typer.Option([], "--super-project-id", help="Repeatable super-project filter."),
+) -> None:
+    """Return active task rows as JSON, optionally filtered by date, state, text, and project linkage."""
+    cfg = _load_and_validate(ctx.obj[_CONFIG_KEY])
+
+    filter_map: dict[str, object] = {}
+    try:
+        for field_name, raw_values in (
+            ("due_date", due_date),
+            ("est_comp_date", est_comp_date),
+            ("act_comp_date", act_comp_date),
+        ):
+            if raw_values:
+                filter_map[field_name] = [parse_date_predicate(value, field_name).model_dump(mode="json") for value in raw_values]
+        if checked is not None:
+            filter_map["checked"] = checked
+        if task_text:
+            filter_map["task_text"] = task_text
+        if headers:
+            filter_map["headers"] = headers
+        if attributes:
+            filter_map["attributes"] = attributes
+        if project_ids:
+            filter_map["project_ids"] = list(project_ids)
+        if super_project_ids:
+            filter_map["super_project_ids"] = list(super_project_ids)
+    except ValueError as exc:
+        typer.echo(f"Error: Invalid date predicate: {exc}", err=True)
+        raise typer.Exit(code=1)
+
+    conn = get_connection(cfg.db_path)
+    try:
+        init_db(conn)
+        rows = fetch_active_tasks(conn, filters=filter_map)
     finally:
         conn.close()
 
