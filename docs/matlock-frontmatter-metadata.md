@@ -2,7 +2,7 @@
 
 This doc is for **vault authors** — it describes the YAML frontmatter keys
 Matlock recognizes by default on project/definition pages, used by
-`matlock scan-projects` to reverse-engineer your `projects` /
+`matlock projects discover` to reverse-engineer your `projects` /
 `super_projects` config, and by search chunking's `fm.*` template namespace.
 
 For the task-line syntax (due dates, priority, estimates on individual

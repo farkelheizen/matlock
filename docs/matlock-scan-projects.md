@@ -222,14 +222,14 @@ Scan warnings are printed to **stderr** after the main output in all three modes
 
 ```bash
 # Preview discovered projects as YAML
-poetry run matlock scan-projects
+poetry run matlock projects discover
 
 # See what would change against current config
-poetry run matlock scan-projects --diff
+poetry run matlock projects discover --diff
 
 # Apply to config.yaml (creates backup first)
-poetry run matlock scan-projects --merge
+poetry run matlock projects discover --merge
 
 # Use a non-default config file
-poetry run matlock --config ~/vaults/work/config.yaml scan-projects --diff
+poetry run matlock --config ~/vaults/work/config.yaml projects discover --diff
 ```

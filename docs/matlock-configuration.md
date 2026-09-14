@@ -1,6 +1,6 @@
 # Matlock Configuration
 
-**Version:** 0.5.x
+**Version:** 0.7.x
 
 All Matlock configuration lives in a single `config.yaml` file — one per "second brain" vault. It combines application-level settings (paths, DB connection, project structure) with task-attribute parsing rules.
 
@@ -179,7 +179,7 @@ projects:
     due_date: "2026-06-01"                 # YYYY-MM-DD (optional)
     resources:
       # Files and directories whose tasks are attributed to this project.
-      # Evaluated by the map-projects stage.
+      # Evaluated by the projects map stage.
       - type: "DIRECTORY"
         path: "Tech/Backend/"
       - type: "FILE"
@@ -188,7 +188,7 @@ projects:
 
 ### Resource Examples
 
-Use `resources` to associate files with a project during the `map-projects` stage.
+Use `resources` to associate files with a project during the `projects map` stage.
 
 Example: whole directory
 
@@ -260,7 +260,7 @@ This matches only `Projects/Planning.md`.
 
 | Field | Type | Default | Description |
 |:------|:-----|:--------|:------------|
-| `search.indexing.enabled` | bool | `false` | Search feature toggle stored in config. Search work remains opt-in at runtime via `matlock search ...`, `run-all --index-search`, or server search flags. |
+| `search.indexing.enabled` | bool | `false` | Search feature toggle stored in config. Search work remains opt-in at runtime via `matlock search ...`, `pipeline run --index-search`, or `serve` search flags. |
 | `search.indexing.batch_size` | int | `100` | Commit cadence for search indexing writes. Must be `>= 1`. |
 
 ### Redaction Cache

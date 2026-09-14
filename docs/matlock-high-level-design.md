@@ -1,6 +1,6 @@
 # Matlock: High-Level Design
 
-**Version:** 0.5.x
+**Version:** 0.7.x
 **Motto:** "I'm just looking at the evidence… and the evidence says you're procrastinating."
 
 ## 1. Core Philosophy
@@ -100,7 +100,7 @@ Secret-safe behavior applies to search results and direct document reads:
 - Unsafe documents are indexed and returned as redacted content.
 - Legacy unknown-state documents are resolved lazily and persisted.
 
-Search indexing excludes generated and soft-deleted files, honors per-file frontmatter overrides, and can run from `run-all` or `server` entrypoints.
+Search indexing excludes generated and soft-deleted files, honors per-file frontmatter overrides, and can run from `pipeline run` or `serve` entrypoints.
 
 ## 7. Discovery Commands
 
@@ -108,9 +108,9 @@ Alongside the pipeline, Matlock provides standalone **discovery commands** that 
 
 | Command | Purpose |
 |:--------|:--------|
-| `matlock scan-projects` | Reverse-engineer the project/super-project hierarchy from frontmatter metadata |
+| `matlock projects discover` | Reverse-engineer the project/super-project hierarchy from frontmatter metadata |
 
-`scan-projects` is designed for **bootstrapping** (initial `config.yaml` population) and **drift auditing** (checking whether the vault has diverged from the config). See `docs/matlock-scan-projects.md` for full details.
+`projects discover` is designed for **bootstrapping** (initial `config.yaml` population) and **drift auditing** (checking whether the vault has diverged from the config). See `docs/matlock-scan-projects.md` for full details.
 
 ## 8. Decoupled Stage Design (The "Why")
 

@@ -2,11 +2,11 @@
 
 Date: 2026-05-06
 Owner: Copilot
-Scope: parse stage retry suppression, scan-projects per-file fault tolerance
+Scope: extract stage retry suppression, projects discover per-file fault tolerance
 
 ## Objective
 
-Define resilient behavior for parse and scan-projects so single-file failures do not destabilize runs and repeated unchanged failures avoid noisy retry loops.
+Define resilient behavior for extract and projects discover so single-file failures do not destabilize runs and repeated unchanged failures avoid noisy retry loops.
 
 ## Functional Requirements
 
@@ -21,8 +21,8 @@ Define resilient behavior for parse and scan-projects so single-file failures do
 - Skipped unchanged poison files shall increment parse skipped count.
 - Skipped unchanged poison files shall not repeatedly emit the same extraction warning on each run.
 
-3. scan-projects per-file failure tolerance
-- scan-projects vault walk shall continue processing remaining files when a single file fails to read/parse.
+3. projects discover per-file failure tolerance
+- projects discover vault walk shall continue processing remaining files when a single file fails to read/parse.
 - Per-file failures shall be represented as scanned-file warning entries bound to the affected `file_path`.
 - Failures that shall be converted to warnings include malformed YAML, text decoding errors, and file read errors.
 
@@ -34,7 +34,7 @@ Define resilient behavior for parse and scan-projects so single-file failures do
   - Failed to scan file
 
 5. CLI warning surface
-- `scan-projects` CLI output shall include these warnings with source file tags while still returning success exit status when only per-file read/parse errors occur.
+- `projects discover` CLI output shall include these warnings with source file tags while still returning success exit status when only per-file read/parse errors occur.
 
 ## Non-Functional Requirements
 
@@ -53,11 +53,11 @@ Define resilient behavior for parse and scan-projects so single-file failures do
 - Verify unchanged poison file behavior suppresses repeated warning retries.
 - Verify sha change triggers retry path and warning emission again.
 
-2. scan-projects stage tests
+2. projects discover stage tests
 - Verify malformed YAML creates warning and run continues with valid files.
 - Verify non-UTF8 markdown creates warning and run continues with valid files.
 
-3. scan-projects CLI tests
+3. projects discover CLI tests
 - Verify malformed frontmatter warning appears in output and command exits zero.
 
 ## Out of Scope
