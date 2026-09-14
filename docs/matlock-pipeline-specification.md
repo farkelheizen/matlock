@@ -1,6 +1,6 @@
 # Matlock Pipeline Specification
 
-**Version:** 0.5.x
+**Version:** 0.7.x
 
 This document specifies the behavior of Matlock's five core pipeline stages plus the optional local search hooks that integrate with them. Each core stage is a discrete, independently invocable unit. Stages communicate **exclusively** through the SQLite database; no core stage imports or calls another directly.
 
@@ -42,7 +42,7 @@ Keep the `file` table in sync with the physical filesystem under `base_directory
 
 ---
 
-## Stage II — `parse` (The Parser)
+## Stage II — `extract` (The Extractor)
 
 **Module:** `matlock/stages/parse.py`
 **Command:** `matlock extract`
@@ -115,7 +115,7 @@ Resolve legacy or errored secret-detection state in bulk without re-parsing task
 
 ---
 
-## Stage III — `map-projects` (The Project Mapper)
+## Stage III — `projects map` (The Project Mapper)
 
 **Module:** `matlock/stages/map_projects.py`
 **Command:** `matlock projects map`
@@ -149,7 +149,7 @@ Rebuild the project-to-file associations from `config.yaml`. This stage is alway
 
 ---
 
-## Stage IV — `rollup` (The Chronicler)
+## Stage IV — `metrics rollup` (The Chronicler)
 
 **Module:** `matlock/stages/rollup.py`
 **Command:** `matlock metrics rollup`
@@ -193,7 +193,7 @@ A "streak" is the count of consecutive days (ending with `rollup_date`) where `t
 
 ---
 
-## Stage V — `report` (The Reporter)
+## Stage V — `reports render` (The Reporter)
 
 **Module:** `matlock/stages/report.py`
 **Command:** `matlock reports render`
@@ -206,15 +206,15 @@ Query the database and render Jinja2 Markdown dashboards into the `output_direct
 
 | Template | Output Path | Trigger |
 |:---------|:------------|:--------|
-| `daily_dashboard.md.j2` | `_Matlock/Home.md` | `matlock report` or `run-all` |
-| `due_today.md.j2` | `_Matlock/Due Today.md` | `matlock report` or `run-all` |
-| `past_due.md.j2` | `_Matlock/Past Due.md` | `matlock report` or `run-all` |
-| `due_soon.md.j2` | `_Matlock/Due Soon.md` | `matlock report` or `run-all` |
-| `future_due.md.j2` | `_Matlock/Future Due.md` | `matlock report` or `run-all` |
-| `not_due.md.j2` | `_Matlock/Not Due.md` | `matlock report` or `run-all` |
-| `warnings.md.j2` | `_Matlock/Warnings.md` | `matlock report` or `run-all` |
-| `super_projects_index.md.j2` | `_Matlock/Super Projects.md` | `matlock report` or `run-all` |
-| `projects_index.md.j2` | `_Matlock/Projects.md` | `matlock report` or `run-all` |
+| `daily_dashboard.md.j2` | `_Matlock/Home.md` | `matlock reports render` or `pipeline run` |
+| `due_today.md.j2` | `_Matlock/Due Today.md` | `matlock reports render` or `pipeline run` |
+| `past_due.md.j2` | `_Matlock/Past Due.md` | `matlock reports render` or `pipeline run` |
+| `due_soon.md.j2` | `_Matlock/Due Soon.md` | `matlock reports render` or `pipeline run` |
+| `future_due.md.j2` | `_Matlock/Future Due.md` | `matlock reports render` or `pipeline run` |
+| `not_due.md.j2` | `_Matlock/Not Due.md` | `matlock reports render` or `pipeline run` |
+| `warnings.md.j2` | `_Matlock/Warnings.md` | `matlock reports render` or `pipeline run` |
+| `super_projects_index.md.j2` | `_Matlock/Super Projects.md` | `matlock reports render` or `pipeline run` |
+| `projects_index.md.j2` | `_Matlock/Projects.md` | `matlock reports render` or `pipeline run` |
 | `super_project.md.j2` | `_Matlock/Super Projects/<id>.md` | Per super-project |
 | `super_project.md.j2` | `_Matlock/Super Projects/Unassigned.md` | Virtual page — always generated |
 | `project.md.j2` | `_Matlock/Projects/<id>.md` | Per project |
@@ -242,23 +242,23 @@ Query the database and render Jinja2 Markdown dashboards into the `output_direct
 
 - It does not modify any source file.
 - It does not recalculate metrics (that is `rollup`'s job).
-- It does not parse tasks (that is `parse`'s job).
+- It does not extract tasks (that is `extract`'s job).
 
 ---
 
-## `run-all` — Full Pipeline
+## `pipeline run` — Full Pipeline
 
 **Command:** `matlock pipeline run`
 
-Runs all five stages in order: `[scan-projects →]` `sync` → `parse` → `map-projects` → `rollup` → `report`, with optional post-pipeline search indexing.
+Runs all five stages in order: `[projects discover →]` `sync` → `extract` → `projects map` → `metrics rollup` → `reports render`, with optional post-pipeline search indexing.
 
 | Flag | Description |
 |:-----|:------------|
-| `--scan-projects` | Run `scan-projects --merge` before `sync` |
+| `--discover-projects` | Run `projects discover --merge` before `sync` |
 | `--skip-rollup` | Skip Stage IV (use when running mid-day; rollup is designed for nightly use) |
 | `--force-sync` | Pass `--force` to the `sync` stage |
-| `--force-report` | Pass `--force` to the `report` stage |
-| `--index-search` | Run search indexing after `report` |
+| `--force-report` | Pass `--force` to the `reports render` stage |
+| `--index-search` | Run search indexing after `reports render` |
 | `--config PATH` | Passed through to all stages |
 
 When `--index-search` is enabled, search indexing runs after the core pipeline so `file`, `task`, `project`, and report-side generated-file metadata are already current.
@@ -311,7 +311,7 @@ Execute `metadata_only`, `fts_only`, `vector_only`, or `hybrid` search requests 
 
 ---
 
-## Server Mode — `matlock server`
+## Server Mode — `matlock serve`
 
 **Module:** `matlock/server.py`
 **Command:** `matlock serve`
@@ -322,19 +322,19 @@ Runs a persistent daemon that orchestrates all pipeline stages in response to ev
 
 1. **Watcher (real-time I/O):**
    - Uses `watchdog` to monitor `base_directory`.
-   - On file create/modify/delete: runs `sync`, then `parse`.
+   - On file create/modify/delete: runs `sync`, then `extract`.
    - Marks affected project IDs as "dirty" in an in-memory queue.
 
 2. **Debouncer (UI refresh):**
    - Listens to the dirty-project queue.
-   - After a configurable idle period with no new changes (`debounce_seconds`, default `5`), triggers `map-projects` followed by a full `report` pass.
+   - After a configurable idle period with no new changes (`debounce_seconds`, default `5`), triggers `projects map` followed by a full `reports render` pass.
 
 3. **Scheduler (nightly metrics):**
-   - At midnight (00:01): triggers `rollup` then a full `report` rebuild (Daily Dashboard + new History page).
+   - At midnight (00:01): triggers `metrics rollup` then a full `reports render` rebuild (Daily Dashboard + new History page).
 
 4. **Startup refresh (optional):**
    - One-time startup actions can run before watcher/debouncer/scheduler threads start.
-   - Startup order when combined: forced `sync`+`parse`, then forced `rollup` for today, then forced `report`, then one startup search indexing pass.
+   - Startup order when combined: forced `sync`+`extract`, then forced `metrics rollup` for today, then forced `reports render`, then one startup search indexing pass.
 
 5. **Continuous search indexing (optional):**
    - A background thread can poll for stale search work when `--index-search-continuous` is enabled.
@@ -346,7 +346,7 @@ Runs a persistent daemon that orchestrates all pipeline stages in response to ev
 |:-----|:------------|
 | `--config PATH` | Path to `config.yaml` |
 | `--debounce SECONDS` | Override debounce window (default: `5`) |
-| `--scan-projects` | Run `scan-projects --merge` once at startup before the watcher starts |
+| `--discover-projects` | Run `projects discover --merge` once at startup before the watcher starts |
 | `--force-sync` | Run a full forced sync+parse once at startup before the watcher starts |
 | `--force-rollup` | Run rollup for today once at startup (after any forced sync) |
 | `--force-report` | Run a full forced report once at startup (after any startup sync/rollup) |
@@ -362,8 +362,8 @@ Startup flags are one-shot startup actions; they do not change watcher/debouncer
 
 At any point in time, the database state should satisfy:
 
-- `needs_parsing = 0` for all non-deleted files → `parse` is up to date.
-- `file_project` reflects the current `config.yaml` → `map-projects` has run since last config change.
+- `needs_parsing = 0` for all non-deleted files → `extract` is up to date.
+- `file_project` reflects the current `config.yaml` → `projects map` has run since last config change.
 - `daily_metric` has a row for every past date → `rollup` has run each night.
 - All `_Matlock/` files have `is_generated = 1` in the `file` table.
 - Files with current search rows have `search_index_hash = file.sha256` and a non-null `search_indexed_at`.

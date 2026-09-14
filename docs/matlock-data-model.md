@@ -1,6 +1,6 @@
 # Matlock Data Model
 
-**Version:** 0.5.x
+**Version:** 0.7.x
 
 This document defines the in-memory Python models produced by the parser engine and the SQLite database schema that persists all pipeline data.
 
@@ -116,7 +116,7 @@ Tracks every Markdown file under `base_directory`.
 
 Backfill behavior:
 
-- `matlock detect-backfill` updates only `has_secrets` and `secret_detection_error` for candidate rows.
+- `matlock secrets backfill` updates only `has_secrets` and `secret_detection_error` for candidate rows.
 - Default candidates are active tracked rows where `has_secrets IS NULL`.
 - `--retry-errors` includes rows with `secret_detection_error IS NOT NULL`.
 

@@ -17,7 +17,7 @@ Map specification requirements to implementation modules and regression tests.
 | SRHF-4 | Refresh today snapshot data on repeated history render | `matlock/stages/report.py` | `tests/test_report.py` |
 | FPR-1 | Parse poison cache keyed by `(file_path, sha256)` | `matlock/stages/parse.py` | `tests/test_parse.py` |
 | FPR-2 | Unchanged poison files skip repeated retry/warn loop | `matlock/stages/parse.py` | `tests/test_parse.py` |
-| FPR-3 | scan-projects converts per-file failures to warnings and continues | `matlock/stages/scan_projects.py` | `tests/test_scan_projects.py`, `tests/test_cli_scan_projects.py` |
+| FPR-3 | projects discover converts per-file failures to warnings and continues | `matlock/stages/scan_projects.py` | `tests/test_scan_projects.py`, `tests/test_cli_scan_projects.py` |
 | FPR-4 | Stable warning prefixes for YAML/UTF8/read/scan failures | `matlock/stages/scan_projects.py` | `tests/test_scan_projects.py`, `tests/test_cli_scan_projects.py` |
 
 ## Validation Commands

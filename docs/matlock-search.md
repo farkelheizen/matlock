@@ -1,6 +1,6 @@
 # Matlock Search
 
-**Version:** 0.5.x
+**Version:** 0.7.x
 
 Matlock Search is an optional local-first retrieval subsystem layered on top of the core pipeline. It uses the same SQLite database as the rest of Matlock and adds chunk, FTS, and embedding-backed search state without changing the default behavior of non-search commands.
 
@@ -17,11 +17,11 @@ Search adds two user-facing commands:
 
 Related orchestration hooks:
 
-- `matlock run-all --index-search` runs search indexing after `report`.
-- `matlock server --index-search` runs one startup indexing pass.
-- `matlock server --index-search-continuous` keeps polling for stale search work in a background thread.
+- `matlock pipeline run --index-search` runs search indexing after `reports render`.
+- `matlock serve --index-search` runs one startup indexing pass.
+- `matlock serve --index-search-continuous` keeps polling for stale search work in a background thread.
 
-Search remains opt-in. If you never call the search commands or flags, the core sync/parse/map-projects/rollup/report workflow behaves as before.
+Search remains opt-in. If you never call the search commands or flags, the core sync/extract/projects-map/metrics-rollup/reports-render workflow behaves as before.
 
 ## Secret-Safe Content Handling
 
@@ -32,7 +32,7 @@ Search integrates with document-level secret detection state persisted on each `
 - Legacy files with unknown state (`has_secrets IS NULL`) are resolved lazily during indexing/query and then persisted.
 - If lazy secret-state resolution fails, behavior remains fail closed and raw content is not emitted.
 
-For bulk pre-resolution before search operations, run `matlock detect-backfill` (or `matlock detect-backfill --retry-errors`) to persist state for legacy/errored rows ahead of indexing/query requests.
+For bulk pre-resolution before search operations, run `matlock secrets backfill` (or `matlock secrets backfill --retry-errors`) to persist state for legacy/errored rows ahead of indexing/query requests.
 
 ---
 
@@ -188,5 +188,5 @@ See `docs/matlock-data-model.md` for the full schema and trigger details.
 - `docs/matlock-cli.md` for full command syntax.
 - `docs/matlock-configuration.md` for the complete `search` config schema.
 - `docs/matlock-data-model.md` for request/response contracts and SQLite schema.
-- `docs/matlock-pipeline-specification.md` for `run-all` and `server` integration behavior.
+- `docs/matlock-pipeline-specification.md` for `pipeline run` and `serve` integration behavior.
 - `docs/matlock-high-level-design.md` for the broader architecture view.

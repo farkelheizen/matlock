@@ -1,5 +1,5 @@
 # Copilot Docs Reference Map (matlock)
-> Docs baseline: 0.5.x
+> Docs baseline: 0.7.x
 
 Use this file as the fast lookup index before implementation.
 
@@ -74,7 +74,7 @@ Use this file as the fast lookup index before implementation.
 - **task_attributes, due_date, priority, alias, domain, date, time** → `matlock-configuration.md`, `matlock-data-model.md`
 - **task_id, twin_index, overflow, headers, parent_task_id** → `matlock-data-model.md`
 - **SQLite, WAL, PRAGMA, foreign_keys, busy_timeout** → `matlock-data-model.md`
-- **run-all, full pipeline, skip-rollup, force-sync** → `matlock-cli.md`, `matlock-high-level-design.md`
+- **pipeline run, full pipeline, skip-rollup, force-sync, discover-projects** → `matlock-cli.md`, `matlock-high-level-design.md`
 - **roadmap, phase plan, implementation steps** → `docs/roadmap/index.md`
 
 ---
