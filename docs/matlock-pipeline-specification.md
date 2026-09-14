@@ -45,7 +45,7 @@ Keep the `file` table in sync with the physical filesystem under `base_directory
 ## Stage II — `parse` (The Parser)
 
 **Module:** `matlock/stages/parse.py`
-**Command:** `matlock parse`
+**Command:** `matlock extract`
 
 ### Responsibility
 
@@ -90,7 +90,7 @@ Extract task data from files flagged by the `sync` stage and persist results to 
 ## Secret Detection Backfill (Standalone Utility)
 
 **Module:** `matlock/stages/detect_backfill.py`
-**Command:** `matlock detect-backfill`
+**Command:** `matlock secrets backfill`
 
 ### Responsibility
 
@@ -118,7 +118,7 @@ Resolve legacy or errored secret-detection state in bulk without re-parsing task
 ## Stage III — `map-projects` (The Project Mapper)
 
 **Module:** `matlock/stages/map_projects.py`
-**Command:** `matlock map-projects`
+**Command:** `matlock projects map`
 
 ### Responsibility
 
@@ -152,7 +152,7 @@ Rebuild the project-to-file associations from `config.yaml`. This stage is alway
 ## Stage IV — `rollup` (The Chronicler)
 
 **Module:** `matlock/stages/rollup.py`
-**Command:** `matlock rollup`
+**Command:** `matlock metrics rollup`
 
 ### Responsibility
 
@@ -196,7 +196,7 @@ A "streak" is the count of consecutive days (ending with `rollup_date`) where `t
 ## Stage V — `report` (The Reporter)
 
 **Module:** `matlock/stages/report.py`
-**Command:** `matlock report`
+**Command:** `matlock reports render`
 
 ### Responsibility
 
@@ -248,7 +248,7 @@ Query the database and render Jinja2 Markdown dashboards into the `output_direct
 
 ## `run-all` — Full Pipeline
 
-**Command:** `matlock run-all`
+**Command:** `matlock pipeline run`
 
 Runs all five stages in order: `[scan-projects →]` `sync` → `parse` → `map-projects` → `rollup` → `report`, with optional post-pipeline search indexing.
 
@@ -314,7 +314,7 @@ Execute `metadata_only`, `fts_only`, `vector_only`, or `hybrid` search requests 
 ## Server Mode — `matlock server`
 
 **Module:** `matlock/server.py`
-**Command:** `matlock server`
+**Command:** `matlock serve`
 
 ### Behaviour
 

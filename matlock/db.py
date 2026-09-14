@@ -11,8 +11,18 @@ Sentinel: ``"__UNKNOWN__"`` is used as the ``project_id`` value in
 
 from __future__ import annotations
 
+import json
 import sqlite3
+from datetime import date
 from pathlib import Path
+
+from matlock.query_models import (
+    DatePredicate,
+    ProjectRecord,
+    SuperProjectRecord,
+    TaskRecord,
+    parse_date_predicate,
+)
 
 UNKNOWN_PROJECT = "__UNKNOWN__"
 
@@ -707,3 +717,228 @@ _UPSERT_DAILY_TASK = (
 def upsert_daily_task(conn: sqlite3.Connection, row: dict) -> None:
     """Insert or replace a row in the ``daily_task`` table."""
     conn.execute(_UPSERT_DAILY_TASK, row)
+
+
+# ---------------------------------------------------------------------------
+# query helpers for CLI project/task listing
+# ---------------------------------------------------------------------------
+
+_SQLITE_TRUE = 1
+
+
+def _like_escape(value: str) -> str:
+    """Escape SQLite LIKE metacharacters so literal substring matching works."""
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _serialize_task_record(row: sqlite3.Row) -> TaskRecord:
+    project_rows = conn = None
+    # Placeholder kept for compatibility with task aggregation below.
+    return TaskRecord.model_validate({
+        "task_id": row["task_id"],
+        "file_path": row["file_path"],
+        "parent_task_id": row["parent_task_id"],
+        "created_date": row["created_date"],
+        "due_date": row["due_date"],
+        "est_comp_date": row["est_comp_date"],
+        "act_comp_date": row["act_comp_date"],
+        "checked": row["checked"],
+        "task_text": row["task_text"],
+        "overflow": row["overflow"],
+        "headers": row["headers"],
+        "attributes": row["attributes"],
+        "errors": row["errors"],
+        "twin_index": row["twin_index"],
+        "project_ids": row["project_ids"],
+    })
+
+
+def _decode_json_field(value: str | None, *, field_name: str) -> Any:
+    if value in (None, ""):
+        return [] if field_name in {"headers", "errors"} else {}
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Invalid JSON in {field_name}: {value!r}") from exc
+    return parsed
+
+
+def fetch_projects(
+    conn: sqlite3.Connection,
+    *,
+    term: str | None = None,
+    filters: dict[str, Any] | None = None,
+) -> list[ProjectRecord]:
+    """Return project rows, optionally filtered by a literal case-insensitive substring and project-table field filters."""
+    filters = filters or {}
+    clauses: list[str] = []
+    params: list[Any] = []
+
+    if term is not None and term != "":
+        escaped = _like_escape(term)
+        pattern = f"%{escaped}%"
+        field_clauses = [
+            "LOWER(COALESCE(CAST(project_id AS TEXT), '')) LIKE LOWER(?) ESCAPE '\\'",
+            "LOWER(COALESCE(CAST(super_project_id AS TEXT), '')) LIKE LOWER(?) ESCAPE '\\'",
+            "LOWER(COALESCE(CAST(title AS TEXT), '')) LIKE LOWER(?) ESCAPE '\\'",
+            "LOWER(COALESCE(CAST(home_file AS TEXT), '')) LIKE LOWER(?) ESCAPE '\\'",
+            "LOWER(COALESCE(CAST(priority AS TEXT), '')) LIKE LOWER(?) ESCAPE '\\'",
+            "LOWER(COALESCE(CAST(status AS TEXT), '')) LIKE LOWER(?) ESCAPE '\\'",
+            "LOWER(COALESCE(CAST(start_date AS TEXT), '')) LIKE LOWER(?) ESCAPE '\\'",
+            "LOWER(COALESCE(CAST(due_date AS TEXT), '')) LIKE LOWER(?) ESCAPE '\\'",
+        ]
+        clauses.append("(" + " OR ".join(field_clauses) + ")")
+        params.extend([pattern] * len(field_clauses))
+
+    for field_name, raw_values in (
+        ("project_id", filters.get("project_id")),
+        ("super_project_id", filters.get("super_project_id")),
+        ("title", filters.get("title")),
+        ("home_file", filters.get("home_file")),
+        ("priority", filters.get("priority")),
+        ("status", filters.get("status")),
+    ):
+        if not raw_values:
+            continue
+        values = [str(value) for value in raw_values]
+        value_clauses = [
+            f"LOWER(COALESCE(CAST({field_name} AS TEXT), '')) LIKE LOWER(?) ESCAPE '\\'"
+            for _ in values
+        ]
+        clauses.append("(" + " OR ".join(value_clauses) + ")")
+        params.extend([f"%{_like_escape(value)}%" for value in values])
+
+    for field_name in ("start_date", "due_date"):
+        raw_values = filters.get(field_name) or []
+        if not raw_values:
+            continue
+        for raw in raw_values:
+            if isinstance(raw, DatePredicate):
+                pred = raw
+            elif isinstance(raw, dict):
+                pred = DatePredicate.model_validate({
+                    "field": raw.get("field", field_name),
+                    "operator": raw.get("operator", "="),
+                    "value": raw.get("value"),
+                })
+            elif isinstance(raw, str):
+                pred = parse_date_predicate(raw, field_name)
+            else:
+                raise ValueError(f"Invalid date predicate for {field_name}: {raw!r}")
+            if pred.field != field_name:
+                pred = DatePredicate(field=field_name, operator=pred.operator, value=pred.value)
+            clauses.append(f"{field_name} {pred.operator} ?")
+            params.append(pred.value.isoformat())
+
+    sql = "SELECT project_id, super_project_id, title, home_file, priority, status, start_date, due_date FROM project"
+    if clauses:
+        sql += " WHERE " + " AND ".join(clauses)
+    sql += " ORDER BY project_id ASC"
+    rows = conn.execute(sql, params).fetchall()
+    return [ProjectRecord.model_validate(dict(row)) for row in rows]
+
+
+def fetch_super_projects(conn: sqlite3.Connection) -> list[SuperProjectRecord]:
+    """Return all super-project rows ordered by the primary key."""
+    rows = conn.execute(
+        "SELECT super_project_id, title, priority FROM super_project ORDER BY super_project_id ASC"
+    ).fetchall()
+    return [SuperProjectRecord.model_validate(dict(row)) for row in rows]
+
+
+def fetch_active_tasks(
+    conn: sqlite3.Connection,
+    *,
+    filters: dict | None = None,
+) -> list[TaskRecord]:
+    """Return active, non-generated tasks with project IDs aggregated and JSON fields decoded."""
+    filters = filters or {}
+    clauses: list[str] = [
+        "t.file_path IN (SELECT file_path FROM file WHERE deleted = 0 AND is_generated = 0)",
+    ]
+    params: list[Any] = []
+
+    def _append_date_predicates(field_name: str, raw_predicates: Any) -> None:
+        if not raw_predicates:
+            return
+        for raw in raw_predicates:
+            if isinstance(raw, DatePredicate):
+                pred = raw
+            elif isinstance(raw, dict):
+                pred = DatePredicate.model_validate({
+                    "field": raw.get("field", field_name),
+                    "operator": raw.get("operator", "="),
+                    "value": raw.get("value"),
+                })
+            elif isinstance(raw, str):
+                pred = parse_date_predicate(raw, field_name)
+            else:
+                raise ValueError(f"Invalid date predicate for {field_name}: {raw!r}")
+
+            if pred.field != field_name:
+                pred = DatePredicate(field=field_name, operator=pred.operator, value=pred.value)
+            clause = f"t.{field_name} {pred.operator} ?"
+            clauses.append(clause)
+            params.append(pred.value.isoformat())
+
+    if filters.get("task_text"):
+        term = _like_escape(filters["task_text"])
+        clauses.append("LOWER(CAST(t.task_text AS TEXT)) LIKE LOWER(?)")
+        params.append(f"%{term}%")
+
+    if filters.get("headers"):
+        term = _like_escape(filters["headers"])
+        clauses.append("LOWER(CAST(t.headers AS TEXT)) LIKE LOWER(?)")
+        params.append(f"%{term}%")
+
+    if filters.get("attributes"):
+        term = _like_escape(filters["attributes"])
+        clauses.append("LOWER(CAST(t.attributes AS TEXT)) LIKE LOWER(?)")
+        params.append(f"%{term}%")
+
+    if filters.get("checked") is not None:
+        clauses.append("t.checked = ?")
+        params.append(_SQLITE_TRUE if filters["checked"] else 0)
+
+    for field_name in ("due_date", "est_comp_date", "act_comp_date"):
+        _append_date_predicates(field_name, filters.get(field_name))
+
+    if filters.get("project_ids"):
+        placeholders = ", ".join("?" for _ in filters["project_ids"])
+        clauses.append(f"EXISTS (SELECT 1 FROM file_project fp WHERE fp.file_path = t.file_path AND fp.project_id IN ({placeholders}))")
+        params.extend(filters["project_ids"])
+
+    if filters.get("super_project_ids"):
+        placeholders = ", ".join("?" for _ in filters["super_project_ids"])
+        clauses.append(
+            f"EXISTS (SELECT 1 FROM file_project fp JOIN project p ON p.project_id = fp.project_id WHERE fp.file_path = t.file_path AND p.super_project_id IN ({placeholders}))"
+        )
+        params.extend(filters["super_project_ids"])
+
+    sql = (
+        "SELECT t.*, COALESCE(("
+        " SELECT GROUP_CONCAT(fp.project_id, ',') FROM ("
+        "   SELECT DISTINCT fp.project_id FROM file_project fp WHERE fp.file_path = t.file_path"
+        " ) fp"
+        " ), '') AS project_ids FROM task t WHERE "
+        + " AND ".join(clauses) +
+        " ORDER BY t.file_path ASC, t.task_id ASC"
+    )
+    rows = conn.execute(sql, params).fetchall()
+    result: list[TaskRecord] = []
+    for row in rows:
+        raw_project_ids = row["project_ids"]
+        if raw_project_ids:
+            project_ids = [pid for pid in raw_project_ids.split(",") if pid]
+        else:
+            project_ids = []
+
+        task_dict = {**dict(row)}
+        task_dict["headers"] = _decode_json_field(task_dict.get("headers"), field_name="headers")
+        task_dict["attributes"] = _decode_json_field(task_dict.get("attributes"), field_name="attributes")
+        task_dict["errors"] = _decode_json_field(task_dict.get("errors"), field_name="errors")
+        task_dict["checked"] = bool(task_dict.get("checked") or 0)
+        task_dict["overflow"] = bool(task_dict.get("overflow") or 0)
+        task_dict["project_ids"] = sorted(set(project_ids))
+        result.append(TaskRecord.model_validate(task_dict))
+    return result

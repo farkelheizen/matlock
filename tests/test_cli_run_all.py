@@ -1,4 +1,4 @@
-"""Tests for matlock/cli.py — run-all subcommand."""
+"""Tests for matlock/cli.py — pipeline run subcommand."""
 from __future__ import annotations
 
 import subprocess
@@ -37,7 +37,7 @@ def _invoke(tmp_path: Path, *extra_args):
     cfg_path = tmp_path / "config.yaml"
     db_path = tmp_path / "matlock.db"
     _write_config(cfg_path, vault, db_path, out_dir)
-    args = ["--config", str(cfg_path), "run-all"] + list(extra_args)
+    args = ["--config", str(cfg_path), "pipeline", "run"] + list(extra_args)
     return runner.invoke(app, args), cfg_path, out_dir, db_path
 
 
@@ -61,29 +61,29 @@ def _write_project_note(vault: Path, project_id: str = "proj_one") -> None:
 
 class TestRunAllHelp:
     def test_run_all_help(self):
-        result = runner.invoke(app, ["run-all", "--help"])
+        result = runner.invoke(app, ["pipeline", "run", "--help"])
         assert result.exit_code == 0
-        assert "run-all" in result.output.lower() or "run" in result.output.lower()
+        assert "pipeline run" in result.output.lower()
 
     def test_run_all_appears_in_main_help(self):
         result = runner.invoke(app, ["--help"])
         assert result.exit_code == 0
-        assert "run-all" in result.output
+        assert "pipeline" in result.output
 
     def test_skip_rollup_option_shown_in_help(self):
-        result = runner.invoke(app, ["run-all", "--help"])
+        result = runner.invoke(app, ["pipeline", "run", "--help"])
         assert "--skip-rollup" in result.output
 
     def test_force_sync_option_shown_in_help(self):
-        result = runner.invoke(app, ["run-all", "--help"])
+        result = runner.invoke(app, ["pipeline", "run", "--help"])
         assert "--force-sync" in result.output
 
     def test_scan_projects_option_shown_in_help(self):
-        result = runner.invoke(app, ["run-all", "--help"])
-        assert "--scan-projects" in result.output
+        result = runner.invoke(app, ["pipeline", "run", "--help"])
+        assert "--discover-projects" in result.output
 
     def test_index_search_option_shown_in_help(self):
-        result = runner.invoke(app, ["run-all", "--help"])
+        result = runner.invoke(app, ["pipeline", "run", "--help"])
         assert "--index-search" in result.output
 
 
@@ -103,23 +103,23 @@ class TestRunAllCommand:
 
     def test_prints_parse_line(self, tmp_path: Path):
         result, *_ = _invoke(tmp_path)
-        assert "Parse:" in result.output
+        assert "Extract:" in result.output
 
     def test_prints_map_projects_line(self, tmp_path: Path):
         result, *_ = _invoke(tmp_path)
-        assert "Map-projects:" in result.output
+        assert "Projects map:" in result.output
 
     def test_prints_rollup_line(self, tmp_path: Path):
         result, *_ = _invoke(tmp_path)
-        assert "Rollup:" in result.output
+        assert "Metrics rollup:" in result.output
 
     def test_prints_report_line(self, tmp_path: Path):
         result, *_ = _invoke(tmp_path)
-        assert "Report:" in result.output
+        assert "Reports render:" in result.output
 
     def test_prints_completion_line(self, tmp_path: Path):
         result, *_ = _invoke(tmp_path)
-        assert "run-all complete." in result.output
+        assert "Pipeline run complete." in result.output
 
     def test_creates_db(self, tmp_path: Path):
         _, _, _, db_path = _invoke(tmp_path)
@@ -166,7 +166,7 @@ class TestRunAllCommand:
             with patch("matlock.cli.run_search_index_stage", side_effect=fake_search_index_stage):
                 result = runner.invoke(
                     app,
-                    ["--config", str(cfg_path), "run-all", "--index-search"],
+                    ["--config", str(cfg_path), "pipeline", "run", "--index-search"],
                 )
 
         assert result.exit_code == 0
@@ -182,7 +182,7 @@ class TestRunAllCommand:
         _write_config(cfg_path, vault, db_path, out_dir)
 
         with patch("matlock.cli.run_search_index_stage") as mock_search_index:
-            result = runner.invoke(app, ["--config", str(cfg_path), "run-all"])
+            result = runner.invoke(app, ["--config", str(cfg_path), "pipeline", "run"])
 
         assert result.exit_code == 0
         assert mock_search_index.call_count == 0
@@ -204,11 +204,11 @@ class TestRunAllSkipRollup:
 
     def test_report_still_runs_when_rollup_skipped(self, tmp_path: Path):
         result, *_ = _invoke(tmp_path, "--skip-rollup")
-        assert "Report:" in result.output
+        assert "Reports render:" in result.output
 
     def test_completion_line_printed_when_rollup_skipped(self, tmp_path: Path):
         result, *_ = _invoke(tmp_path, "--skip-rollup")
-        assert "run-all complete." in result.output
+        assert "Pipeline run complete." in result.output
 
     def test_dashboard_written_when_rollup_skipped(self, tmp_path: Path):
         result, _, out_dir, _ = _invoke(tmp_path, "--skip-rollup")
@@ -242,10 +242,10 @@ class TestRunAllForceSync:
         _write_config(cfg_path, vault, db_path, out_dir)
 
         # First full run — syncs and parses the file
-        runner.invoke(app, ["--config", str(cfg_path), "run-all"])
+        runner.invoke(app, ["--config", str(cfg_path), "pipeline", "run"])
 
         # Second run with --force-sync — file should be re-inserted/updated
-        result = runner.invoke(app, ["--config", str(cfg_path), "run-all", "--force-sync"])
+        result = runner.invoke(app, ["--config", str(cfg_path), "pipeline", "run", "--force-sync"])
         assert result.exit_code == 0
         assert "Sync:" in result.output
 
@@ -258,7 +258,7 @@ class TestRunAllForceSync:
 class TestRunAllScanProjects:
     def test_without_flag_no_scan_line(self, tmp_path: Path):
         result, *_ = _invoke(tmp_path)
-        assert "Scan-projects:" not in result.output
+        assert "Projects discover:" not in result.output
 
     def test_with_flag_prints_scan_line(self, tmp_path: Path):
         vault = tmp_path / "vault"
@@ -270,9 +270,9 @@ class TestRunAllScanProjects:
         db_path = tmp_path / "matlock.db"
         _write_config(cfg_path, vault, db_path, out_dir)
 
-        result = runner.invoke(app, ["--config", str(cfg_path), "run-all", "--scan-projects"])
+        result = runner.invoke(app, ["--config", str(cfg_path), "pipeline", "run", "--discover-projects"])
         assert result.exit_code == 0
-        assert "Scan-projects:" in result.output
+        assert "Projects discover:" in result.output
 
     def test_with_flag_scan_runs_before_sync(self, tmp_path: Path):
         vault = tmp_path / "vault"
@@ -284,11 +284,11 @@ class TestRunAllScanProjects:
         db_path = tmp_path / "matlock.db"
         _write_config(cfg_path, vault, db_path, out_dir)
 
-        result = runner.invoke(app, ["--config", str(cfg_path), "run-all", "--scan-projects"])
+        result = runner.invoke(app, ["--config", str(cfg_path), "pipeline", "run", "--discover-projects"])
         assert result.exit_code == 0
-        assert "Scan-projects:" in result.output
+        assert "Projects discover:" in result.output
         assert "Sync:" in result.output
-        assert result.output.index("Scan-projects:") < result.output.index("Sync:")
+        assert result.output.index("Projects discover:") < result.output.index("Sync:")
 
     def test_with_flag_pipeline_still_runs(self, tmp_path: Path):
         vault = tmp_path / "vault"
@@ -300,12 +300,12 @@ class TestRunAllScanProjects:
         db_path = tmp_path / "matlock.db"
         _write_config(cfg_path, vault, db_path, out_dir)
 
-        result = runner.invoke(app, ["--config", str(cfg_path), "run-all", "--scan-projects"])
+        result = runner.invoke(app, ["--config", str(cfg_path), "pipeline", "run", "--discover-projects"])
         assert result.exit_code == 0
         assert "Sync:" in result.output
-        assert "Parse:" in result.output
-        assert "Map-projects:" in result.output
-        assert "Report:" in result.output
+        assert "Extract:" in result.output
+        assert "Projects map:" in result.output
+        assert "Reports render:" in result.output
 
 
 # ---------------------------------------------------------------------------
@@ -317,14 +317,14 @@ class TestRunAllErrors:
     def test_missing_config_exits_nonzero(self, tmp_path: Path):
         result = runner.invoke(app, [
             "--config", str(tmp_path / "nonexistent.yaml"),
-            "run-all",
+            "pipeline", "run",
         ])
         assert result.exit_code != 0
 
     def test_missing_config_error_message(self, tmp_path: Path):
         result = runner.invoke(app, [
             "--config", str(tmp_path / "nonexistent.yaml"),
-            "run-all",
+            "pipeline", "run",
         ])
         assert "error" in result.output.lower() or "error" in (result.stderr or "").lower()
 

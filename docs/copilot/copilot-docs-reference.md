@@ -9,7 +9,7 @@ Use this file as the fast lookup index before implementation.
    - Open: `docs/matlock-high-level-design.md`
 2. **Need search indexing, query modes, STDIO transport, or search/server integration?**
    - Open: `docs/matlock-search.md`
-3. **Need pipeline stage details (sync, parse, map-projects, rollup, report, server)?**
+3. **Need pipeline stage details (sync, extract, projects map, metrics rollup, reports render, serve)?**
    - Open: `docs/matlock-pipeline-specification.md`
 4. **Need data model / SQLite schema?**
    - Open: `docs/matlock-data-model.md`
@@ -23,7 +23,7 @@ Use this file as the fast lookup index before implementation.
    - Open: `docs/matlock-generated-reports.md`
 7. **Need CLI command reference (flags, entrypoint)?**
    - Open: `docs/matlock-cli.md`
-8. **Need `scan-projects` command details (scanning logic, output modes, YAML schema)?**
+8. **Need `projects discover` command details (scanning logic, output modes, YAML schema)?**
    - Open: `docs/matlock-scan-projects.md`
 9. **Need the implementation roadmap or a phase plan?**
    - Open: `docs/roadmap/index.md`, then the relevant phase plan doc.
@@ -40,32 +40,33 @@ Use this file as the fast lookup index before implementation.
 |---|---|---|
 | Architecture overview, core pipeline, search subsystem, execution modes, directory guardrail, discovery commands | `docs/matlock-high-level-design.md` | `docs/matlock-pipeline-specification.md`, `docs/matlock-search.md` |
 | Search indexing, query modes, STDIO transport, per-file overrides, server integration | `docs/matlock-search.md` | `docs/matlock-cli.md`, `docs/matlock-configuration.md`, `docs/matlock-data-model.md` |
-| Pipeline stage logic: sync, parse, map-projects, rollup, report, server, opt-in search indexing hooks | `docs/matlock-pipeline-specification.md` | `docs/matlock-data-model.md`, `docs/matlock-high-level-design.md`, `docs/matlock-search.md` |
+| Pipeline stage logic: sync, extract, projects map, metrics rollup, reports render, serve, opt-in search indexing hooks | `docs/matlock-pipeline-specification.md` | `docs/matlock-data-model.md`, `docs/matlock-high-level-design.md`, `docs/matlock-search.md` |
 | SQLite schema, in-memory models, search contracts, table columns, PRAGMA config | `docs/matlock-data-model.md` | `docs/matlock-pipeline-specification.md`, `docs/matlock-search.md` |
 | config.yaml schema, task attributes, project definitions, path resolution, logging, search config | `docs/matlock-configuration.md` | `docs/matlock-data-model.md`, `docs/matlock-search.md` |
 | End-user Markdown syntax for task attributes (aliases, curly-brace form, date/time/domain types) | `docs/matlock-task-attributes.md` | `docs/matlock-configuration.md` |
 | Default frontmatter keys for project pages (title, priority, status, dates, resources, projects) | `docs/matlock-frontmatter-metadata.md` | `docs/matlock-scan-projects.md`, `docs/matlock-configuration.md` |
 | Jinja2 report templates, dashboard types, template variables, heatmap logic | `docs/matlock-generated-reports.md` | `docs/matlock-high-level-design.md` |
-| CLI commands, flags, `matlock server`, `matlock search`, entrypoint registration | `docs/matlock-cli.md` | `docs/matlock-pipeline-specification.md`, `docs/matlock-search.md` |
-| Secret detection state, redaction cache, and safe `doc-read` behavior | `docs/matlock-cli.md` | `docs/matlock-search.md`, `docs/matlock-data-model.md`, `docs/matlock-configuration.md` |
-| Secret-state backfill and retry semantics (`detect-backfill`) | `docs/matlock-cli.md` | `docs/matlock-pipeline-specification.md`, `docs/matlock-data-model.md` |
-| `scan-projects`: scanning logic, ScannedFile, ProjectCandidate, output modes, YAML schema | `docs/matlock-scan-projects.md` | `docs/matlock-cli.md`, `docs/matlock-configuration.md` |
+| CLI commands, flags, `matlock serve`, `matlock search`, entrypoint registration | `docs/matlock-cli.md` | `docs/matlock-pipeline-specification.md`, `docs/matlock-search.md` |
+| Secret detection state, redaction cache, and safe `document read` behavior | `docs/matlock-cli.md` | `docs/matlock-search.md`, `docs/matlock-data-model.md`, `docs/matlock-configuration.md` |
+| Secret-state backfill and retry semantics (`secrets backfill`) | `docs/matlock-cli.md` | `docs/matlock-pipeline-specification.md`, `docs/matlock-data-model.md` |
+| `projects discover`: scanning logic, ScannedFile, ProjectCandidate, output modes, YAML schema | `docs/matlock-scan-projects.md` | `docs/matlock-cli.md`, `docs/matlock-configuration.md` |
 | Implementation phases, roadmap overview | `docs/roadmap/index.md` | Phase plan docs in `docs/roadmap/` |
 
 ---
 
 ## Keyword Index (use when searching)
 
-- **scan-projects, ScannedFile, ProjectCandidate, --print-yaml, --diff, --merge, scan_vault, merge_into_config** → `matlock-scan-projects.md`, `matlock-cli.md`
+- **projects discover, ScannedFile, ProjectCandidate, --print-yaml, --diff, --merge, scan_vault, merge_into_config** → `matlock-scan-projects.md`, `matlock-cli.md`
 - **sync, needs_parsing, SHA-256, file watcher, deleted flag** → `matlock-pipeline-specification.md`, `matlock-data-model.md`
-- **parse, extract_tasks_from_markdown, ParsedMarkdownFile, ParsedMarkdownTask** → `matlock-pipeline-specification.md`, `matlock-data-model.md`
-- **map-projects, file_project, project, super_project, resources, DIRECTORY, FILE** → `matlock-pipeline-specification.md`, `matlock-data-model.md`, `matlock-configuration.md`
-- **rollup, daily_metric, streak, heatmap, nightly** → `matlock-pipeline-specification.md`, `matlock-data-model.md`
-- **report, Jinja2, _Matlock/, dashboard, is_generated** → `matlock-generated-reports.md`, `matlock-pipeline-specification.md`
-- **server, watchdog, debouncer, scheduler, daemon, midnight** → `matlock-cli.md`, `matlock-pipeline-specification.md`
+- **extract, extract_tasks_from_markdown, ParsedMarkdownFile, ParsedMarkdownTask** → `matlock-pipeline-specification.md`, `matlock-data-model.md`
+- **projects map, file_project, project, super_project, resources, DIRECTORY, FILE** → `matlock-pipeline-specification.md`, `matlock-data-model.md`, `matlock-configuration.md`
+- **metrics rollup, daily_metric, streak, heatmap, nightly** → `matlock-pipeline-specification.md`, `matlock-data-model.md`
+- **reports render, Jinja2, _Matlock/, dashboard, is_generated** → `matlock-generated-reports.md`, `matlock-pipeline-specification.md`
+- **serve, watchdog, debouncer, scheduler, daemon, midnight** → `matlock-cli.md`, `matlock-pipeline-specification.md`
 - **search, search index, search query, stdio, search_mode, granularity, surrounding_chunks, search.log** → `matlock-search.md`, `matlock-cli.md`, `matlock-configuration.md`
-- **doc-read, has_secrets, secret_detection_error, redacted_dir, detect-secrets** → `matlock-cli.md`, `matlock-data-model.md`, `matlock-configuration.md`, `matlock-search.md`
-- **detect-backfill, retry-errors, legacy secret state, scanner retry** → `matlock-cli.md`, `matlock-pipeline-specification.md`, `matlock-data-model.md`
+- **document read, has_secrets, secret_detection_error, redacted_dir, detect-secrets** → `matlock-cli.md`, `matlock-data-model.md`, `matlock-configuration.md`, `matlock-search.md`
+- **secrets backfill, retry-errors, legacy secret state, scanner retry** → `matlock-cli.md`, `matlock-pipeline-specification.md`, `matlock-data-model.md`
+- **projects query, super-projects list, tasks query, project query, task query, search-files, due_date, act_comp_date, est_comp_date** → `matlock-cli.md`, `matlock-data-model.md`, `matlock-search.md`
 - **search_chunks, search_fts, search_vec, search_indexed_at, search_index_hash, embeddings** → `matlock-data-model.md`, `matlock-search.md`
 - **index-search, index-search-continuous, background indexing, hybrid search, metadata_only** → `matlock-search.md`, `matlock-cli.md`, `matlock-pipeline-specification.md`
 - **config.yaml, base_directory, output_directory, db_path, debounce_seconds** → `matlock-configuration.md`

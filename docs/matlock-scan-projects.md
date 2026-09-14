@@ -1,23 +1,23 @@
-# Matlock scan-projects Command
+# Matlock projects discover Command
 
 **Version:** 0.2.0
 
-The `scan-projects` command is a **discovery tool** that walks your Markdown vault, reverse-engineers a project/super-project hierarchy from frontmatter metadata, and presents the results in one of three modes.
+The `projects discover` command is a **discovery tool** that walks your Markdown vault, reverse-engineers a project/super-project hierarchy from frontmatter metadata, and presents the results in one of three modes.
 
-Unlike the pipeline stages (`sync`, `parse`, `map-projects`, etc.), `scan-projects` does **not** use the SQLite database. It reads vault files directly and either prints its findings or writes them back to `config.yaml`.
+Unlike the pipeline stages (`sync`, `extract`, `projects map`, etc.), `projects discover` does **not** use the SQLite database. It reads vault files directly and either prints its findings or writes them back to `config.yaml`.
 
 ---
 
 ## Purpose
 
-When bootstrapping Matlock against an existing vault, or auditing drift between your vault and your config, `scan-projects` saves you from manually curating `config.yaml` by hand.
+When bootstrapping Matlock against an existing vault, or auditing drift between your vault and your config, `projects discover` saves you from manually curating `config.yaml` by hand.
 
 ---
 
 ## Usage
 
 ```
-matlock scan-projects [OPTIONS]
+matlock projects discover [OPTIONS]
 ```
 
 | Option | Short | Default | Description |

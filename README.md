@@ -22,23 +22,29 @@ See [SECURITY.md](SECURITY.md) for recommended separation between the public cod
 ## Quick Start
 
 ```bash
-# Run the full pipeline (sync → parse → map-projects → rollup → report)
-poetry run matlock run-all
+# Run the full pipeline (sync → extract → projects map → metrics rollup → reports render)
+poetry run matlock pipeline run
 
 # Run full pipeline and do an opt-in project scan/merge first
-poetry run matlock run-all --scan-projects
+poetry run matlock pipeline run --discover-projects
 
 # Run full pipeline, then refresh the local search index
-poetry run matlock run-all --index-search
+poetry run matlock pipeline run --index-search
 
 # Or run each stage individually
 poetry run matlock sync
-poetry run matlock parse
-poetry run matlock detect-backfill
-poetry run matlock doc-read Notes/today.md
-poetry run matlock map-projects
-poetry run matlock rollup
-poetry run matlock report
+poetry run matlock extract
+poetry run matlock secrets backfill
+poetry run matlock document read Notes/today.md
+poetry run matlock projects map
+poetry run matlock metrics rollup
+poetry run matlock reports render
+
+# Query project and task records directly from SQLite-backed metadata
+poetry run matlock projects query
+poetry run matlock projects query "alpha"
+poetry run matlock super-projects list
+poetry run matlock tasks query --checked --task-text "review"
 
 # Or build/query the local search index directly
 poetry run matlock search index
@@ -46,8 +52,8 @@ poetry run matlock search query "database"
 printf '{"query": "database", "search_mode": "fts_only"}' | poetry run matlock search query --stdio
 
 # Or run the server daemon (watch vault continuously)
-poetry run matlock server
-poetry run matlock server --index-search --index-search-continuous
+poetry run matlock serve
+poetry run matlock serve --index-search --index-search-continuous
 ```
 
 ## Configuration
@@ -113,12 +119,12 @@ projects:
 Secret safety behavior:
 
 - Parse records document-level secret detection state.
-- Detect-backfill scans existing unknown-state tracked documents and can retry prior scanner-error rows.
-- Search indexing/query and the doc-read command redact unsafe content.
+- `secrets backfill` scans existing unknown-state tracked documents and can retry prior scanner-error rows.
+- Search indexing/query and the `document read` command redact unsafe content.
 - Legacy documents (unknown secret state) are scanned lazily and then persisted.
 - Redaction cache files are stored by hash under `cache.redacted_dir/<sha256[:2]>/<sha256[2:4]>/<sha256>.txt`, with backward-compatible reads for older flat cache files.
 
-Project `resources` control which files are associated with a project during `map-projects`:
+Project `resources` control which files are associated with a project during `projects map`:
 
 - `type: DIRECTORY` matches every non-generated, non-deleted file under that directory.
 - `type: FILE` matches one exact relative path.
@@ -220,6 +226,35 @@ Behavior:
 - `--retry-errors` additionally rescans rows where `secret_detection_error IS NOT NULL`.
 - Missing/unreadable files are reported as skipped and retain existing state.
 - The command does not re-parse tasks, generate redaction cache files, or reindex search.
+
+### `matlock list-projects`
+
+Return project records as a JSON list. Without a term it returns all projects; with a term it performs a case-insensitive literal substring match across all project columns and automatically unions in projects associated with matching indexed files. Field filters can be combined with AND semantics using flags such as `--project-id`, `--title`, `--home-file`, `--priority`, `--status`, and ISO date predicates.
+
+```bash
+poetry run matlock list-projects
+poetry run matlock list-projects "alpha"
+poetry run matlock list-projects "alpha" --search-mode hybrid
+poetry run matlock list-projects --project-id backend --status active
+```
+
+### `matlock list-super-projects`
+
+Return every super-project row as a JSON list.
+
+```bash
+poetry run matlock list-super-projects
+```
+
+### `matlock list-tasks`
+
+Return active, non-generated task rows as JSON. Supports repeatable `--due-date`, `--est-comp-date`, and `--act-comp-date` predicates, `--checked/--unchecked`, `--task-text`, `--headers`, `--attributes`, `--project-id`, and `--super-project-id` filters.
+
+```bash
+poetry run matlock list-tasks
+poetry run matlock list-tasks --checked --task-text "review"
+poetry run matlock list-tasks --project-id backend --due-date ">=2026-01-01"
+```
 
 ### `matlock map-projects`
 

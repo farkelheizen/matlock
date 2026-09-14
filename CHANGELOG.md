@@ -6,6 +6,40 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ---
 
+## [0.7.0] — 2026-09-14
+
+### Added
+
+- Resource-oriented CLI command groups: `projects`, `tasks`, `documents`, `secrets`, `metrics`, `reports`, and `pipeline`.
+
+### Changed
+
+- Renamed CLI commands to clarify whether they query, discover, map, render, or run pipeline resources.
+- Renamed `--scan-projects` to `--discover-projects` on `pipeline run` and `serve`.
+
+### Removed
+
+- Removed the former top-level command names including `list-projects`, `list-super-projects`, `list-tasks`, `doc-read`, `detect-backfill`, `map-projects`, `run-all`, `scan-projects`, and `server`.
+
+## [0.6.0] — 2026-09-07
+
+### Added
+
+- `matlock list-projects` for JSON project lookup with direct field matching, AND-composed field filters, and automatic file-backed project discovery via the existing search engine.
+- `matlock list-super-projects` for JSON super-project enumeration.
+- `matlock list-tasks` for filtered JSON task queries with date, completion, text, attribute, and project/super-project constraints.
+
+### Changed
+
+- Query output now follows deterministic project/task JSON contracts with decoded JSON fields and stable ordering across CLI result payloads.
+- README and CLI docs now document the query command surface alongside the rest of the Matlock pipeline.
+
+### Fixed
+
+- Task filtering now validates date predicates before SQL execution and excludes soft-deleted/generated files from default task queries while preserving unlinked tasks.
+
+---
+
 ## [0.5.2] — 2026-09-07
 
 ### Added

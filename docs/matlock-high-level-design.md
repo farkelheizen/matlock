@@ -27,21 +27,21 @@ Each stage is a discrete, independently invocable command. Stages communicate **
 | Stage | Command              | Job                                                               |
 |:------|:---------------------|:------------------------------------------------------------------|
 | I     | `matlock sync`       | Hash files, update `file` table, flag `needs_parsing`            |
-| II    | `matlock parse`      | Extract tasks from flagged files, write to `task` table          |
-| III   | `matlock map-projects` | Link files to projects per `config.yaml`                       |
-| IV    | `matlock rollup`     | Nightly math: daily metrics, streaks, heatmap data               |
-| V     | `matlock report`     | Render Jinja2 Markdown dashboards to `_Matlock/`                 |
+| II    | `matlock extract`      | Extract tasks from flagged files, write to `task` table          |
+| III   | `matlock projects map` | Link files to projects per `config.yaml`                       |
+| IV    | `matlock metrics rollup` | Nightly math: daily metrics, streaks, heatmap data               |
+| V     | `matlock reports render` | Render Jinja2 Markdown dashboards to `_Matlock/`                 |
 
-Run all five stages in sequence with `matlock run-all`.
+Run all five stages in sequence with `matlock pipeline run`.
 
-For direct reads with the same safety guarantees, use `matlock doc-read <file_path>`.
-For bulk legacy-state resolution, use `matlock detect-backfill [--retry-errors]`.
+For direct reads with the same safety guarantees, use `matlock document read <file_path>`.
+For bulk legacy-state resolution, use `matlock secrets backfill [--retry-errors]`.
 
 Matlock Search is additive rather than replacing the core pipeline:
 
 - `matlock search index` reads active vault files, creates chunk/FTS/vector search state, and tracks freshness on `file` rows.
 - `matlock search query` is read-only against the local SQLite search index and supports both human CLI output and strict machine JSON transport.
-- `matlock run-all --index-search` appends indexing after the five core stages.
+- `matlock pipeline run --index-search` appends indexing after the five core stages.
 
 ## 4. Directory Structure Boundary (The Guardrail)
 
@@ -75,13 +75,13 @@ The `sync` stage skips `_Matlock/` entirely (the output directory is excluded fr
 
 Each pipeline stage runs independently from the CLI. This is the primary mode for development, debugging, and ad-hoc refreshes. See `docs/matlock-cli.md` for the full command reference.
 
-### Continuous Server Mode (`matlock server`)
+### Continuous Server Mode (`matlock serve`)
 
 A persistent daemon with three core triggers plus an optional search indexer:
 
 - **Watcher** — `watchdog` monitors the `base_directory` for file-system events. On create/modify/delete: triggers `sync` + `parse`, then marks matching projects dirty.
-- **Debouncer** — Coalesces rapid file changes (configurable idle window, default 5 seconds) before triggering `map-projects` + a full `report` pass.
-- **Scheduler** — Midnight trigger runs `rollup` + `report` (Daily History page + refreshed Global Dashboard).
+- **Debouncer** — Coalesces rapid file changes (configurable idle window, default 5 seconds) before triggering `projects map` + a full `reports render` pass.
+- **Scheduler** — Midnight trigger runs `metrics rollup` + `reports render` (Daily History page + refreshed Global Dashboard).
 - **Search Indexer** — Optional startup and continuous background indexing can run under the same pipeline lock as the watcher, debouncer, and scheduler.
 
 For search-specific behavior and contracts, see `docs/matlock-search.md`.

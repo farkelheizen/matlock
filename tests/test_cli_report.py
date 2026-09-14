@@ -36,7 +36,7 @@ def _invoke(tmp_path: Path, *extra_args):
     cfg_path = tmp_path / "config.yaml"
     db_path = tmp_path / "matlock.db"
     _write_config(cfg_path, vault, db_path, out_dir)
-    args = ["--config", str(cfg_path), "report"] + list(extra_args)
+    args = ["--config", str(cfg_path), "reports", "render"] + list(extra_args)
     return runner.invoke(app, args), cfg_path, out_dir, db_path
 
 
@@ -47,7 +47,7 @@ def _invoke(tmp_path: Path, *extra_args):
 
 class TestReportHelp:
     def test_report_help(self):
-        result = runner.invoke(app, ["report", "--help"])
+        result = runner.invoke(app, ["reports", "render", "--help"])
         assert result.exit_code == 0
         assert "report" in result.output.lower()
 
@@ -57,11 +57,11 @@ class TestReportHelp:
         assert "report" in result.output
 
     def test_target_option_shown_in_help(self):
-        result = runner.invoke(app, ["report", "--help"])
+        result = runner.invoke(app, ["reports", "render", "--help"])
         assert "--target" in result.output
 
     def test_project_id_option_shown_in_help(self):
-        result = runner.invoke(app, ["report", "--help"])
+        result = runner.invoke(app, ["reports", "render", "--help"])
         assert "--project-id" in result.output
 
 
@@ -102,7 +102,7 @@ class TestReportCommand:
         db_path = tmp_path / "matlock.db"
         _write_config(cfg_path, vault, db_path, out_dir)
         assert not db_path.exists()
-        runner.invoke(app, ["--config", str(cfg_path), "report"])
+        runner.invoke(app, ["--config", str(cfg_path), "reports", "render"])
         assert db_path.exists()
 
     def test_target_dashboard(self, tmp_path: Path):
@@ -148,7 +148,7 @@ class TestReportCommand:
 
         result = runner.invoke(
             app,
-            ["--config", str(cfg_path), "report", "--project-id", "alpha"],
+            ["--config", str(cfg_path), "reports", "render", "--project-id", "alpha"],
         )
         assert result.exit_code == 0
         assert (out_dir / "Projects" / "alpha.md").exists()
@@ -174,7 +174,7 @@ class TestReportErrors:
     def test_missing_config_exits_nonzero(self, tmp_path: Path):
         result = runner.invoke(app, [
             "--config", str(tmp_path / "nonexistent.yaml"),
-            "report",
+            "reports", "render",
         ])
         assert result.exit_code != 0
 
@@ -209,7 +209,7 @@ class TestReportSubprocess:
 
 class TestReportForce:
     def test_force_option_shown_in_help(self):
-        result = runner.invoke(app, ["report", "--help"])
+        result = runner.invoke(app, ["reports", "render", "--help"])
         assert "--force" in result.output
 
     def test_force_exits_zero(self, tmp_path: Path):
@@ -230,13 +230,13 @@ class TestReportForce:
         _write_config(cfg_path, vault, db_path, out_dir)
 
         # Run once to create the output directory
-        runner.invoke(app, ["--config", str(cfg_path), "report"])
+        runner.invoke(app, ["--config", str(cfg_path), "reports", "render"])
 
         # Plant an orphaned file
         orphan = out_dir / "stale_orphan.md"
         orphan.write_text("old content")
 
-        result = runner.invoke(app, ["--config", str(cfg_path), "report", "--force"])
+        result = runner.invoke(app, ["--config", str(cfg_path), "reports", "render", "--force"])
 
         assert result.exit_code == 0
         assert not orphan.exists()
@@ -255,11 +255,11 @@ class TestRunAllForceReport:
         cfg_path = tmp_path / "config.yaml"
         db_path = tmp_path / "matlock.db"
         _write_config(cfg_path, vault, db_path, out_dir)
-        args = ["--config", str(cfg_path), "run-all"] + list(extra_args)
+        args = ["--config", str(cfg_path), "pipeline", "run"] + list(extra_args)
         return runner.invoke(app, args), out_dir
 
     def test_force_report_option_shown_in_help(self):
-        result = runner.invoke(app, ["run-all", "--help"])
+        result = runner.invoke(app, ["pipeline", "run", "--help"])
         assert "--force-report" in result.output
 
     def test_force_report_exits_zero(self, tmp_path: Path):
@@ -274,13 +274,13 @@ class TestRunAllForceReport:
         db_path = tmp_path / "matlock.db"
         _write_config(cfg_path, vault, db_path, out_dir)
 
-        runner.invoke(app, ["--config", str(cfg_path), "run-all", "--skip-rollup"])
+        runner.invoke(app, ["--config", str(cfg_path), "pipeline", "run", "--skip-rollup"])
         orphan = out_dir / "stale.md"
         orphan.write_text("stale")
 
         result = runner.invoke(
             app,
-            ["--config", str(cfg_path), "run-all", "--skip-rollup", "--force-report"],
+            ["--config", str(cfg_path), "pipeline", "run", "--skip-rollup", "--force-report"],
         )
 
         assert result.exit_code == 0

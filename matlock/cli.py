@@ -3,12 +3,12 @@ Matlock CLI entrypoint.
 
 Usage:
     matlock --config PATH sync [--force]
-    matlock --config PATH parse
-    matlock --config PATH map-projects
+    matlock --config PATH extract
+    matlock --config PATH projects map
     matlock --config PATH rollup [--date YYYY-MM-DD]
     matlock --config PATH report [--target {all,dashboard,projects,history}] [--project-id ID]
-    matlock --config PATH run-all [--scan-projects] [--skip-rollup] [--force-sync] [--index-search]
-    matlock --config PATH server [--debounce SECONDS] [--index-search] [--index-search-continuous]
+    matlock --config PATH pipeline run [--discover-projects] [--skip-rollup] [--force-sync] [--index-search]
+    matlock --config PATH serve [--debounce SECONDS] [--index-search] [--index-search-continuous]
     matlock --config PATH search index [--force] [--batch-size INT] [--model STRING]
     matlock --config PATH search query [QUERY] [--search-mode MODE] [--granularity LEVEL] [--limit INT] [--stdio]
 """
@@ -16,14 +16,24 @@ Usage:
 from __future__ import annotations
 
 import datetime
+import json
 import sys
 from pathlib import Path
 
 import typer
 
 from matlock.config import load_config, validate_config_paths
-from matlock.db import get_connection, get_file, init_db, set_file_secret_detection
+from matlock.db import (
+    fetch_active_tasks,
+    fetch_projects,
+    fetch_super_projects,
+    get_connection,
+    get_file,
+    init_db,
+    set_file_secret_detection,
+)
 from matlock.logging_setup import setup_logging
+from matlock.query_models import ProjectRecord, parse_date_predicate
 from matlock.redaction import get_redacted_document, scan_document_for_secrets
 from matlock.search.logging import isolated_search_logging
 from matlock.search.query_cli import (
@@ -49,7 +59,23 @@ app = typer.Typer(
     help="Matlock — Markdown task & project engine.",
     add_completion=False,
 )
+document_app = typer.Typer(help="Document commands.")
+metrics_app = typer.Typer(help="Metrics commands.")
+pipeline_app = typer.Typer(help="Pipeline commands.")
+projects_app = typer.Typer(help="Project commands.")
+reports_app = typer.Typer(help="Report commands.")
+secrets_app = typer.Typer(help="Secret-detection commands.")
+super_projects_app = typer.Typer(help="Super-project commands.")
+tasks_app = typer.Typer(help="Task commands.")
 search_app = typer.Typer(help="Search indexing and query commands.")
+app.add_typer(document_app, name="document")
+app.add_typer(metrics_app, name="metrics")
+app.add_typer(pipeline_app, name="pipeline")
+app.add_typer(projects_app, name="projects")
+app.add_typer(reports_app, name="reports")
+app.add_typer(secrets_app, name="secrets")
+app.add_typer(super_projects_app, name="super-projects")
+app.add_typer(tasks_app, name="tasks")
 app.add_typer(search_app, name="search")
 
 # Global state passed from the callback to subcommands via the Typer context
@@ -118,9 +144,9 @@ def _load_and_validate(config_path: Path):
     return cfg
 
 
-@app.command()
-def parse(ctx: typer.Context) -> None:
-    """Parse all files flagged by sync (needs_parsing=1)."""
+@app.command(name="extract")
+def extract(ctx: typer.Context) -> None:
+    """Extract tasks from all files flagged by sync (needs_parsing=1)."""
     cfg = _load_and_validate(ctx.obj[_CONFIG_KEY])
 
     conn = get_connection(cfg.db_path)
@@ -131,7 +157,7 @@ def parse(ctx: typer.Context) -> None:
         conn.close()
 
     typer.echo(
-        f"Parse complete: {result.parsed} parsed, {result.skipped} skipped, "
+        f"Extract complete: {result.parsed} parsed, {result.skipped} skipped, "
         f"{result.tasks_inserted} tasks inserted, {result.tasks_deleted} tasks deleted"
     )
 
@@ -153,7 +179,203 @@ def _normalize_doc_read_path(base_directory: Path, file_path: str) -> tuple[Path
     return abs_path, relative.as_posix()
 
 
-@app.command(name="doc-read")
+def _project_ids_for_file(conn, file_path: str) -> list[str]:
+    """Return all project IDs connected to a file via file_project or home_file."""
+    rows = conn.execute(
+        "SELECT DISTINCT project_id FROM file_project WHERE file_path = ?"
+        " UNION "
+        "SELECT project_id FROM project WHERE home_file = ?",
+        (file_path, file_path),
+    ).fetchall()
+    return [row["project_id"] for row in rows if row["project_id"]]
+
+
+@projects_app.command(name="query")
+def list_projects(
+    ctx: typer.Context,
+    text: str | None = typer.Argument(
+        None,
+        help="Optional literal text filter for project records.",
+    ),
+    project_id: list[str] = typer.Option([], "--project-id", help="Repeatable project ID match."),
+    super_project_id: list[str] = typer.Option([], "--super-project-id", help="Repeatable super-project ID match."),
+    title: list[str] = typer.Option([], "--title", help="Repeatable title substring match."),
+    home_file: list[str] = typer.Option([], "--home-file", help="Repeatable home-file substring match."),
+    priority: list[str] = typer.Option([], "--priority", help="Repeatable priority substring match."),
+    status: list[str] = typer.Option([], "--status", help="Repeatable status substring match."),
+    start_date: list[str] = typer.Option([], "--start-date", help="Repeatable ISO date predicate for start_date."),
+    due_date: list[str] = typer.Option([], "--due-date", help="Repeatable ISO date predicate for due_date."),
+    search_files: bool = typer.Option(
+        False,
+        "--search-files",
+        help="Compatibility flag retained for older scripts; text queries automatically include file-backed matches.",
+    ),
+    search_mode: str = typer.Option(
+        "hybrid",
+        "--search-mode",
+        help="Search mode to use for the automatic file-backed project lookup.",
+    ),
+) -> None:
+    """Return project rows as JSON. Supports free-text and project-table field filtering."""
+    cfg = _load_and_validate(ctx.obj[_CONFIG_KEY])
+
+    field_filters: dict[str, object] = {}
+    for field_name, values in (
+        ("project_id", project_id),
+        ("super_project_id", super_project_id),
+        ("title", title),
+        ("home_file", home_file),
+        ("priority", priority),
+        ("status", status),
+    ):
+        if values:
+            field_filters[field_name] = list(values)
+
+    try:
+        if start_date:
+            field_filters["start_date"] = [parse_date_predicate(v, "start_date").model_dump(mode="json") for v in start_date]
+        if due_date:
+            field_filters["due_date"] = [parse_date_predicate(v, "due_date").model_dump(mode="json") for v in due_date]
+    except ValueError as exc:
+        typer.echo(f"Error: Invalid date predicate: {exc}", err=True)
+        raise typer.Exit(code=1)
+
+    conn = get_connection(cfg.db_path)
+    try:
+        init_db(conn)
+
+        if text and text.strip():
+            direct_rows = fetch_projects(conn, term=text, filters=field_filters)
+            direct_ids = {row.project_id for row in direct_rows}
+
+            if search_files or True:
+                outcome = run_search_request(
+                    cfg,
+                    conn,
+                    {
+                        "query": text,
+                        "search_mode": search_mode,
+                        "output": {
+                            "granularity": "file",
+                            "limit": 100000,
+                            "include_content": False,
+                        },
+                    },
+                )
+                if outcome.exit_code != 0:
+                    error_message = "search request failed"
+                    if outcome.response.error is not None:
+                        error_message = outcome.response.error.message
+                    typer.echo(f"Error: {error_message}", err=True)
+                    raise typer.Exit(code=outcome.exit_code)
+
+                file_scores: dict[str, float] = {}
+                for result in outcome.response.results:
+                    for project_id in _project_ids_for_file(conn, result.file_path):
+                        file_scores[project_id] = max(file_scores.get(project_id, 0.0), float(result.score))
+
+                ranked_file_ids = [
+                    project_id for project_id, _ in sorted(file_scores.items(), key=lambda item: (-item[1], item[0]))
+                ]
+                direct_only_ids = sorted(direct_ids - set(file_scores))
+                ordered_project_ids = ranked_file_ids + direct_only_ids
+                if ordered_project_ids:
+                    placeholders = ", ".join("?" for _ in ordered_project_ids)
+                    rows = conn.execute(
+                        "SELECT project_id, super_project_id, title, home_file, priority, status, start_date, due_date FROM project WHERE project_id IN ("
+                        + placeholders
+                        + ")",
+                        ordered_project_ids,
+                    ).fetchall()
+                    rows_by_id = {row["project_id"]: row for row in rows}
+                    payload = [
+                        ProjectRecord.model_validate(dict(rows_by_id[project_id])).model_dump(mode="json")
+                        for project_id in ordered_project_ids
+                        if project_id in rows_by_id
+                    ]
+                else:
+                    payload = []
+            else:
+                payload = [row.model_dump(mode="json") for row in direct_rows]
+            typer.echo(json.dumps(payload), nl=False)
+            return
+
+        rows = fetch_projects(conn, filters=field_filters, term=text if text else None)
+        payload = [row.model_dump(mode="json") for row in rows]
+        typer.echo(json.dumps(payload), nl=False)
+    finally:
+        conn.close()
+
+
+@super_projects_app.command(name="list")
+def list_super_projects(ctx: typer.Context) -> None:
+    """Return all super-project rows as JSON."""
+    cfg = _load_and_validate(ctx.obj[_CONFIG_KEY])
+
+    conn = get_connection(cfg.db_path)
+    try:
+        init_db(conn)
+        rows = fetch_super_projects(conn)
+    finally:
+        conn.close()
+
+    payload = [row.model_dump(mode="json") for row in rows]
+    typer.echo(json.dumps(payload), nl=False)
+
+
+@tasks_app.command(name="query")
+def list_tasks(
+    ctx: typer.Context,
+    due_date: list[str] = typer.Option([], "--due-date", help="Repeatable ISO date comparison like >=2026-01-01."),
+    est_comp_date: list[str] = typer.Option([], "--est-comp-date", help="Repeatable estimated completion date filter."),
+    act_comp_date: list[str] = typer.Option([], "--act-comp-date", help="Repeatable actual completion date filter."),
+    checked: bool | None = typer.Option(None, "--checked/--unchecked", help="Filter tasks by checked state."),
+    task_text: str | None = typer.Option(None, "--task-text", help="Case-insensitive literal task text match."),
+    headers: str | None = typer.Option(None, "--headers", help="Case-insensitive literal header JSON match."),
+    attributes: str | None = typer.Option(None, "--attributes", help="Case-insensitive literal attribute JSON match."),
+    project_ids: list[str] = typer.Option([], "--project-id", help="Repeatable project filter."),
+    super_project_ids: list[str] = typer.Option([], "--super-project-id", help="Repeatable super-project filter."),
+) -> None:
+    """Return active task rows as JSON, optionally filtered by date, state, text, and project linkage."""
+    cfg = _load_and_validate(ctx.obj[_CONFIG_KEY])
+
+    filter_map: dict[str, object] = {}
+    try:
+        for field_name, raw_values in (
+            ("due_date", due_date),
+            ("est_comp_date", est_comp_date),
+            ("act_comp_date", act_comp_date),
+        ):
+            if raw_values:
+                filter_map[field_name] = [parse_date_predicate(value, field_name).model_dump(mode="json") for value in raw_values]
+        if checked is not None:
+            filter_map["checked"] = checked
+        if task_text:
+            filter_map["task_text"] = task_text
+        if headers:
+            filter_map["headers"] = headers
+        if attributes:
+            filter_map["attributes"] = attributes
+        if project_ids:
+            filter_map["project_ids"] = list(project_ids)
+        if super_project_ids:
+            filter_map["super_project_ids"] = list(super_project_ids)
+    except ValueError as exc:
+        typer.echo(f"Error: Invalid date predicate: {exc}", err=True)
+        raise typer.Exit(code=1)
+
+    conn = get_connection(cfg.db_path)
+    try:
+        init_db(conn)
+        rows = fetch_active_tasks(conn, filters=filter_map)
+    finally:
+        conn.close()
+
+    payload = [row.model_dump(mode="json") for row in rows]
+    typer.echo(json.dumps(payload), nl=False)
+
+
+@document_app.command(name="read")
 def doc_read(
     ctx: typer.Context,
     file_path: str = typer.Argument(..., help="Vault-relative or vault-contained absolute file path."),
@@ -210,7 +432,7 @@ def doc_read(
     typer.echo(content, nl=False)
 
 
-@app.command(name="detect-backfill")
+@secrets_app.command(name="backfill")
 def detect_backfill(
     ctx: typer.Context,
     retry_errors: bool = typer.Option(
@@ -236,7 +458,7 @@ def detect_backfill(
     )
 
 
-@app.command(name="map-projects")
+@projects_app.command(name="map")
 def map_projects(ctx: typer.Context) -> None:
     """Rebuild project-to-file associations from config."""
     cfg = _load_and_validate(ctx.obj[_CONFIG_KEY])
@@ -249,13 +471,13 @@ def map_projects(ctx: typer.Context) -> None:
         conn.close()
 
     typer.echo(
-        f"Map-projects complete: {result.super_projects_written} super-projects, "
+        f"Projects map complete: {result.super_projects_written} super-projects, "
         f"{result.projects_written} projects, "
         f"{result.file_project_rows} file-project links"
     )
 
 
-@app.command()
+@metrics_app.command(name="rollup")
 def rollup(
     ctx: typer.Context,
     date: str = typer.Option(
@@ -291,7 +513,7 @@ def rollup(
 _VALID_REPORT_TARGETS = {"all", "dashboard", "projects", "history"}
 
 
-@app.command()
+@reports_app.command(name="render")
 def report(
     ctx: typer.Context,
     target: str = typer.Option(
@@ -571,13 +793,13 @@ def search_query(
     typer.echo(format_human_response(outcome.response))
 
 
-@app.command(name="run-all")
+@pipeline_app.command(name="run")
 def run_all(
     ctx: typer.Context,
     scan_projects_flag: bool = typer.Option(
         False,
-        "--scan-projects",
-        help="Run scan-projects --merge before sync (opt-in).",
+        "--discover-projects",
+        help="Run projects discover --merge before sync (opt-in).",
     ),
     skip_rollup: bool = typer.Option(
         False,
@@ -600,7 +822,7 @@ def run_all(
         help="Run search indexing after the core pipeline completes (opt-in).",
     ),
 ) -> None:
-    """Run all pipeline stages in sequence: [scan-projects →] sync → parse → map-projects → rollup → report."""
+    """Run all pipeline stages in sequence: [projects discover →] sync → extract → projects map → metrics rollup → reports render."""
     cfg = _load_and_validate(ctx.obj[_CONFIG_KEY])
 
     rollup_date = datetime.date.today() - datetime.timedelta(days=1)
@@ -621,13 +843,13 @@ def run_all(
             for sf in scanned:
                 for w in sf.warnings:
                     if not warned:
-                        typer.echo("Scan-projects warnings:", err=True)
+                        typer.echo("Projects discover warnings:", err=True)
                         warned = True
                     typer.echo(f"  [{sf.file_path}] {w}", err=True)
 
             merge_result = merge_into_config(ctx.obj[_CONFIG_KEY], candidates, scanned)
             typer.echo(
-                f"Scan-projects: "
+                f"Projects discover: "
                 f"{merge_result.super_projects_added} super-projects added, "
                 f"{merge_result.super_projects_updated} updated, "
                 f"{merge_result.super_projects_deleted} deleted; "
@@ -636,7 +858,7 @@ def run_all(
                 f"{merge_result.projects_deleted} deleted"
             )
 
-            # merge_into_config writes config.yaml; reload so map-projects uses merged data.
+            # merge_into_config writes config.yaml; reload so project mapping uses merged data.
             cfg = _load_and_validate(ctx.obj[_CONFIG_KEY])
 
         sync_result = run_sync(cfg, conn, force=force_sync)
@@ -647,14 +869,14 @@ def run_all(
 
         parse_result = run_parse(cfg, conn)
         typer.echo(
-            f"Parse: {parse_result.parsed} parsed, {parse_result.skipped} skipped, "
+            f"Extract: {parse_result.parsed} parsed, {parse_result.skipped} skipped, "
             f"{parse_result.tasks_inserted} tasks inserted, "
             f"{parse_result.tasks_deleted} tasks deleted"
         )
 
         map_result = run_map_projects(cfg, conn)
         typer.echo(
-            f"Map-projects: {map_result.super_projects_written} super-projects, "
+            f"Projects map: {map_result.super_projects_written} super-projects, "
             f"{map_result.projects_written} projects, "
             f"{map_result.file_project_rows} file-project links"
         )
@@ -662,13 +884,13 @@ def run_all(
         if not skip_rollup:
             rollup_result = run_rollup(cfg, conn, rollup_date)
             typer.echo(
-                f"Rollup: {rollup_result.rollup_date}, "
+                f"Metrics rollup: {rollup_result.rollup_date}, "
                 f"{rollup_result.rows_written} rows written"
             )
 
         report_result = run_report(cfg, conn, target="all", project_id=None, force=force_report)
         typer.echo(
-            f"Report: {report_result.files_written} files written, "
+                f"Reports render: {report_result.files_written} files written, "
             f"{report_result.files_deleted} deleted ({report_result.target})"
         )
 
@@ -686,10 +908,10 @@ def run_all(
     finally:
         conn.close()
 
-    typer.echo("run-all complete.")
+    typer.echo("Pipeline run complete.")
 
 
-@app.command(name="scan-projects")
+@projects_app.command(name="discover")
 def scan_projects(
     ctx: typer.Context,
     print_yaml: bool = typer.Option(
@@ -768,8 +990,8 @@ def scan_projects(
             typer.echo(f"  [{sf.file_path}] {w}", err=True)
 
 
-@app.command()
-def server(
+@app.command(name="serve")
+def serve(
     ctx: typer.Context,
     debounce: int = typer.Option(
         None,
@@ -779,8 +1001,8 @@ def server(
     ),
     scan_projects_flag: bool = typer.Option(
         False,
-        "--scan-projects",
-        help="Run scan-projects --merge once at startup before the watcher starts.",
+        "--discover-projects",
+        help="Run projects discover --merge once at startup before the watcher starts.",
     ),
     skip_rollup: bool = typer.Option(
         False,
@@ -828,13 +1050,13 @@ def server(
         for sf in scanned:
             for w in sf.warnings:
                 if not warned:
-                    typer.echo("Scan-projects warnings:", err=True)
+                    typer.echo("Projects discover warnings:", err=True)
                     warned = True
                 typer.echo(f"  [{sf.file_path}] {w}", err=True)
 
         merge_result = merge_into_config(ctx.obj[_CONFIG_KEY], candidates, scanned)
         typer.echo(
-            f"Scan-projects: "
+            f"Projects discover: "
             f"{merge_result.super_projects_added} super-projects added, "
             f"{merge_result.super_projects_updated} updated, "
             f"{merge_result.super_projects_deleted} deleted; "

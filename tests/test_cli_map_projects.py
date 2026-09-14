@@ -1,4 +1,4 @@
-"""Tests for matlock/cli.py — map-projects subcommand."""
+"""Tests for matlock/cli.py — projects map subcommand."""
 from __future__ import annotations
 
 import subprocess
@@ -68,18 +68,18 @@ def _seed_db_file(db_path: Path, file_path: str) -> None:
 
 class TestMapProjectsHelp:
     def test_map_projects_help(self):
-        result = runner.invoke(app, ["map-projects", "--help"])
+        result = runner.invoke(app, ["projects", "map", "--help"])
         assert result.exit_code == 0
         assert "project" in result.output.lower()
 
     def test_map_projects_appears_in_main_help(self):
         result = runner.invoke(app, ["--help"])
         assert result.exit_code == 0
-        assert "map-projects" in result.output
+        assert "projects" in result.output
 
 
 # ---------------------------------------------------------------------------
-# map-projects — happy path
+# projects map — happy path
 # ---------------------------------------------------------------------------
 
 
@@ -91,7 +91,7 @@ class TestMapProjectsCommand:
         db_path = tmp_path / "matlock.db"
         _write_config(cfg_path, vault, db_path)
 
-        result = runner.invoke(app, ["--config", str(cfg_path), "map-projects"])
+        result = runner.invoke(app, ["--config", str(cfg_path), "projects", "map"])
         assert result.exit_code == 0
 
     def test_summary_format(self, tmp_path: Path):
@@ -105,9 +105,9 @@ class TestMapProjectsCommand:
             projects=[{"id": "p1", "title": "P One", "resources": []}],
         )
 
-        result = runner.invoke(app, ["--config", str(cfg_path), "map-projects"])
+        result = runner.invoke(app, ["--config", str(cfg_path), "projects", "map"])
         assert result.exit_code == 0
-        assert "Map-projects complete:" in result.output
+        assert "Projects map complete:" in result.output
         assert "1 super-projects" in result.output
         assert "1 projects" in result.output
         assert "0 file-project links" in result.output
@@ -129,7 +129,7 @@ class TestMapProjectsCommand:
 
         # Sync first so file row exists in DB
         runner.invoke(app, ["--config", str(cfg_path), "sync"])
-        result = runner.invoke(app, ["--config", str(cfg_path), "map-projects"])
+        result = runner.invoke(app, ["--config", str(cfg_path), "projects", "map"])
         assert result.exit_code == 0
         assert "1 file-project links" in result.output
 
@@ -157,7 +157,7 @@ class TestMapProjectsCommand:
         )
 
         runner.invoke(app, ["--config", str(cfg_path), "sync"])
-        result = runner.invoke(app, ["--config", str(cfg_path), "map-projects"])
+        result = runner.invoke(app, ["--config", str(cfg_path), "projects", "map"])
         assert result.exit_code == 0
         assert "2 file-project links" in result.output
 
@@ -178,9 +178,9 @@ class TestMapProjectsCommand:
         )
 
         runner.invoke(app, ["--config", str(cfg_path), "sync"])
-        runner.invoke(app, ["--config", str(cfg_path), "map-projects"])
+        runner.invoke(app, ["--config", str(cfg_path), "projects", "map"])
 
-        result2 = runner.invoke(app, ["--config", str(cfg_path), "map-projects"])
+        result2 = runner.invoke(app, ["--config", str(cfg_path), "projects", "map"])
         assert result2.exit_code == 0
         assert "1 file-project links" in result2.output
 
@@ -196,7 +196,7 @@ class TestMapProjectsCommand:
         db_path = tmp_path / "matlock.db"
         _write_config(cfg_path, vault, db_path)
 
-        result = runner.invoke(app, ["--config", str(cfg_path), "map-projects"])
+        result = runner.invoke(app, ["--config", str(cfg_path), "projects", "map"])
         assert result.exit_code == 0
         assert "0 super-projects" in result.output
         assert "0 projects" in result.output
@@ -210,13 +210,13 @@ class TestMapProjectsCommand:
         _write_config(cfg_path, vault, db_path)
 
         assert not db_path.exists()
-        result = runner.invoke(app, ["--config", str(cfg_path), "map-projects"])
+        result = runner.invoke(app, ["--config", str(cfg_path), "projects", "map"])
         assert result.exit_code == 0
         assert db_path.exists()
 
 
 # ---------------------------------------------------------------------------
-# map-projects — error cases
+# projects map — error cases
 # ---------------------------------------------------------------------------
 
 
@@ -224,14 +224,14 @@ class TestMapProjectsErrors:
     def test_missing_config_exits_nonzero(self, tmp_path: Path):
         result = runner.invoke(app, [
             "--config", str(tmp_path / "nonexistent.yaml"),
-            "map-projects",
+            "projects", "map",
         ])
         assert result.exit_code != 0
 
     def test_invalid_config_exits_nonzero(self, tmp_path: Path):
         cfg_path = tmp_path / "config.yaml"
         cfg_path.write_text("not: valid: yaml: config", encoding="utf-8")
-        result = runner.invoke(app, ["--config", str(cfg_path), "map-projects"])
+        result = runner.invoke(app, ["--config", str(cfg_path), "projects", "map"])
         assert result.exit_code != 0
 
 
