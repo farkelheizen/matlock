@@ -41,17 +41,17 @@ def _yesterday() -> str:
 
 class TestRollupHelp:
     def test_rollup_help(self):
-        result = runner.invoke(app, ["rollup", "--help"])
+        result = runner.invoke(app, ["metrics", "rollup", "--help"])
         assert result.exit_code == 0
         assert "rollup" in result.output.lower()
 
     def test_rollup_appears_in_main_help(self):
         result = runner.invoke(app, ["--help"])
         assert result.exit_code == 0
-        assert "rollup" in result.output
+        assert "metrics" in result.output
 
     def test_date_option_shown_in_help(self):
-        result = runner.invoke(app, ["rollup", "--help"])
+        result = runner.invoke(app, ["metrics", "rollup", "--help"])
         assert "--date" in result.output
 
 
@@ -68,7 +68,7 @@ class TestRollupCommand:
         db_path = tmp_path / "matlock.db"
         _write_config(cfg_path, vault, db_path)
 
-        result = runner.invoke(app, ["--config", str(cfg_path), "rollup"])
+        result = runner.invoke(app, ["--config", str(cfg_path), "metrics", "rollup"])
         assert result.exit_code == 0
 
     def test_summary_format(self, tmp_path: Path):
@@ -78,7 +78,7 @@ class TestRollupCommand:
         db_path = tmp_path / "matlock.db"
         _write_config(cfg_path, vault, db_path)
 
-        result = runner.invoke(app, ["--config", str(cfg_path), "rollup"])
+        result = runner.invoke(app, ["--config", str(cfg_path), "metrics", "rollup"])
         assert result.exit_code == 0
         assert "Rollup complete:" in result.output
         assert "rows written" in result.output
@@ -90,7 +90,7 @@ class TestRollupCommand:
         db_path = tmp_path / "matlock.db"
         _write_config(cfg_path, vault, db_path)
 
-        result = runner.invoke(app, ["--config", str(cfg_path), "rollup"])
+        result = runner.invoke(app, ["--config", str(cfg_path), "metrics", "rollup"])
         assert result.exit_code == 0
         assert _yesterday() in result.output
 
@@ -102,7 +102,7 @@ class TestRollupCommand:
         _write_config(cfg_path, vault, db_path)
 
         result = runner.invoke(
-            app, ["--config", str(cfg_path), "rollup", "--date", "2026-01-15"]
+            app, ["--config", str(cfg_path), "metrics", "rollup", "--date", "2026-01-15"]
         )
         assert result.exit_code == 0
         assert "2026-01-15" in result.output
@@ -115,7 +115,7 @@ class TestRollupCommand:
         _write_config(cfg_path, vault, db_path)
 
         assert not db_path.exists()
-        result = runner.invoke(app, ["--config", str(cfg_path), "rollup"])
+        result = runner.invoke(app, ["--config", str(cfg_path), "metrics", "rollup"])
         assert result.exit_code == 0
         assert db_path.exists()
 
@@ -126,7 +126,7 @@ class TestRollupCommand:
         db_path = tmp_path / "matlock.db"
         _write_config(cfg_path, vault, db_path)
 
-        runner.invoke(app, ["--config", str(cfg_path), "rollup", "--date", "2026-04-26"])
+        runner.invoke(app, ["--config", str(cfg_path), "metrics", "rollup", "--date", "2026-04-26"])
 
         conn = get_connection(db_path)
         row = conn.execute(
@@ -142,9 +142,9 @@ class TestRollupCommand:
         db_path = tmp_path / "matlock.db"
         _write_config(cfg_path, vault, db_path)
 
-        runner.invoke(app, ["--config", str(cfg_path), "rollup", "--date", "2026-04-26"])
+        runner.invoke(app, ["--config", str(cfg_path), "metrics", "rollup", "--date", "2026-04-26"])
         result = runner.invoke(
-            app, ["--config", str(cfg_path), "rollup", "--date", "2026-04-26"]
+            app, ["--config", str(cfg_path), "metrics", "rollup", "--date", "2026-04-26"]
         )
         assert result.exit_code == 0
 
@@ -164,14 +164,14 @@ class TestRollupCommand:
 
         runner.invoke(app, ["--config", str(cfg_path), "sync"])
         result = runner.invoke(
-            app, ["--config", str(cfg_path), "rollup", "--date", "2026-04-26"]
+            app, ["--config", str(cfg_path), "metrics", "rollup", "--date", "2026-04-26"]
         )
         assert result.exit_code == 0
         assert "1 rows written" in result.output
 
 
 # ---------------------------------------------------------------------------
-# rollup — error cases
+# metrics rollup — error cases
 # ---------------------------------------------------------------------------
 
 
@@ -179,7 +179,7 @@ class TestRollupErrors:
     def test_missing_config_exits_nonzero(self, tmp_path: Path):
         result = runner.invoke(app, [
             "--config", str(tmp_path / "nonexistent.yaml"),
-            "rollup",
+            "metrics", "rollup",
         ])
         assert result.exit_code != 0
 
@@ -191,7 +191,7 @@ class TestRollupErrors:
         _write_config(cfg_path, vault, db_path)
 
         result = runner.invoke(
-            app, ["--config", str(cfg_path), "rollup", "--date", "not-a-date"]
+            app, ["--config", str(cfg_path), "metrics", "rollup", "--date", "not-a-date"]
         )
         assert result.exit_code != 0
 
@@ -203,7 +203,7 @@ class TestRollupErrors:
         _write_config(cfg_path, vault, db_path)
 
         result = runner.invoke(
-            app, ["--config", str(cfg_path), "rollup", "--date", "2026/04/26"]
+            app, ["--config", str(cfg_path), "metrics", "rollup", "--date", "2026/04/26"]
         )
         assert result.exit_code != 0
 

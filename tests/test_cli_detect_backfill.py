@@ -24,7 +24,7 @@ def _write_config(path: Path, base_dir: Path, db_path: Path) -> None:
 
 
 def test_detect_backfill_help_lists_retry_errors_option():
-    result = runner.invoke(app, ["detect-backfill", "--help"])
+    result = runner.invoke(app, ["secrets", "backfill", "--help"])
 
     assert result.exit_code == 0
     assert "--retry-errors" in result.stdout
@@ -45,7 +45,7 @@ def test_detect_backfill_passes_retry_option_and_prints_summary(tmp_path: Path, 
 
     result = runner.invoke(
         app,
-        ["--config", str(cfg_path), "detect-backfill", "--retry-errors"],
+        ["--config", str(cfg_path), "secrets", "backfill", "--retry-errors"],
     )
 
     assert result.exit_code == 0

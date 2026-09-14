@@ -53,10 +53,10 @@ def _seed_file_row(
 
 class TestDocReadCommand:
     def test_doc_read_help(self):
-        result = runner.invoke(app, ["doc-read", "--help"])
+        result = runner.invoke(app, ["document", "read", "--help"])
 
         assert result.exit_code == 0
-        assert "doc-read" in result.stdout
+        assert "document read" in result.stdout
 
     def test_doc_read_clean_file_outputs_raw_content(self, tmp_path: Path):
         vault = tmp_path / "vault"
@@ -76,7 +76,7 @@ class TestDocReadCommand:
         conn.commit()
         conn.close()
 
-        result = runner.invoke(app, ["--config", str(cfg_path), "doc-read", rel])
+        result = runner.invoke(app, ["--config", str(cfg_path), "document", "read", rel])
 
         assert result.exit_code == 0
         assert result.stdout == "plain text\n"
@@ -101,7 +101,7 @@ class TestDocReadCommand:
 
         monkeypatch.setattr("matlock.cli.get_redacted_document", lambda _path, _cache_dir: "[REDACTED]\n")
 
-        result = runner.invoke(app, ["--config", str(cfg_path), "doc-read", rel])
+        result = runner.invoke(app, ["--config", str(cfg_path), "document", "read", rel])
 
         assert result.exit_code == 0
         assert result.stdout == "[REDACTED]\n"
@@ -134,7 +134,7 @@ class TestDocReadCommand:
         )
         monkeypatch.setattr("matlock.cli.get_redacted_document", lambda _path, _cache_dir: "[REDACTED]\n")
 
-        result = runner.invoke(app, ["--config", str(cfg_path), "doc-read", rel])
+        result = runner.invoke(app, ["--config", str(cfg_path), "document", "read", rel])
 
         assert result.exit_code == 0
         assert result.stdout == "[REDACTED]\n"
@@ -164,7 +164,7 @@ class TestDocReadCommand:
         conn.commit()
         conn.close()
 
-        result = runner.invoke(app, ["--config", str(cfg_path), "doc-read", str(abs_path)])
+        result = runner.invoke(app, ["--config", str(cfg_path), "document", "read", str(abs_path)])
 
         assert result.exit_code == 0
         assert result.stdout == "absolute ok\n"
@@ -179,7 +179,7 @@ class TestDocReadCommand:
         cfg_path = tmp_path / "config.yaml"
         _write_config(cfg_path, vault, db_path, tmp_path / "cache")
 
-        result = runner.invoke(app, ["--config", str(cfg_path), "doc-read", str(outside_file)])
+        result = runner.invoke(app, ["--config", str(cfg_path), "document", "read", str(outside_file)])
 
         assert result.exit_code == 1
         assert "path must be inside base_directory" in result.stderr
@@ -206,10 +206,10 @@ class TestDocReadCommand:
         conn.commit()
         conn.close()
 
-        untracked_result = runner.invoke(app, ["--config", str(cfg_path), "doc-read", untracked_rel])
+        untracked_result = runner.invoke(app, ["--config", str(cfg_path), "document", "read", untracked_rel])
         deleted_result = runner.invoke(
             app,
-            ["--config", str(cfg_path), "doc-read", tracked_deleted_rel],
+            ["--config", str(cfg_path), "document", "read", tracked_deleted_rel],
         )
 
         assert untracked_result.exit_code == 1

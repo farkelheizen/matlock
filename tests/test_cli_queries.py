@@ -47,7 +47,7 @@ def _seed_projects(db_path: Path) -> None:
     conn.close()
 
 
-def test_find_projects_returns_all_projects_json(tmp_path: Path) -> None:
+def test_list_projects_returns_all_projects_json(tmp_path: Path) -> None:
     vault = tmp_path / "vault"
     vault.mkdir()
     db_path = tmp_path / "matlock.db"
@@ -55,14 +55,14 @@ def test_find_projects_returns_all_projects_json(tmp_path: Path) -> None:
     _write_config(cfg_path, vault, db_path)
     _seed_projects(db_path)
 
-    result = runner.invoke(app, ["--config", str(cfg_path), "find-projects"])
+    result = runner.invoke(app, ["--config", str(cfg_path), "projects", "query"])
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
     assert [row["project_id"] for row in payload] == ["proj-a", "proj-b"]
 
 
-def test_find_projects_direct_term_matches_any_project_column(tmp_path: Path) -> None:
+def test_list_projects_direct_term_matches_any_project_column(tmp_path: Path) -> None:
     vault = tmp_path / "vault"
     vault.mkdir()
     db_path = tmp_path / "matlock.db"
@@ -70,11 +70,26 @@ def test_find_projects_direct_term_matches_any_project_column(tmp_path: Path) ->
     _write_config(cfg_path, vault, db_path)
     _seed_projects(db_path)
 
-    result = runner.invoke(app, ["--config", str(cfg_path), "find-projects", "100%"])
+    result = runner.invoke(app, ["--config", str(cfg_path), "projects", "query", "100%"])
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
     assert [row["project_id"] for row in payload] == ["proj-b"]
+
+
+def test_list_projects_supports_field_filters_with_and_semantics(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    db_path = tmp_path / "matlock.db"
+    cfg_path = tmp_path / "config.yaml"
+    _write_config(cfg_path, vault, db_path)
+    _seed_projects(db_path)
+
+    result = runner.invoke(app, ["--config", str(cfg_path), "projects", "query", "--project-id", "proj-a", "--status", "active"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert [row["project_id"] for row in payload] == ["proj-a"]
 
 
 def test_list_super_projects_returns_all_rows(tmp_path: Path) -> None:
@@ -85,7 +100,7 @@ def test_list_super_projects_returns_all_rows(tmp_path: Path) -> None:
     _write_config(cfg_path, vault, db_path)
     _seed_projects(db_path)
 
-    result = runner.invoke(app, ["--config", str(cfg_path), "list-super-projects"])
+    result = runner.invoke(app, ["--config", str(cfg_path), "super-projects", "list"])
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
@@ -115,19 +130,19 @@ def test_list_tasks_returns_active_unlinked_tasks_and_filters(tmp_path: Path) ->
     conn.commit()
     conn.close()
 
-    result = runner.invoke(app, ["--config", str(cfg_path), "list-tasks", "--checked", "--task-text", "alpha"])
+    result = runner.invoke(app, ["--config", str(cfg_path), "tasks", "query", "--checked", "--task-text", "alpha"])
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
     assert [row["task_id"] for row in payload] == ["t-1"]
 
-    result = runner.invoke(app, ["--config", str(cfg_path), "list-tasks", "--project-id", "proj-b", "--due-date", ">=2026-03-03", "--due-date", "<=2026-03-04"])
+    result = runner.invoke(app, ["--config", str(cfg_path), "tasks", "query", "--project-id", "proj-b", "--due-date", ">=2026-03-03", "--due-date", "<=2026-03-04"])
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
     assert [row["task_id"] for row in payload] == ["t-2"]
 
-    result = runner.invoke(app, ["--config", str(cfg_path), "list-tasks", "--due-date", "bad"])
+    result = runner.invoke(app, ["--config", str(cfg_path), "tasks", "query", "--due-date", "bad"])
     assert result.exit_code == 1
     assert "invalid date predicate" in result.output.lower()
 
@@ -192,14 +207,14 @@ def test_find_projects_search_files_returns_union_and_ranking(tmp_path: Path, mo
 
     monkeypatch.setattr("matlock.cli.run_search_request", fake_run_search_request)
 
-    result = runner.invoke(app, ["--config", str(cfg_path), "find-projects", "alpha", "--search-files"])
+    result = runner.invoke(app, ["--config", str(cfg_path), "projects", "query", "alpha"])
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
     assert [row["project_id"] for row in payload] == ["proj-b", "proj-a"]
 
 
-def test_find_projects_search_files_requires_text(tmp_path: Path, monkeypatch) -> None:
+def test_list_projects_returns_all_projects_when_text_is_missing_even_with_search_mode(tmp_path: Path, monkeypatch) -> None:
     vault = tmp_path / "vault"
     vault.mkdir()
     db_path = tmp_path / "matlock.db"
@@ -207,13 +222,14 @@ def test_find_projects_search_files_requires_text(tmp_path: Path, monkeypatch) -
     _write_config(cfg_path, vault, db_path)
     _seed_projects(db_path)
 
-    result = runner.invoke(app, ["--config", str(cfg_path), "find-projects", "--search-files"])
+    result = runner.invoke(app, ["--config", str(cfg_path), "projects", "query", "--search-mode", "fts_only"])
 
-    assert result.exit_code == 1
-    assert "text is required" in result.output.lower()
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert [row["project_id"] for row in payload] == ["proj-a", "proj-b"]
 
 
-def test_find_projects_search_files_propagates_search_error(tmp_path: Path, monkeypatch) -> None:
+def test_list_projects_search_propagates_search_error(tmp_path: Path, monkeypatch) -> None:
     vault = tmp_path / "vault"
     vault.mkdir()
     db_path = tmp_path / "matlock.db"
@@ -234,7 +250,14 @@ def test_find_projects_search_files_propagates_search_error(tmp_path: Path, monk
 
     monkeypatch.setattr("matlock.cli.run_search_request", fake_run_search_request)
 
-    result = runner.invoke(app, ["--config", str(cfg_path), "find-projects", "alpha", "--search-files"])
+    result = runner.invoke(app, ["--config", str(cfg_path), "projects", "query", "alpha"])
 
     assert result.exit_code == 3
     assert "simulated search failure" in result.output.lower()
+
+
+def test_legacy_query_commands_are_not_registered() -> None:
+    result = runner.invoke(app, ["list-projects"])
+
+    assert result.exit_code == 2
+    assert "no such command" in result.output.lower()

@@ -42,7 +42,7 @@ def _write_config(path: Path, base_dir: Path, db_path: Path) -> None:
 
 def _sync_then_parse(cfg_path: Path) -> tuple:
     sync_result = runner.invoke(app, ["--config", str(cfg_path), "sync"])
-    parse_result = runner.invoke(app, ["--config", str(cfg_path), "parse"])
+    parse_result = runner.invoke(app, ["--config", str(cfg_path), "extract"])
     return sync_result, parse_result
 
 
@@ -53,9 +53,9 @@ def _sync_then_parse(cfg_path: Path) -> tuple:
 
 class TestParseHelp:
     def test_parse_help(self):
-        result = runner.invoke(app, ["parse", "--help"])
+        result = runner.invoke(app, ["extract", "--help"])
         assert result.exit_code == 0
-        assert "parse" in result.output.lower()
+        assert "extract" in result.output.lower()
 
 
 # ---------------------------------------------------------------------------
@@ -86,7 +86,7 @@ class TestParseCommand:
 
         _, result = _sync_then_parse(cfg_path)
 
-        assert "Parse complete:" in result.output
+        assert "Extract complete:" in result.output
         assert "parsed" in result.output
         assert "skipped" in result.output
         assert "tasks inserted" in result.output
@@ -163,7 +163,7 @@ class TestParseCommand:
         _write_config(cfg_path, vault, db_path)
 
         _sync_then_parse(cfg_path)
-        result2 = runner.invoke(app, ["--config", str(cfg_path), "parse"])
+        result2 = runner.invoke(app, ["--config", str(cfg_path), "extract"])
 
         assert result2.exit_code == 0
         assert "0 parsed" in result2.output
@@ -190,11 +190,11 @@ class TestParseCommand:
 
 class TestParseErrors:
     def test_missing_config_exits_nonzero(self, tmp_path: Path):
-        result = runner.invoke(app, ["--config", str(tmp_path / "nope.yaml"), "parse"])
+        result = runner.invoke(app, ["--config", str(tmp_path / "nope.yaml"), "extract"])
         assert result.exit_code != 0
 
     def test_missing_base_directory_exits_nonzero(self, tmp_path: Path):
         cfg_path = tmp_path / "config.yaml"
         _write_config(cfg_path, tmp_path / "nonexistent", tmp_path / "matlock.db")
-        result = runner.invoke(app, ["--config", str(cfg_path), "parse"])
+        result = runner.invoke(app, ["--config", str(cfg_path), "extract"])
         assert result.exit_code != 0

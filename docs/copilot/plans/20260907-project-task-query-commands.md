@@ -9,26 +9,28 @@ This file is a working implementation plan.
 
 ## Problem Summary
 
-Matlock persists project, super-project, task, file-project, and optional search-index data, but exposes no read/query commands for these records. Users currently need to inspect SQLite directly to discover projects, enumerate super-projects, or retrieve tasks with date, completion, text, header, attribute, and project filters.
+Matlock persists project, super-project, task, file-project, and optional search-index data, but exposes no read/query commands for these records. Users currently need to inspect SQLite directly to discover projects by the fields stored in the `project` table, enumerate super-projects, or retrieve tasks with date, completion, text, header, attribute, and project filters.
 
-The requested commands need stable machine-readable JSON lists. `find-projects` must return all project records without a term, search every stored project field when a term is supplied, and optionally promote projects associated with matching indexed files. `list-tasks` needs composable filters, including repeatable comparison predicates for materialized ISO date columns, while returning each task exactly once with its associated project IDs.
+The requested commands need stable machine-readable JSON lists. `list-projects` must return every project record without filters, search the `project` table columns when a term or field filter is supplied, and automatically promote projects associated with matching indexed files for text queries. `list-tasks` needs composable filters, including repeatable comparison predicates for materialized ISO date columns, while returning each task exactly once with its associated project IDs.
 
 ## Goal
 
-Provide top-level JSON-only CLI query commands named `find-projects`, `list-super-projects`, and `list-tasks`, backed by deterministic, tested database helpers and integrated with the existing optional search engine for project file-content discovery.
+Provide top-level JSON-only CLI query commands named `list-projects`, `list-super-projects`, and `list-tasks`, backed by deterministic, tested database helpers and integrated with the existing optional search engine for project file-content discovery.
 
 ## Scope
 
-- In scope: Pydantic query/output contracts; parameterized SQLite helpers; the three top-level Typer commands; direct project-field matching; optional FTS/vector file search and project mapping; task filter parsing; JSON serialization; focused database/CLI/search integration tests; affected docs; changelog; next-minor release metadata update.
+- In scope: Pydantic query/output contracts; parameterized SQLite helpers; the three top-level Typer commands; direct project-table field matching and optional free-text search across project fields; optional FTS/vector file search and project mapping; task filter parsing; JSON serialization; focused database/CLI/search integration tests; affected docs; changelog; next-minor release metadata update.
 - Out of scope: schema changes; new tables, columns, or indexes; changes to sync, parse, map-projects, rollup, or report; task full-text or vector retrieval; pagination or offset controls; a persistent query API/server endpoint; search indexing changes; and changes to the existing `matlock search query` transport.
 
 ## Constraints / Requirements
 
-- Use top-level, hyphenated commands: `matlock find-projects`, `matlock list-super-projects`, and `matlock list-tasks`.
+- Use top-level, hyphenated commands: `matlock list-projects`, `matlock list-super-projects`, and `matlock list-tasks`.
 - Successful commands write precisely one JSON array to stdout, with no human summaries or logging. Failures write concise diagnostics to stderr and exit nonzero.
-- `find-projects` with no positional text returns every project. Its project-field text match is a case-insensitive substring over every `project` table column, including IDs, date values, and nullable fields after text coercion.
-- `find-projects TEXT --search-files` returns the union of direct project-field matches and projects related to matched active indexed files. File relationships include both `file_project.file_path` and exact equality with `project.home_file`.
-- `--search-files` requires a nonempty `TEXT` argument. It exposes `--search-mode {hybrid,fts_only,vector_only}`, defaulting to `hybrid`, and must reuse existing `run_search_request()` behavior and error classes rather than silently falling back to a different retrieval mode.
+- `list-projects` with no positional text or field filters returns every project. Its direct project-table search is case-insensitive literal matching over every `project` table column, including IDs, date values, and nullable fields after text coercion.
+- `list-projects` supports both a free-text positional argument and explicit project-field filters, such as `--project-id`, `--super-project-id`, `--title`, `--home-file`, `--priority`, `--status`, and date-bound or active-state filters, depending on the stored column semantics.
+- For a positional text query, `list-projects` automatically returns the union of direct project-table matches and projects related to matched active indexed files. File relationships include both `file_project.file_path` and exact equality with `project.home_file`.
+- `--search-mode {hybrid,fts_only,vector_only}` applies to the automatic file-backed portion of a text query and must reuse existing `run_search_request()` behavior and error classes rather than silently falling back to a different retrieval mode.
+- Project field filters are composed with AND semantics, matching the `list-tasks` style: each filter category is ANDed, while repeated values within the same filter are ORed. File-backed project results are merged with direct matches and deduplicated before ordering.
 - File-search projects appear once, ordered first by descending best associated-file score, then direct-only projects by `project_id` ascending. No-argument or direct-only output is ordered by `project_id` ascending.
 - A super-project object mirrors every stored `super_project` table field: `super_project_id`, `title`, and `priority`. `list-super-projects` takes no filters and orders by `super_project_id`.
 - A task object mirrors every `task` table field, converts SQLite integer booleans to JSON booleans, decodes `headers`, `attributes`, and `errors` JSON fields, and adds a deduplicated sorted `project_ids: list[str]`. It deliberately does not include `super_project_ids`.
@@ -46,8 +48,8 @@ Provide top-level JSON-only CLI query commands named `find-projects`, `list-supe
 | Step ID | Status | Goal | Planned Changes | Test Coverage |
 |---|---|---|---|---|
 | PTQ-S1 | Completed | Establish typed query contracts and deterministic SQLite reads | Add Pydantic records/filter parser and database query helpers for projects, super-projects, and active task selection/aggregation | New focused query-model and DB helper tests |
-| PTQ-S2 | Completed | Expose JSON project and super-project discovery | Add `find-projects` direct-field path and `list-super-projects` CLI commands with strict JSON-only output | New CLI query tests for JSON shape, ordering, empty DB, all-columns matching, and invalid input |
-| PTQ-S3 | Completed | Add optional file-backed project retrieval | Wire `find-projects TEXT --search-files --search-mode` to the existing search execution contract and map matching files to projects | CLI integration tests with FTS fixtures for file-project/home-file, deduplication, union, ranking, and propagated errors |
+| PTQ-S2 | Completed | Expose JSON project and super-project discovery | Add `list-projects` direct-field path and `list-super-projects` CLI commands with strict JSON-only output, including AND-composed project-table field search filters | New CLI query tests for JSON shape, ordering, empty DB, all-columns matching, invalid input, and multi-filter AND behavior |
+| PTQ-S3 | Completed | Add automatic file-backed project retrieval | Wire text-based `list-projects` queries to the existing search execution contract, merge file-hit projects with direct matches, and honor `--search-mode` for that automatic path | CLI integration tests with FTS fixtures for file-project/home-file, deduplication, union, ranking, and propagated errors |
 | PTQ-S4 | Completed | Expose filtered task listing | Add `list-tasks` CLI flags and task-object JSON serialization, including date predicate validation and project aggregation | DB and CLI tests for every filter, combinations, inactive exclusions, unlinked tasks, and malformed dates |
 | PTQ-S5 | Completed | Publish feature documentation and release metadata | Update command/schema/search documentation, docs map, README as applicable, changelog, and version for the feature release | Documentation review plus focused, adjacent, and full Poetry suite |
 
@@ -81,11 +83,11 @@ Status values: `Not Started` | `In Progress` | `Completed` | `Blocked`
 - `tests/test_cli_queries.py`
 
 **Implementation notes:**
-- Add top-level `@app.command(name="find-projects")` with an optional positional `TEXT` and a reserved `--search-files`/`--search-mode` interface. In this step implement only no-text and direct-field behavior; reject `--search-files` until PTQ-S3 supplies the behavior.
+- Add top-level `@app.command(name="list-projects")` with an optional positional `TEXT` and explicit project-column filters such as `--project-id`, `--super-project-id`, `--title`, `--home-file`, `--priority`, and any supported date/status columns. In this step implement the base `list-projects` behavior: no-text listing, direct project-table field search, and multi-filter AND composition matching the `list-tasks` semantics. The automatic file-backed path is added in PTQ-S3.
 - Add top-level `@app.command(name="list-super-projects")` without query arguments.
 - Reuse `_load_and_validate()`, `get_connection()`, and `init_db()`. Build response lists from PTQ-S1 models and emit through `json.dumps()` (or Pydantic JSON serialization) exactly once, with deterministic field and record order.
 - Ensure empty/new databases yield `[]`; config/database/query-validation failures use stderr and a nonzero Typer exit with no JSON success payload.
-- Test command help/main registration, no-argument project dump, direct matching against each project table column, null-safe matching, stable sort, full super-project rows, JSON parseability, empty output, and config failure behavior.
+- Test command help/main registration, no-argument project dump, direct matching against each project table column, null-safe matching, stable sort, multi-filter AND composition, full super-project rows, JSON parseability, empty output, and config failure behavior.
 
 **Definition of done:**
 - Both commands are registered top-level commands and return only the specified JSON list on success.
@@ -98,11 +100,11 @@ Status values: `Not Started` | `In Progress` | `Completed` | `Blocked`
 - `tests/test_db_queries.py`
 
 **Implementation notes:**
-- For `find-projects TEXT --search-files`, create a `MatlockSearchRequest` using the supplied text, selected search mode, file granularity, no content payload, and a sufficiently broad result window to avoid truncating project discovery. Reuse `run_search_request()` rather than duplicating FTS/vector/hybrid SQL.
-- Convert successful search file results to `file_path -> best score`, then fetch projects where the path occurs in `file_project` or equals `project.home_file`. Merge these projects with direct-field matches by `project_id`.
+- For text-based `list-projects`, automatically create a `MatlockSearchRequest` using the supplied text, selected search mode, file granularity, no content payload, and a sufficiently broad result window to avoid truncating project discovery. Reuse `run_search_request()` rather than duplicating FTS/vector/hybrid SQL.
+- Convert successful search file results to `file_path -> best score`, then fetch projects where the path occurs in `file_project` or equals `project.home_file`. Merge these projects with direct-field matches by `project_id`, while preserving the AND-composed field filters from the direct query path.
 - Sort matched-file projects by their maximum linked/home-file score descending, resolve score ties by `project_id`, then append direct-only matches in `project_id` order. Return plain project objects only; do not expose search excerpts or scores in this command's JSON contract.
 - Preserve existing search safety and failure semantics. Map `SearchCliOutcome` errors to its message on stderr and the existing outcome exit code; do not return partial direct matches when requested search execution fails.
-- Add FTS-oriented fixtures that avoid embedding-provider dependence. Test home-file-only matching, file-project matching, a project associated with multiple hit files, project deduplication, direct/file union, ordering, no file hits, forbidden no-text `--search-files`, invalid mode, and a simulated search failure.
+- Add FTS-oriented fixtures that avoid embedding-provider dependence. Test home-file-only matching, file-project matching, a project associated with multiple hit files, project deduplication, direct/file union, ordering, no file hits, invalid mode, and a simulated search failure.
 
 **Definition of done:**
 - The optional file-search path reliably reuses the current search engine and returns each qualifying project once in the resolved order.
@@ -152,9 +154,10 @@ Status values: `Not Started` | `In Progress` | `Completed` | `Blocked`
 
 ## Acceptance Criteria
 
-- `matlock find-projects` returns every stored project as a JSON list with no positional text.
-- `matlock find-projects TEXT` finds a case-insensitive literal substring in any `project` table column and returns matching project objects once.
-- `matlock find-projects TEXT --search-files` returns the union of direct matches and projects connected to searched files via `file_project` or `home_file`, honors `--search-mode`, and deterministically ranks file-hit projects by their best score.
+- `matlock list-projects` returns every stored project as a JSON list with no positional text or field filters.
+- `matlock list-projects TEXT` finds a case-insensitive literal substring in any `project` table column and returns matching project objects once.
+- `matlock list-projects` supports explicit project-table field filters and returns only records matching the selected column semantics.
+- `matlock list-projects TEXT` automatically returns the union of direct matches and projects connected to searched files via `file_project` or `home_file`, honors `--search-mode`, and deterministically ranks file-hit projects by their best score.
 - `matlock list-super-projects` returns every stored super-project as JSON objects containing `super_project_id`, `title`, and `priority`.
 - `matlock list-tasks` returns active, non-generated task rows, including unlinked tasks, with decoded structured fields and sorted `project_ids`.
 - `list-tasks` correctly supports all resolved filters and date comparison grammar, produces clear errors for invalid date predicates, and does not duplicate tasks with multiple project links.
@@ -162,6 +165,26 @@ Status values: `Not Started` | `In Progress` | `Completed` | `Blocked`
 - Existing pipeline commands and `matlock search query` behavior remain unchanged.
 - Focused, adjacent, and full Poetry tests pass before each step is presented for review.
 - `CHANGELOG.md`, applicable docs/README, docs routing, and release metadata are updated according to the documented release policy; the pre-publish version gate is confirmed before any publish action.
+
+## Design Decisions (Resolved)
+
+- Commands: `list-projects`, `list-super-projects`, and `list-tasks`.
+- Success transport: JSON list only; human tables and alternate output flags are excluded.
+- Project search surface: both free-text positional search and explicit field filters are supported in a single `list-projects` command.
+- Project-field matching: matching follows the same style as `list-tasks`: explicit filters are combined with AND semantics, and repeated values within the same option are ORed. For text-heavy columns such as title/home_file, matching is case-insensitive literal substring search; IDs and status values use the same literal-search style unless exact equality is explicitly required by the schema contract.
+- Automatic file-backed search: when a positional text query is supplied, `list-projects` automatically unions direct project-table matches with projects associated with matching indexed files. The automatic file-backed path is controlled by `--search-mode {hybrid,fts_only,vector_only}` and remains on the same underlying search engine contract.
+- Super-project response: all current table fields (`super_project_id`, `title`, `priority`).
+- Task response: all task-table fields, decoded structured JSON, and `project_ids`; no `super_project_ids` output field.
+- No-argument behavior: `list-projects` returns all projects; `list-super-projects` returns all super-projects; `list-tasks` returns all active, non-generated tasks, including unlinked tasks.
+- Direct project lookup: optional positional text is a case-insensitive literal substring across all `project` table columns.
+- File lookup: automatic text-query union with file hits; direct and file-backed matches form a union; a project's rank is its best matching associated/home-file score.
+- Task text/header/attribute predicates: case-insensitive literal substring, not FTS/vector retrieval.
+- Date grammar: bare ISO date or `=` equality plus `>`, `>=`, `<`, `<=`; repeatable same-field values compose with AND.
+- Completion flag: mutually exclusive `--checked` and `--unchecked`; omission means no state restriction.
+- Repeated project/super-project IDs: OR within each flag; AND with all different filters.
+- Task activity policy: exclude soft-deleted and generated files by default, with no include-inactive option in this feature.
+- Pagination: deliberately excluded because the required no-argument behavior returns the complete database list.
+- Release target: next minor feature release `0.6.0`, subject only to the existing active-plan commit gate; feature behavior itself is fully decided.
 
 ## Risks / Notes
 

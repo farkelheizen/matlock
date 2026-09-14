@@ -42,12 +42,12 @@ poetry run matlock sync --force
 
 ---
 
-### `matlock parse`
+### `matlock extract`
 
 **Stage II.** Extract tasks from all files where `needs_parsing = 1` and write results to the `task` table.
 
 ```
-matlock parse [OPTIONS]
+matlock extract [OPTIONS]
 ```
 
 | Option | Default | Description |
@@ -56,17 +56,17 @@ matlock parse [OPTIONS]
 
 **Example:**
 ```bash
-poetry run matlock parse
+poetry run matlock extract
 ```
 
 ---
 
-### `matlock detect-backfill`
+### `matlock secrets backfill`
 
 Backfill secret-detection state for tracked vault documents.
 
 ```
-matlock detect-backfill [OPTIONS]
+matlock secrets backfill [OPTIONS]
 ```
 
 | Option | Default | Description |
@@ -83,18 +83,18 @@ Behavior:
 
 **Examples:**
 ```bash
-poetry run matlock detect-backfill
-poetry run matlock detect-backfill --retry-errors
+poetry run matlock secrets backfill
+poetry run matlock secrets backfill --retry-errors
 ```
 
 ---
 
-### `matlock doc-read`
+### `matlock document read`
 
 Read one tracked document from the vault with secret-safe behavior.
 
 ```
-matlock doc-read FILE_PATH [OPTIONS]
+matlock document read FILE_PATH [OPTIONS]
 ```
 
 | Argument / Option | Description |
@@ -113,42 +113,50 @@ Behavior:
 
 **Examples:**
 ```bash
-poetry run matlock doc-read Notes/today.md
-poetry run matlock doc-read /absolute/path/inside/your/vault/Notes/today.md
+poetry run matlock document read Notes/today.md
+poetry run matlock document read /absolute/path/inside/your/vault/Notes/today.md
 ```
 
 ---
 
-### `matlock find-projects`
+### `matlock projects query`
 
-Return project records as JSON. Without a positional term, it emits the complete project table in `project_id` order. With a term, it performs a case-insensitive literal substring match across every project-column value. When `--search-files` is included, it also unions in projects associated with indexed files and ranks those by the best file match score.
+Return project records as JSON. Without a positional term, it emits the complete project table in `project_id` order. With a term, it performs a case-insensitive literal substring match across every project-column value and automatically unions in projects associated with matching indexed files. Field filters are AND-composed across categories with repeated values ORed within the same option.
 
 ```
-matlock find-projects [TEXT] [OPTIONS]
+matlock projects query [TEXT] [OPTIONS]
 ```
 
 | Argument / Option | Default | Description |
 |:------------------|:--------|:------------|
 | `TEXT` | None | Optional project text filter |
-| `--search-files` | False | Include projects connected to matching indexed files |
+| `--project-id VALUE` | repeated | Repeatable project ID match |
+| `--super-project-id VALUE` | repeated | Repeatable super-project ID match |
+| `--title TEXT` | repeated | Repeatable title literal substring search |
+| `--home-file TEXT` | repeated | Repeatable home-file literal substring search |
+| `--priority TEXT` | repeated | Repeatable priority literal substring search |
+| `--status TEXT` | repeated | Repeatable status literal substring search |
+| `--start-date VALUE` | repeated | Repeatable ISO date predicate such as `>=2026-01-01` |
+| `--due-date VALUE` | repeated | Repeatable ISO date predicate for due_date |
 | `--search-mode {hybrid,fts_only,vector_only}` | `hybrid` | Search mode reused by the existing search contract |
 | `--config PATH` | `./config.yaml` | Config file location |
 
 **Examples:**
 ```bash
-poetry run matlock find-projects
-poetry run matlock find-projects "alpha"
-poetry run matlock find-projects "alpha" --search-files --search-mode hybrid
+poetry run matlock projects query
+poetry run matlock projects query "alpha"
+poetry run matlock projects query "alpha" --search-mode hybrid
+poetry run matlock projects query --project-id backend --status active
 ```
 
 ---
 
-### `matlock list-super-projects`
+### `matlock super-projects list`
 
 Return every `super_project` row as JSON.
 
 ```
-matlock list-super-projects [OPTIONS]
+matlock super-projects list [OPTIONS]
 ```
 
 | Option | Default | Description |
@@ -157,17 +165,17 @@ matlock list-super-projects [OPTIONS]
 
 **Example:**
 ```bash
-poetry run matlock list-super-projects
+poetry run matlock super-projects list
 ```
 
 ---
 
-### `matlock list-tasks`
+### `matlock tasks query`
 
 Return active, non-generated tasks as JSON, optionally filtered by date, completion, text, headers, attributes, project IDs, and super-project IDs.
 
 ```
-matlock list-tasks [OPTIONS]
+matlock tasks query [OPTIONS]
 ```
 
 | Option | Default | Description |
@@ -185,19 +193,19 @@ matlock list-tasks [OPTIONS]
 
 **Examples:**
 ```bash
-poetry run matlock list-tasks
-poetry run matlock list-tasks --checked --task-text "review"
-poetry run matlock list-tasks --project-id backend --due-date ">=2026-01-01"
+poetry run matlock tasks query
+poetry run matlock tasks query --checked --task-text "review"
+poetry run matlock tasks query --project-id backend --due-date ">=2026-01-01"
 ```
 
 ---
 
-### `matlock map-projects`
+### `matlock projects map`
 
 **Stage III.** Rebuild the `project`, `super_project`, and `file_project` tables from `config.yaml`. Always a full rebuild.
 
 ```
-matlock map-projects [OPTIONS]
+matlock projects map [OPTIONS]
 ```
 
 | Option | Default | Description |
@@ -206,17 +214,17 @@ matlock map-projects [OPTIONS]
 
 **Example:**
 ```bash
-poetry run matlock map-projects
+poetry run matlock projects map
 ```
 
 ---
 
-### `matlock rollup`
+### `matlock metrics rollup`
 
 **Stage IV.** Calculate and persist daily metrics for the previous day (or a specified date) into the `daily_metric` table. Designed for nightly use; idempotent.
 
 ```
-matlock rollup [OPTIONS]
+matlock metrics rollup [OPTIONS]
 ```
 
 | Option | Default | Description |
@@ -226,18 +234,18 @@ matlock rollup [OPTIONS]
 
 **Example:**
 ```bash
-poetry run matlock rollup
-poetry run matlock rollup --date 2026-04-20
+poetry run matlock metrics rollup
+poetry run matlock metrics rollup --date 2026-04-20
 ```
 
 ---
 
-### `matlock report`
+### `matlock reports render`
 
 **Stage V.** Render all (or a subset of) Jinja2 Markdown dashboards and write them to `output_directory`.
 
 ```
-matlock report [OPTIONS]
+matlock reports render [OPTIONS]
 ```
 
 | Option | Default | Description |
@@ -249,27 +257,27 @@ matlock report [OPTIONS]
 
 **Example:**
 ```bash
-poetry run matlock report
-poetry run matlock report --target projects
-poetry run matlock report --project-id backend_api
-poetry run matlock report --force
+poetry run matlock reports render
+poetry run matlock reports render --target projects
+poetry run matlock reports render --project-id backend_api
+poetry run matlock reports render --force
 ```
 
 **Note:** `--target projects` regenerates both project pages and super-project pages. There is no separate `super-projects` target in the current CLI.
 
 ---
 
-### `matlock run-all`
+### `matlock pipeline run`
 
-Run all pipeline stages in sequence: `[scan-projects →]` `sync` → `parse` → `map-projects` → `rollup` → `report`.
+Run all pipeline stages in sequence: `[projects discover →]` `sync` → `extract` → `projects map` → `metrics rollup` → `reports render`.
 
 ```
-matlock run-all [OPTIONS]
+matlock pipeline run [OPTIONS]
 ```
 
 | Option | Default | Description |
 |:-------|:--------|:------------|
-| `--scan-projects` | False | Run `scan-projects --merge` before `sync` (opt-in) |
+| `--discover-projects` | False | Run `projects discover --merge` before `sync` (opt-in) |
 | `--skip-rollup` | False | Skip Stage IV (for mid-day runs; rollup is designed for nightly use) |
 | `--force-sync` | False | Pass `--force` to the `sync` stage |
 | `--force-report` | False | Pass `--force` to the `report` stage (regenerate all, delete stale files) |
@@ -278,15 +286,15 @@ matlock run-all [OPTIONS]
 
 **Example:**
 ```bash
-poetry run matlock run-all
-poetry run matlock run-all --scan-projects
-poetry run matlock run-all --skip-rollup
-poetry run matlock run-all --force-sync
-poetry run matlock run-all --force-report
-poetry run matlock run-all --index-search
+poetry run matlock pipeline run
+poetry run matlock pipeline run --discover-projects
+poetry run matlock pipeline run --skip-rollup
+poetry run matlock pipeline run --force-sync
+poetry run matlock pipeline run --force-report
+poetry run matlock pipeline run --index-search
 ```
 
-When `--scan-projects` is enabled, Matlock runs vault scan + config merge first, then reloads config and continues the normal pipeline. When `--index-search` is enabled, search indexing runs after `report` so file metadata, project mappings, and reports are already current.
+When `--discover-projects` is enabled, Matlock runs vault scan + config merge first, then reloads config and continues the normal pipeline. When `--index-search` is enabled, search indexing runs after `reports render` so file metadata, project mappings, and reports are already current.
 
 ---
 
@@ -362,12 +370,12 @@ Deterministic exit codes:
 
 ## Discovery Commands
 
-### `matlock scan-projects`
+### `matlock projects discover`
 
 Walk the vault and reverse-engineer the project/super-project hierarchy from frontmatter metadata. Does **not** require an initialised database.
 
 ```
-matlock scan-projects [OPTIONS]
+matlock projects discover [OPTIONS]
 ```
 
 | Option | Short | Default | Description |
@@ -381,9 +389,9 @@ Only one mode flag may be given at a time. If none is given, `--print-yaml` is a
 
 **Examples:**
 ```bash
-poetry run matlock scan-projects
-poetry run matlock scan-projects --diff
-poetry run matlock scan-projects --merge
+poetry run matlock projects discover
+poetry run matlock projects discover --diff
+poetry run matlock projects discover --merge
 ```
 
 See `docs/matlock-scan-projects.md` for the full specification including scanning logic, data models, and output format details.
@@ -392,25 +400,25 @@ See `docs/matlock-scan-projects.md` for the full specification including scannin
 
 ## Server Command
 
-### `matlock server`
+### `matlock serve`
 
 Run a persistent daemon that monitors the vault in real time and orchestrates the pipeline automatically.
 
 ```
-matlock server [OPTIONS]
+matlock serve [OPTIONS]
 ```
 
 Three integrated triggers:
 
 1. **File Watcher** (`watchdog`) — File create/modify/delete events wake the watcher, which runs `sync` + `parse` and marks matching project IDs dirty.
-2. **Debouncer** — After `debounce_seconds` of idle time, runs `map-projects` + a full `report` pass while clearing the dirty-project set.
+2. **Debouncer** — After `debounce_seconds` of idle time, runs `projects map` + a full `reports render` pass while clearing the dirty-project set.
 3. **Scheduler** — At midnight (00:01): triggers `rollup` followed by a full `report` rebuild.
 4. **Optional Search Indexer** — When `--index-search-continuous` is enabled, a background thread polls for stale search work and runs search indexing under the same pipeline lock as the other triggers.
 
 | Option | Default | Description |
 |:-------|:--------|:------------|
 | `--debounce SECONDS` | From config (`5`) | Idle window before triggering `report` after file changes |
-| `--scan-projects` | `False` | Run `scan-projects --merge` once at startup before the watcher starts |
+| `--discover-projects` | `False` | Run `projects discover --merge` once at startup before the watcher starts |
 | `--force-sync` | `False` | Run a full forced sync+parse once at startup before the watcher starts |
 | `--force-rollup` | `False` | Run rollup for today once at startup (after any forced sync) |
 | `--force-report` | `False` | Run a full forced report once at startup (after any startup sync) |
@@ -421,21 +429,21 @@ Three integrated triggers:
 
 **Example:**
 ```bash
-poetry run matlock server
-poetry run matlock server --debounce 10
-poetry run matlock server --force-sync --force-rollup --force-report
-poetry run matlock server --skip-rollup
-poetry run matlock server --index-search --index-search-continuous
+poetry run matlock serve
+poetry run matlock serve --debounce 10
+poetry run matlock serve --force-sync --force-rollup --force-report
+poetry run matlock serve --skip-rollup
+poetry run matlock serve --index-search --index-search-continuous
 ```
 
 **Notes:**
-- `--scan-projects`, `--force-sync`, `--force-rollup`, and `--force-report` are **startup-only** — they run once before the watcher starts.
+- `--discover-projects`, `--force-sync`, `--force-rollup`, and `--force-report` are **startup-only** — they run once before the watcher starts.
 - `--index-search` is also a startup-only action.
 - When combined, startup actions run in deterministic order: forced sync+parse, then forced rollup for today, then forced report, then one startup search indexing pass.
 - `--index-search-continuous` starts a long-lived background poller after the watcher/debouncer/scheduler threads are up.
 - `--skip-rollup` affects only the nightly scheduler job; the watcher and debouncer paths are unaffected.
 - Run as a background process or managed via `launchd` / `systemd` for continuous operation.
-- The server logs to stdout by default. Redirect to a file for daemon use: `matlock server >> matlock.log 2>&1 &`
+- The server logs to stdout by default. Redirect to a file for daemon use: `matlock serve >> matlock.log 2>&1 &`
 - Sending `SIGINT` (Ctrl+C) triggers a clean shutdown.
 
 ---

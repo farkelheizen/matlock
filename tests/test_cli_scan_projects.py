@@ -53,10 +53,10 @@ class TestHelp:
     def test_scan_projects_in_help(self):
         result = runner.invoke(app, ["--help"])
         assert result.exit_code == 0
-        assert "scan-projects" in result.output
+        assert "projects" in result.output
 
     def test_scan_projects_help(self):
-        result = runner.invoke(app, ["scan-projects", "--help"])
+        result = runner.invoke(app, ["projects", "discover", "--help"])
         assert result.exit_code == 0
         assert "--print-yaml" in result.output
         assert "--diff" in result.output
@@ -75,7 +75,7 @@ class TestDefaultMode:
         cfg_path = tmp_path / "config.yaml"
         _write_config(cfg_path, vault, tmp_path / "db.db")
 
-        result = runner.invoke(app, ["--config", str(cfg_path), "scan-projects"])
+        result = runner.invoke(app, ["--config", str(cfg_path), "projects", "discover"])
 
         assert result.exit_code == 0
         # Output should be valid YAML with projects key
@@ -89,7 +89,7 @@ class TestDefaultMode:
         cfg_path = tmp_path / "config.yaml"
         _write_config(cfg_path, vault, tmp_path / "db.db")
 
-        result = runner.invoke(app, ["--config", str(cfg_path), "scan-projects"])
+        result = runner.invoke(app, ["--config", str(cfg_path), "projects", "discover"])
 
         assert result.exit_code == 0
         data = yaml.safe_load(result.output)
@@ -109,7 +109,7 @@ class TestPrintYaml:
         _write_config(cfg_path, vault, tmp_path / "db.db")
 
         result = runner.invoke(
-            app, ["--config", str(cfg_path), "scan-projects", "--print-yaml"]
+            app, ["--config", str(cfg_path), "projects", "discover", "--print-yaml"]
         )
 
         assert result.exit_code == 0
@@ -122,7 +122,7 @@ class TestPrintYaml:
         cfg_path = tmp_path / "config.yaml"
         _write_config(cfg_path, vault, tmp_path / "db.db")
 
-        result = runner.invoke(app, ["--config", str(cfg_path), "scan-projects", "-p"])
+        result = runner.invoke(app, ["--config", str(cfg_path), "projects", "discover", "-p"])
 
         assert result.exit_code == 0
 
@@ -140,7 +140,7 @@ class TestDiffMode:
         _write_config(cfg_path, vault, tmp_path / "db.db")
 
         result = runner.invoke(
-            app, ["--config", str(cfg_path), "scan-projects", "--diff"]
+            app, ["--config", str(cfg_path), "projects", "discover", "--diff"]
         )
 
         assert result.exit_code == 0
@@ -153,7 +153,7 @@ class TestDiffMode:
         _write_config(cfg_path, vault, tmp_path / "db.db")
 
         result = runner.invoke(
-            app, ["--config", str(cfg_path), "scan-projects", "-d"]
+            app, ["--config", str(cfg_path), "projects", "discover", "-d"]
         )
 
         assert result.exit_code == 0
@@ -170,7 +170,7 @@ class TestDiffMode:
         )
 
         result = runner.invoke(
-            app, ["--config", str(cfg_path), "scan-projects", "--diff"]
+            app, ["--config", str(cfg_path), "projects", "discover", "--diff"]
         )
 
         assert result.exit_code == 0
@@ -191,7 +191,7 @@ class TestMergeMode:
         _write_config(cfg_path, vault, tmp_path / "db.db")
 
         result = runner.invoke(
-            app, ["--config", str(cfg_path), "scan-projects", "--merge"]
+            app, ["--config", str(cfg_path), "projects", "discover", "--merge"]
         )
 
         assert result.exit_code == 0
@@ -209,7 +209,7 @@ class TestMergeMode:
         _write_config(cfg_path, vault, tmp_path / "db.db")
 
         runner.invoke(
-            app, ["--config", str(cfg_path), "scan-projects", "--merge"]
+            app, ["--config", str(cfg_path), "projects", "discover", "--merge"]
         )
 
         bak_files = list(tmp_path.glob("config.yaml.*.bak"))
@@ -222,7 +222,7 @@ class TestMergeMode:
         _write_config(cfg_path, vault, tmp_path / "db.db")
 
         result = runner.invoke(
-            app, ["--config", str(cfg_path), "scan-projects", "-m"],
+            app, ["--config", str(cfg_path), "projects", "discover", "-m"],
             catch_exceptions=False,
         )
 
@@ -236,7 +236,7 @@ class TestMergeMode:
         _write_config(cfg_path, vault, tmp_path / "db.db")
 
         result = runner.invoke(
-            app, ["--config", str(cfg_path), "scan-projects", "--merge"]
+            app, ["--config", str(cfg_path), "projects", "discover", "--merge"]
         )
 
         assert result.exit_code == 0
@@ -258,7 +258,7 @@ class TestMutuallyExclusive:
 
         result = runner.invoke(
             app,
-            ["--config", str(cfg_path), "scan-projects", "--print-yaml", "--diff"],
+            ["--config", str(cfg_path), "projects", "discover", "--print-yaml", "--diff"],
         )
 
         assert result.exit_code == 1
@@ -271,7 +271,7 @@ class TestMutuallyExclusive:
 
         result = runner.invoke(
             app,
-            ["--config", str(cfg_path), "scan-projects", "--diff", "--merge"],
+            ["--config", str(cfg_path), "projects", "discover", "--diff", "--merge"],
         )
 
         assert result.exit_code == 1
@@ -286,7 +286,7 @@ class TestMutuallyExclusive:
             app,
             [
                 "--config", str(cfg_path),
-                "scan-projects", "--print-yaml", "--diff", "--merge",
+                "projects", "discover", "--print-yaml", "--diff", "--merge",
             ],
         )
 
@@ -302,7 +302,7 @@ class TestConfigErrors:
     def test_missing_config_exits_nonzero(self, tmp_path: Path):
         result = runner.invoke(
             app,
-            ["--config", str(tmp_path / "nonexistent.yaml"), "scan-projects"],
+            ["--config", str(tmp_path / "nonexistent.yaml"), "projects", "discover"],
         )
 
         assert result.exit_code != 0
@@ -315,7 +315,7 @@ class TestConfigErrors:
         _write_config(cfg_path, vault, tmp_path / "db.db")
         # db.db deliberately NOT created — command must still succeed
 
-        result = runner.invoke(app, ["--config", str(cfg_path), "scan-projects"])
+        result = runner.invoke(app, ["--config", str(cfg_path), "projects", "discover"])
 
         assert result.exit_code == 0
 
@@ -332,7 +332,7 @@ class TestWarnings:
         cfg_path = tmp_path / "config.yaml"
         _write_config(cfg_path, vault, tmp_path / "db.db")
 
-        result = runner.invoke(app, ["--config", str(cfg_path), "scan-projects"])
+        result = runner.invoke(app, ["--config", str(cfg_path), "projects", "discover"])
 
         # Warnings go to stderr; CliRunner captures both by default
         assert result.exit_code == 0
@@ -346,7 +346,7 @@ class TestWarnings:
         cfg_path = tmp_path / "config.yaml"
         _write_config(cfg_path, vault, tmp_path / "db.db")
 
-        result = runner.invoke(app, ["--config", str(cfg_path), "scan-projects"])
+        result = runner.invoke(app, ["--config", str(cfg_path), "projects", "discover"])
 
         assert result.exit_code == 0
         assert "Failed to parse frontmatter YAML:" in result.output

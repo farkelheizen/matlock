@@ -1,4 +1,4 @@
-"""Tests for matlock/cli.py — server subcommand."""
+"""Tests for matlock/cli.py — serve command."""
 from __future__ import annotations
 
 import subprocess
@@ -30,7 +30,7 @@ def _write_config(path: Path, base_dir: Path, db_path: Path, out_dir: Path) -> N
 
 
 def _invoke_help():
-    return runner.invoke(app, ["server", "--help"])
+    return runner.invoke(app, ["serve", "--help"])
 
 
 # ---------------------------------------------------------------------------
@@ -46,7 +46,7 @@ class TestServerHelp:
     def test_server_appears_in_main_help(self):
         result = runner.invoke(app, ["--help"])
         assert result.exit_code == 0
-        assert "server" in result.output
+        assert "serve" in result.output
 
     def test_debounce_option_in_help(self):
         result = _invoke_help()
@@ -54,7 +54,7 @@ class TestServerHelp:
 
     def test_scan_projects_option_in_help(self):
         result = _invoke_help()
-        assert "--scan-projects" in result.output
+        assert "--discover-projects" in result.output
 
     def test_skip_rollup_option_in_help(self):
         result = _invoke_help()
@@ -106,7 +106,7 @@ class TestServerNewFlags:
             calls.append({"force_sync": force_sync})
 
         with patch("matlock.cli.run_server", side_effect=fake_run_server):
-            result = runner.invoke(app, ["--config", str(cfg_path), "server", "--force-sync"])
+            result = runner.invoke(app, ["--config", str(cfg_path), "serve", "--force-sync"])
 
         assert result.exit_code == 0
         assert calls[0]["force_sync"] is True
@@ -121,7 +121,7 @@ class TestServerNewFlags:
             calls.append({"force_rollup": force_rollup})
 
         with patch("matlock.cli.run_server", side_effect=fake_run_server):
-            result = runner.invoke(app, ["--config", str(cfg_path), "server", "--force-rollup"])
+            result = runner.invoke(app, ["--config", str(cfg_path), "serve", "--force-rollup"])
 
         assert result.exit_code == 0
         assert calls[0]["force_rollup"] is True
@@ -136,7 +136,7 @@ class TestServerNewFlags:
             calls.append({"force_report": force_report})
 
         with patch("matlock.cli.run_server", side_effect=fake_run_server):
-            result = runner.invoke(app, ["--config", str(cfg_path), "server", "--force-report"])
+            result = runner.invoke(app, ["--config", str(cfg_path), "serve", "--force-report"])
 
         assert result.exit_code == 0
         assert calls[0]["force_report"] is True
@@ -151,7 +151,7 @@ class TestServerNewFlags:
             calls.append({"skip_rollup": skip_rollup})
 
         with patch("matlock.cli.run_server", side_effect=fake_run_server):
-            result = runner.invoke(app, ["--config", str(cfg_path), "server", "--skip-rollup"])
+            result = runner.invoke(app, ["--config", str(cfg_path), "serve", "--skip-rollup"])
 
         assert result.exit_code == 0
         assert calls[0]["skip_rollup"] is True
@@ -164,7 +164,7 @@ class TestServerNewFlags:
             calls.append(kwargs)
 
         with patch("matlock.cli.run_server", side_effect=fake_run_server):
-            result = runner.invoke(app, ["--config", str(cfg_path), "server", "--index-search"])
+            result = runner.invoke(app, ["--config", str(cfg_path), "serve", "--index-search"])
 
         assert result.exit_code == 0
         assert calls[0]["index_search"] is True
@@ -179,7 +179,7 @@ class TestServerNewFlags:
         with patch("matlock.cli.run_server", side_effect=fake_run_server):
             result = runner.invoke(
                 app,
-                ["--config", str(cfg_path), "server", "--index-search-continuous"],
+                ["--config", str(cfg_path), "serve", "--index-search-continuous"],
             )
 
         assert result.exit_code == 0
@@ -205,7 +205,7 @@ class TestServerNewFlags:
                            )) as mock_merge:
                     result = runner.invoke(
                         app,
-                        ["--config", str(cfg_path), "server", "--scan-projects"],
+                        ["--config", str(cfg_path), "serve", "--discover-projects"],
                     )
 
         assert result.exit_code == 0
@@ -229,7 +229,7 @@ class TestServerNewFlags:
             })
 
         with patch("matlock.cli.run_server", side_effect=fake_run_server):
-            result = runner.invoke(app, ["--config", str(cfg_path), "server"])
+            result = runner.invoke(app, ["--config", str(cfg_path), "serve"])
 
         assert result.exit_code == 0
         assert calls[0] == {
@@ -261,14 +261,14 @@ class TestServerErrors:
     def test_missing_config_exits_nonzero(self, tmp_path: Path):
         result = runner.invoke(app, [
             "--config", str(tmp_path / "nonexistent.yaml"),
-            "server",
+            "serve",
         ])
         assert result.exit_code != 0
 
     def test_missing_config_error_message(self, tmp_path: Path):
         result = runner.invoke(app, [
             "--config", str(tmp_path / "nonexistent.yaml"),
-            "server",
+            "serve",
         ])
         combined = result.output + (result.stderr or "")
         assert "error" in combined.lower()
@@ -297,7 +297,7 @@ class TestServerCommand:
             calls.append({"cfg": cfg, "debounce": debounce_seconds})
 
         with patch("matlock.cli.run_server", side_effect=fake_run_server):
-            result = runner.invoke(app, ["--config", str(cfg_path), "server"])
+            result = runner.invoke(app, ["--config", str(cfg_path), "serve"])
 
         assert result.exit_code == 0
         assert len(calls) == 1
@@ -310,7 +310,7 @@ class TestServerCommand:
             calls.append(debounce_seconds)
 
         with patch("matlock.cli.run_server", side_effect=fake_run_server):
-            runner.invoke(app, ["--config", str(cfg_path), "server"])
+            runner.invoke(app, ["--config", str(cfg_path), "serve"])
 
         assert calls[0] is None
 
@@ -322,14 +322,14 @@ class TestServerCommand:
             calls.append(debounce_seconds)
 
         with patch("matlock.cli.run_server", side_effect=fake_run_server):
-            runner.invoke(app, ["--config", str(cfg_path), "server", "--debounce", "15"])
+            runner.invoke(app, ["--config", str(cfg_path), "serve", "--debounce", "15"])
 
         assert calls[0] == 15
 
     def test_exits_zero_after_run_server_returns(self, tmp_path: Path):
         cfg_path = self._cfg(tmp_path)
         with patch("matlock.cli.run_server", return_value=None):
-            result = runner.invoke(app, ["--config", str(cfg_path), "server"])
+            result = runner.invoke(app, ["--config", str(cfg_path), "serve"])
         assert result.exit_code == 0
 
 

@@ -763,29 +763,78 @@ def _decode_json_field(value: str | None, *, field_name: str) -> Any:
     return parsed
 
 
-def fetch_projects(conn: sqlite3.Connection, *, term: str | None = None) -> list[ProjectRecord]:
-    """Return all project rows, optionally filtered by a literal case-insensitive substring across all project columns."""
-    if term is None:
-        rows = conn.execute(
-            "SELECT project_id, super_project_id, title, home_file, priority, status, start_date, due_date FROM project ORDER BY project_id ASC"
-        ).fetchall()
-    else:
+def fetch_projects(
+    conn: sqlite3.Connection,
+    *,
+    term: str | None = None,
+    filters: dict[str, Any] | None = None,
+) -> list[ProjectRecord]:
+    """Return project rows, optionally filtered by a literal case-insensitive substring and project-table field filters."""
+    filters = filters or {}
+    clauses: list[str] = []
+    params: list[Any] = []
+
+    if term is not None and term != "":
         escaped = _like_escape(term)
         pattern = f"%{escaped}%"
-        rows = conn.execute(
-            "SELECT project_id, super_project_id, title, home_file, priority, status, start_date, due_date FROM project WHERE "
-            "LOWER(COALESCE(CAST(project_id AS TEXT), '')) LIKE LOWER(?) ESCAPE '\\' OR "
-            "LOWER(COALESCE(CAST(super_project_id AS TEXT), '')) LIKE LOWER(?) ESCAPE '\\' OR "
-            "LOWER(COALESCE(CAST(title AS TEXT), '')) LIKE LOWER(?) ESCAPE '\\' OR "
-            "LOWER(COALESCE(CAST(home_file AS TEXT), '')) LIKE LOWER(?) ESCAPE '\\' OR "
-            "LOWER(COALESCE(CAST(priority AS TEXT), '')) LIKE LOWER(?) ESCAPE '\\' OR "
-            "LOWER(COALESCE(CAST(status AS TEXT), '')) LIKE LOWER(?) ESCAPE '\\' OR "
-            "LOWER(COALESCE(CAST(start_date AS TEXT), '')) LIKE LOWER(?) ESCAPE '\\' OR "
-            "LOWER(COALESCE(CAST(due_date AS TEXT), '')) LIKE LOWER(?) ESCAPE '\\' "
-            "ORDER BY project_id ASC",
-            (pattern, pattern, pattern, pattern, pattern, pattern, pattern, pattern),
-        ).fetchall()
+        field_clauses = [
+            "LOWER(COALESCE(CAST(project_id AS TEXT), '')) LIKE LOWER(?) ESCAPE '\\'",
+            "LOWER(COALESCE(CAST(super_project_id AS TEXT), '')) LIKE LOWER(?) ESCAPE '\\'",
+            "LOWER(COALESCE(CAST(title AS TEXT), '')) LIKE LOWER(?) ESCAPE '\\'",
+            "LOWER(COALESCE(CAST(home_file AS TEXT), '')) LIKE LOWER(?) ESCAPE '\\'",
+            "LOWER(COALESCE(CAST(priority AS TEXT), '')) LIKE LOWER(?) ESCAPE '\\'",
+            "LOWER(COALESCE(CAST(status AS TEXT), '')) LIKE LOWER(?) ESCAPE '\\'",
+            "LOWER(COALESCE(CAST(start_date AS TEXT), '')) LIKE LOWER(?) ESCAPE '\\'",
+            "LOWER(COALESCE(CAST(due_date AS TEXT), '')) LIKE LOWER(?) ESCAPE '\\'",
+        ]
+        clauses.append("(" + " OR ".join(field_clauses) + ")")
+        params.extend([pattern] * len(field_clauses))
 
+    for field_name, raw_values in (
+        ("project_id", filters.get("project_id")),
+        ("super_project_id", filters.get("super_project_id")),
+        ("title", filters.get("title")),
+        ("home_file", filters.get("home_file")),
+        ("priority", filters.get("priority")),
+        ("status", filters.get("status")),
+    ):
+        if not raw_values:
+            continue
+        values = [str(value) for value in raw_values]
+        value_clauses = [
+            f"LOWER(COALESCE(CAST({field_name} AS TEXT), '')) LIKE LOWER(?) ESCAPE '\\'"
+            for _ in values
+        ]
+        clauses.append("(" + " OR ".join(value_clauses) + ")")
+        params.extend([f"%{_like_escape(value)}%" for value in values])
+
+    for field_name in ("start_date", "due_date"):
+        raw_values = filters.get(field_name) or []
+        if not raw_values:
+            continue
+        for raw in raw_values:
+            if isinstance(raw, DatePredicate):
+                pred = raw
+            elif isinstance(raw, dict):
+                pred = DatePredicate.model_validate({
+                    "field": raw.get("field", field_name),
+                    "operator": raw.get("operator", "="),
+                    "value": raw.get("value"),
+                })
+            elif isinstance(raw, str):
+                pred = parse_date_predicate(raw, field_name)
+            else:
+                raise ValueError(f"Invalid date predicate for {field_name}: {raw!r}")
+            if pred.field != field_name:
+                pred = DatePredicate(field=field_name, operator=pred.operator, value=pred.value)
+            clauses.append(f"{field_name} {pred.operator} ?")
+            params.append(pred.value.isoformat())
+
+    sql = "SELECT project_id, super_project_id, title, home_file, priority, status, start_date, due_date FROM project"
+    if clauses:
+        sql += " WHERE " + " AND ".join(clauses)
+    sql += " ORDER BY project_id ASC"
+    rows = conn.execute(sql, params).fetchall()
     return [ProjectRecord.model_validate(dict(row)) for row in rows]
 
 
