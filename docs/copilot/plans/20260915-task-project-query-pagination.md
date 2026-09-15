@@ -46,7 +46,7 @@ Reshape `tasks query` and `projects query` JSON output into a paginated response
 |---|---|---|---|---|
 | TPQ-S1 | Completed | Define the shared paginated response contract and config default | Add `QueryResponseStats`/envelope model to `matlock/query_models.py`; add `QueriesConfig.default_limit` to `matlock/config.py` | `tests/test_query_models.py`, `tests/test_matlock_config.py` |
 | TPQ-S2 | Completed | Extract shared JSON-path filter module | Create `matlock/sql_filters.py` from the generic parts of `matlock/search/sql_filters.py::build_metadata_filter_clause`; update `matlock/search/sql_filters.py` to import from it | `tests/test_search_metadata_filters.py` (regression), new `tests/test_sql_filters.py` |
-| TPQ-S3 | Not Started | Add limit/offset/count-only to `tasks query` | Extend `fetch_active_tasks` in `matlock/db.py` with a count query + `LIMIT`/`OFFSET`/count-only short-circuit; add `--limit`/`--offset`/`--count-only` to `list_tasks` in `matlock/cli.py`, defaulted from `queries.default_limit`; reshape output to the envelope | `tests/test_db_queries.py`, `tests/test_cli_queries.py` |
+| TPQ-S3 | Completed | Add limit/offset/count-only to `tasks query` | Extend `fetch_active_tasks` in `matlock/db.py` with a count query + `LIMIT`/`OFFSET`/count-only short-circuit; add `--limit`/`--offset`/`--count-only` to `list_tasks` in `matlock/cli.py`, defaulted from `queries.default_limit`; reshape output to the envelope | `tests/test_db_queries.py`, `tests/test_cli_queries.py` |
 | TPQ-S4 | Not Started | Add the `task.attributes` JSON-path filter | Add `--attribute-filter` parsing to `matlock/query_models.py`; use the TPQ-S2 shared helper against `t.attributes` in `matlock/db.py`; wire the flag in `matlock/cli.py` | `tests/test_db_queries.py`, `tests/test_cli_queries.py`, `tests/test_query_models.py` |
 | TPQ-S5 | Not Started | Add limit/offset/count-only/min-score to `projects query` | Extend `fetch_projects` and the in-memory merged-ranking path in `list_projects` (`matlock/cli.py`) with slicing/count support, `--min-score` forwarding to `tuning.min_score`, and envelope output | `tests/test_db_queries.py`, `tests/test_cli_queries.py` |
 | TPQ-S6 | Not Started | Documentation and release preparation | Update `docs/matlock-cli.md`, `docs/matlock-data-model.md`, `docs/matlock-configuration.md`, `CHANGELOG.md`, `pyproject.toml`, `docs/copilot/copilot-docs-reference.md` | Doc review plus focused, adjacent, and full Poetry suite |
@@ -214,9 +214,9 @@ Record results:
 - Validation: `poetry run pytest tests/test_sql_filters.py tests/test_search_metadata_filters.py tests/test_search_query_engine.py -q` -> passed (`21 passed`); full suite `poetry run pytest -q` -> passed (`903 passed`).
 
 ### TPQ-S3 Notes
-- Changes made: none yet.
+- Changes made: `fetch_active_tasks` now returns `(total_matches, results)`, computing `total_matches` via a `COUNT(*)` query sharing the same WHERE-clause builder, then applying `LIMIT ? OFFSET ?` (or `LIMIT -1 OFFSET ?` when only an offset is given) to the row query; `count_only=True` short-circuits before the row fetch/decode. Added `--limit`/`--offset`/`--count-only` to `tasks query` in `matlock/cli.py`, defaulting `--limit` from `cfg.queries.default_limit`, and reshaped output to `TaskQueryResponse`. Also added inert `attribute_filters` clause support (wired to the CLI in TPQ-S4) since it required editing the same function.
 - Deviations: none.
-- Validation: not yet run.
+- Validation: `poetry run pytest tests/test_db_queries.py tests/test_cli_queries.py tests/test_query_models.py -q` -> passed (`24 passed`); full suite `poetry run pytest -q` -> passed (`905 passed`).
 
 ### TPQ-S4 Notes
 - Changes made: none yet.

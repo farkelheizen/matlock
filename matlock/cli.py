@@ -33,7 +33,7 @@ from matlock.db import (
     set_file_secret_detection,
 )
 from matlock.logging_setup import setup_logging
-from matlock.query_models import ProjectRecord, parse_date_predicate
+from matlock.query_models import ProjectRecord, TaskQueryResponse, parse_date_predicate
 from matlock.redaction import get_redacted_document, scan_document_for_secrets
 from matlock.search.logging import isolated_search_logging
 from matlock.search.query_cli import (
@@ -335,8 +335,11 @@ def list_tasks(
     attributes: str | None = typer.Option(None, "--attributes", help="Case-insensitive literal attribute JSON match."),
     project_ids: list[str] = typer.Option([], "--project-id", help="Repeatable project filter."),
     super_project_ids: list[str] = typer.Option([], "--super-project-id", help="Repeatable super-project filter."),
+    limit: int | None = typer.Option(None, "--limit", min=1, help="Maximum rows to return. Defaults to queries.default_limit."),
+    offset: int = typer.Option(0, "--offset", min=0, help="Number of matching rows to skip before returning results."),
+    count_only: bool = typer.Option(False, "--count-only", help="Return only pagination stats; omit row results."),
 ) -> None:
-    """Return active task rows as JSON, optionally filtered by date, state, text, and project linkage."""
+    """Return a paginated JSON envelope of active task rows, optionally filtered by date, state, text, and project linkage."""
     cfg = _load_and_validate(ctx.obj[_CONFIG_KEY])
 
     filter_map: dict[str, object] = {}
@@ -364,15 +367,29 @@ def list_tasks(
         typer.echo(f"Error: Invalid date predicate: {exc}", err=True)
         raise typer.Exit(code=1)
 
+    effective_limit = limit if limit is not None else cfg.queries.default_limit
+
     conn = get_connection(cfg.db_path)
     try:
         init_db(conn)
-        rows = fetch_active_tasks(conn, filters=filter_map)
+        total_matches, rows = fetch_active_tasks(
+            conn,
+            filters=filter_map,
+            limit=effective_limit,
+            offset=offset,
+            count_only=count_only,
+        )
     finally:
         conn.close()
 
-    payload = [row.model_dump(mode="json") for row in rows]
-    typer.echo(json.dumps(payload), nl=False)
+    response = TaskQueryResponse(
+        total_matches=total_matches,
+        returned_matches=len(rows),
+        limit=effective_limit,
+        offset=offset,
+        results=rows,
+    )
+    typer.echo(response.model_dump_json(), nl=False)
 
 
 @document_app.command(name="read")

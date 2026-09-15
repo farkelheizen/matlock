@@ -134,17 +134,64 @@ def test_list_tasks_returns_active_unlinked_tasks_and_filters(tmp_path: Path) ->
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
-    assert [row["task_id"] for row in payload] == ["t-1"]
+    assert payload["total_matches"] == 1
+    assert payload["returned_matches"] == 1
+    assert [row["task_id"] for row in payload["results"]] == ["t-1"]
 
     result = runner.invoke(app, ["--config", str(cfg_path), "tasks", "query", "--project-id", "proj-b", "--due-date", ">=2026-03-03", "--due-date", "<=2026-03-04"])
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
-    assert [row["task_id"] for row in payload] == ["t-2"]
+    assert [row["task_id"] for row in payload["results"]] == ["t-2"]
 
     result = runner.invoke(app, ["--config", str(cfg_path), "tasks", "query", "--due-date", "bad"])
     assert result.exit_code == 1
     assert "invalid date predicate" in result.output.lower()
+
+
+def test_list_tasks_default_limit_and_offset(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    db_path = tmp_path / "matlock.db"
+    cfg_path = tmp_path / "config.yaml"
+    _write_config(cfg_path, vault, db_path)
+
+    conn = get_connection(db_path)
+    init_db(conn)
+    conn.execute("INSERT INTO file (file_path, sha256, file_ext, created, modified, modified_date, deleted, length, word_count, meta_data, is_generated, needs_parsing) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", ("notes/live.md", "hash-1", ".md", 1, 1, "2026-01-01", 0, 1, 1, "{}", 0, 0))
+    for i in range(3):
+        conn.execute(
+            "INSERT INTO task (task_id, file_path, parent_task_id, created_date, due_date, est_comp_date, act_comp_date, checked, task_text, overflow, headers, attributes, errors, twin_index) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (f"t-{i}", "notes/live.md", None, "2026-01-01", None, None, None, 0, f"Task {i}", 0, "[]", "{}", "[]", 0),
+        )
+    conn.commit()
+    conn.close()
+
+    result = runner.invoke(app, ["--config", str(cfg_path), "tasks", "query", "--limit", "2"])
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["total_matches"] == 3
+    assert payload["returned_matches"] == 2
+    assert payload["limit"] == 2
+    assert payload["offset"] == 0
+    assert [row["task_id"] for row in payload["results"]] == ["t-0", "t-1"]
+
+    result = runner.invoke(app, ["--config", str(cfg_path), "tasks", "query", "--limit", "2", "--offset", "2"])
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert [row["task_id"] for row in payload["results"]] == ["t-2"]
+
+    result = runner.invoke(app, ["--config", str(cfg_path), "tasks", "query", "--count-only"])
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["total_matches"] == 3
+    assert payload["returned_matches"] == 0
+    assert payload["results"] == []
+
+    result = runner.invoke(app, ["--config", str(cfg_path), "tasks", "query"])
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["limit"] == 20
 
 
 def test_find_projects_search_files_returns_union_and_ranking(tmp_path: Path, monkeypatch) -> None:

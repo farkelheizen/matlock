@@ -68,7 +68,8 @@ def test_fetch_active_tasks_filters_deleted_and_generated_files_and_decodes_json
     _insert_task(conn, task_id="t-4", file_path="notes/generated.md", task_text="Hidden too", checked=0)
     conn.commit()
 
-    rows = fetch_active_tasks(conn)
+    total_matches, rows = fetch_active_tasks(conn)
+    assert total_matches == 2
     assert [row.task_id for row in rows] == ["t-1", "t-2"]
     assert rows[0].headers == ["one"]
     assert rows[0].attributes == {"owner": "ops"}
@@ -77,12 +78,13 @@ def test_fetch_active_tasks_filters_deleted_and_generated_files_and_decodes_json
     assert rows[0].checked is True
     assert rows[0].overflow is True
 
-    filtered = fetch_active_tasks(conn, filters={
+    filtered_total, filtered = fetch_active_tasks(conn, filters={
         "due_date": [{"field": "due_date", "operator": ">=", "value": "2026-03-01"}],
         "checked": True,
         "task_text": "alpha",
         "project_ids": ["p-1"],
     })
+    assert filtered_total == 1
     assert [row.task_id for row in filtered] == ["t-1"]
 
     conn.close()
@@ -104,10 +106,41 @@ def test_fetch_active_tasks_applies_duplicate_and_date_filters() -> None:
     _insert_task(conn, task_id="t-2", file_path="notes/b.md", task_text="Beta task", checked=0, due_date="2026-03-04", headers='["ops"]', attributes='{"owner": "ops"}')
     conn.commit()
 
-    rows = fetch_active_tasks(conn, filters={
+    total_matches, rows = fetch_active_tasks(conn, filters={
         "due_date": [{"field": "due_date", "operator": ">=", "value": "2026-03-03"}, {"field": "due_date", "operator": "<", "value": "2026-03-05"}],
         "project_ids": ["p-2"],
     })
+    assert total_matches == 1
     assert [row.task_id for row in rows] == ["t-2"]
+
+    conn.close()
+
+
+def test_fetch_active_tasks_limit_offset_and_count_only() -> None:
+    conn = get_connection(":memory:")
+    init_db(conn)
+
+    conn.execute("INSERT INTO file (file_path, sha256, file_ext, created, modified, modified_date, deleted, length, word_count, meta_data, is_generated, needs_parsing) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", ("notes/a.md", "hash-a", ".md", 1, 1, "2026-01-01", 0, 1, 1, "{}", 0, 0))
+
+    _insert_task(conn, task_id="t-1", file_path="notes/a.md", task_text="Task one")
+    _insert_task(conn, task_id="t-2", file_path="notes/a.md", task_text="Task two")
+    _insert_task(conn, task_id="t-3", file_path="notes/a.md", task_text="Task three")
+    conn.commit()
+
+    total_matches, rows = fetch_active_tasks(conn, limit=2, offset=0)
+    assert total_matches == 3
+    assert [row.task_id for row in rows] == ["t-1", "t-2"]
+
+    total_matches, rows = fetch_active_tasks(conn, limit=2, offset=2)
+    assert total_matches == 3
+    assert [row.task_id for row in rows] == ["t-3"]
+
+    total_matches, rows = fetch_active_tasks(conn, offset=1)
+    assert total_matches == 3
+    assert [row.task_id for row in rows] == ["t-2", "t-3"]
+
+    total_matches, rows = fetch_active_tasks(conn, count_only=True)
+    assert total_matches == 3
+    assert rows == []
 
     conn.close()
