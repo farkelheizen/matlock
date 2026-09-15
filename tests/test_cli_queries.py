@@ -71,7 +71,7 @@ def test_list_projects_direct_term_matches_any_project_column(tmp_path: Path) ->
     _write_config(cfg_path, vault, db_path)
     _seed_projects(db_path)
 
-    result = runner.invoke(app, ["--config", str(cfg_path), "projects", "query", "100%"])
+    result = runner.invoke(app, ["--config", str(cfg_path), "projects", "query", "--text", "100%"])
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
@@ -182,7 +182,7 @@ def test_list_projects_text_search_pagination_and_min_score(tmp_path: Path, monk
 
     monkeypatch.setattr("matlock.cli.run_search_request", fake_run_search_request)
 
-    result = runner.invoke(app, ["--config", str(cfg_path), "projects", "query", "alpha", "--limit", "1", "--min-score", "0.5"])
+    result = runner.invoke(app, ["--config", str(cfg_path), "projects", "query", "--text", "alpha", "--limit", "1", "--min-score", "0.5"])
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
@@ -191,7 +191,7 @@ def test_list_projects_text_search_pagination_and_min_score(tmp_path: Path, monk
     assert [row["project_id"] for row in payload["results"]] == ["proj-b"]
     assert captured_requests[0]["tuning"]["min_score"] == 0.5
 
-    result = runner.invoke(app, ["--config", str(cfg_path), "projects", "query", "alpha", "--count-only"])
+    result = runner.invoke(app, ["--config", str(cfg_path), "projects", "query", "--text", "alpha", "--count-only"])
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
     assert payload["total_matches"] == 2
@@ -237,7 +237,7 @@ def test_list_tasks_returns_active_unlinked_tasks_and_filters(tmp_path: Path) ->
     conn.commit()
     conn.close()
 
-    result = runner.invoke(app, ["--config", str(cfg_path), "tasks", "query", "--checked", "--task-text", "alpha"])
+    result = runner.invoke(app, ["--config", str(cfg_path), "tasks", "query", "--checked", "--text", "alpha"])
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
@@ -391,7 +391,7 @@ def test_find_projects_search_files_returns_union_and_ranking(tmp_path: Path, mo
 
     monkeypatch.setattr("matlock.cli.run_search_request", fake_run_search_request)
 
-    result = runner.invoke(app, ["--config", str(cfg_path), "projects", "query", "alpha"])
+    result = runner.invoke(app, ["--config", str(cfg_path), "projects", "query", "--text", "alpha"])
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
@@ -435,10 +435,42 @@ def test_list_projects_search_propagates_search_error(tmp_path: Path, monkeypatc
 
     monkeypatch.setattr("matlock.cli.run_search_request", fake_run_search_request)
 
-    result = runner.invoke(app, ["--config", str(cfg_path), "projects", "query", "alpha"])
+    result = runner.invoke(app, ["--config", str(cfg_path), "projects", "query", "--text", "alpha"])
 
     assert result.exit_code == 3
     assert "simulated search failure" in result.output.lower()
+
+
+def test_query_commands_only_accept_text_option(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    db_path = tmp_path / "matlock.db"
+    cfg_path = tmp_path / "config.yaml"
+    _write_config(cfg_path, vault, db_path)
+
+    task_help = runner.invoke(app, ["tasks", "query", "--help"])
+    assert task_help.exit_code == 0
+    assert "--text" in task_help.output
+    assert "--task-text" not in task_help.output
+
+    project_help = runner.invoke(app, ["projects", "query", "--help"])
+    assert project_help.exit_code == 0
+    assert "--text" in project_help.output
+    assert "[TEXT]" not in project_help.output
+
+    retired_task_option = runner.invoke(
+        app,
+        ["--config", str(cfg_path), "tasks", "query", "--task-text", "alpha"],
+    )
+    assert retired_task_option.exit_code == 2
+    assert "no such option" in retired_task_option.output.lower()
+
+    retired_project_argument = runner.invoke(
+        app,
+        ["--config", str(cfg_path), "projects", "query", "alpha"],
+    )
+    assert retired_project_argument.exit_code == 2
+    assert "unexpected extra argument" in retired_project_argument.output.lower()
 
 
 def test_legacy_query_commands_are_not_registered() -> None:

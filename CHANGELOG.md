@@ -18,6 +18,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Changed
 
 - **Breaking:** `matlock tasks query` and `matlock projects query` now emit a JSON object (`{"total_matches": N, "returned_matches": N, "limit": N|null, "offset": N, "results": [...]}`) instead of a bare JSON array.
+- **Breaking:** `matlock tasks query --text TEXT` replaces `--task-text`, and `matlock projects query --text TEXT` replaces its positional text argument. The retired forms are no longer accepted.
 - Extracted the shared `json_extract`/`json_each` JSON-path filter clause-building logic into a new `matlock/sql_filters.py`, reused by both `matlock/db.py` (task attribute filtering) and `matlock/search/sql_filters.py` (file metadata filtering).
 
 ## [0.7.0] — 2026-09-14

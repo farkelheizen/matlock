@@ -121,17 +121,17 @@ poetry run matlock document read /absolute/path/inside/your/vault/Notes/today.md
 
 ### `matlock projects query`
 
-Return a paginated JSON envelope of project records. Without a positional term, it emits the project table in `project_id` order. With a term, it performs a case-insensitive literal substring match across every project-column value and automatically unions in projects associated with matching indexed files. Field filters are AND-composed across categories with repeated values ORed within the same option.
+Return a paginated JSON envelope of project records. Without `--text`, it emits the project table in `project_id` order. With `--text`, it performs a case-insensitive literal substring match across every project-column value and automatically unions in projects associated with matching indexed files. Field filters are AND-composed across categories with repeated values ORed within the same option.
 
-**Breaking change (0.8.0):** this command previously emitted a bare JSON array. It now emits a JSON object: `{"total_matches": N, "returned_matches": N, "limit": N|null, "offset": N, "results": [...]}`.
+**Breaking change (0.8.0):** this command previously emitted a bare JSON array and accepted free text as a positional argument. It now emits a JSON object: `{"total_matches": N, "returned_matches": N, "limit": N|null, "offset": N, "results": [...]}`, and free text must be passed with `--text`.
 
 ```
-matlock projects query [TEXT] [OPTIONS]
+matlock projects query [OPTIONS]
 ```
 
 | Argument / Option | Default | Description |
 |:------------------|:--------|:------------|
-| `TEXT` | None | Optional project text filter |
+| `--text TEXT` | None | Optional project text filter; also enables file-backed project search |
 | `--project-id VALUE` | repeated | Repeatable project ID match |
 | `--super-project-id VALUE` | repeated | Repeatable super-project ID match |
 | `--title TEXT` | repeated | Repeatable title literal substring search |
@@ -152,8 +152,8 @@ For text queries, `total_matches`, `--limit`, and `--offset` apply to the dedupl
 **Examples:**
 ```bash
 poetry run matlock projects query
-poetry run matlock projects query "alpha"
-poetry run matlock projects query "alpha" --search-mode hybrid --min-score 0.5
+poetry run matlock projects query --text "alpha"
+poetry run matlock projects query --text "alpha" --search-mode hybrid --min-score 0.5
 poetry run matlock projects query --project-id backend --status active
 poetry run matlock projects query --limit 10 --offset 20
 poetry run matlock projects query --count-only
@@ -184,7 +184,7 @@ poetry run matlock super-projects list
 
 Return a paginated JSON envelope of active, non-generated tasks, optionally filtered by date, completion, text, headers, attributes, project IDs, and super-project IDs.
 
-**Breaking change (0.8.0):** this command previously emitted a bare JSON array. It now emits a JSON object: `{"total_matches": N, "returned_matches": N, "limit": N|null, "offset": N, "results": [...]}`.
+**Breaking change (0.8.0):** this command previously emitted a bare JSON array and used `--task-text` for its text filter. It now emits a JSON object: `{"total_matches": N, "returned_matches": N, "limit": N|null, "offset": N, "results": [...]}`, and task text must be passed with `--text`.
 
 ```
 matlock tasks query [OPTIONS]
@@ -196,7 +196,7 @@ matlock tasks query [OPTIONS]
 | `--est-comp-date VALUE` | repeated | Repeatable estimated completion predicate |
 | `--act-comp-date VALUE` | repeated | Repeatable actual completion predicate |
 | `--checked / --unchecked` | none | Filter by completion state |
-| `--task-text TEXT` | None | Case-insensitive literal substring match |
+| `--text TEXT` | None | Case-insensitive literal task-text substring match |
 | `--headers TEXT` | None | Case-insensitive literal JSON-list match |
 | `--attributes TEXT` | None | Case-insensitive literal JSON-object match |
 | `--attribute-filter PATH:OP:VALUE` | repeated | Repeatable structured JSON-path filter against `task.attributes`, AND-composed |
@@ -212,7 +212,7 @@ matlock tasks query [OPTIONS]
 **Examples:**
 ```bash
 poetry run matlock tasks query
-poetry run matlock tasks query --checked --task-text "review"
+poetry run matlock tasks query --checked --text "review"
 poetry run matlock tasks query --project-id backend --due-date ">=2026-01-01"
 poetry run matlock tasks query --attribute-filter "owner:eq:ops"
 poetry run matlock tasks query --attribute-filter "estimate_hours:gte:5"

@@ -199,8 +199,9 @@ def _project_ids_for_file(conn, file_path: str) -> list[str]:
 @projects_app.command(name="query")
 def list_projects(
     ctx: typer.Context,
-    text: str | None = typer.Argument(
+    text: str | None = typer.Option(
         None,
+        "--text",
         help="Optional literal text filter for project records.",
     ),
     project_id: list[str] = typer.Option([], "--project-id", help="Repeatable project ID match."),
@@ -374,7 +375,7 @@ def list_tasks(
     est_comp_date: list[str] = typer.Option([], "--est-comp-date", help="Repeatable estimated completion date filter."),
     act_comp_date: list[str] = typer.Option([], "--act-comp-date", help="Repeatable actual completion date filter."),
     checked: bool | None = typer.Option(None, "--checked/--unchecked", help="Filter tasks by checked state."),
-    task_text: str | None = typer.Option(None, "--task-text", help="Case-insensitive literal task text match."),
+    text: str | None = typer.Option(None, "--text", help="Case-insensitive literal task text match."),
     headers: str | None = typer.Option(None, "--headers", help="Case-insensitive literal header JSON match."),
     attributes: str | None = typer.Option(None, "--attributes", help="Case-insensitive literal attribute JSON match."),
     attribute_filters: list[str] = typer.Option(
@@ -406,8 +407,8 @@ def list_tasks(
 
     if checked is not None:
         filter_map["checked"] = checked
-    if task_text:
-        filter_map["task_text"] = task_text
+    if text:
+        filter_map["task_text"] = text
     if headers:
         filter_map["headers"] = headers
     if attributes:

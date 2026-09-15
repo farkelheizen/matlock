@@ -19,8 +19,8 @@ Reshape `tasks query` and `projects query` JSON output into a paginated response
 
 ## Scope
 
-- In scope: response envelope reshape for `tasks query` and `projects query`; `--limit`/`--offset`/`--count-only` flags and DB-layer support for both commands; a new `queries.default_limit` config setting (default `20`); a `--min-score FLOAT` flag on `projects query`'s automatic file-backed search path; a structured `--attribute-filter PATH:OP:VALUE` flag for `tasks query` reusing the existing `json_extract`-based filter logic from `matlock/search/sql_filters.py`, extracted into a shared, search-independent module; focused/adjacent test updates; CHANGELOG and doc updates; version bump to `0.8.0`.
-- Out of scope: any change to `matlock search query`'s own request/response contract (it already has `limit`/`offset`/`total_matches`/`min_score`); a `--sort` / alternate ordering flag (existing deterministic ordering by `file_path`/`task_id`/`project_id` is preserved and is sufficient for stable pagination); schema changes; changes to `super-projects list` (no filters exist today and it was not requested); adding a JSON-attribute-style filter to `projects query` (no JSON column exists on `project`); any compatibility shim for the old bare-array output (not needed — single-user project, no external consumers).
+- In scope: response envelope reshape for `tasks query` and `projects query`; `--limit`/`--offset`/`--count-only` flags and DB-layer support for both commands; a new `queries.default_limit` config setting (default `20`); a `--min-score FLOAT` flag on `projects query`'s file-backed text-search path; a structured `--attribute-filter PATH:OP:VALUE` flag for `tasks query` reusing the existing `json_extract`-based filter logic from `matlock/search/sql_filters.py`, extracted into a shared, search-independent module; a unified `--text TEXT` option replacing `tasks query --task-text` and the `projects query` positional `TEXT` argument; focused/adjacent test updates; CHANGELOG and doc updates; version bump to `0.8.0`.
+- Out of scope: any change to `matlock search query`'s own request/response contract (it already has `limit`/`offset`/`total_matches`/`min_score`); a `--sort` / alternate ordering flag (existing deterministic ordering by `file_path`/`task_id`/`project_id` is preserved and is sufficient for stable pagination); schema changes; changes to `super-projects list` (no filters exist today and it was not requested); adding a JSON-attribute-style filter to `projects query` (no JSON column exists on `project`); compatibility aliases or a deprecation period for `--task-text` or positional project text.
 
 ## Constraints / Requirements
 
@@ -30,6 +30,8 @@ Reshape `tasks query` and `projects query` JSON output into a paginated response
 - Default page size: add `queries.default_limit: int = 20` (`ge=1`) to `MatlockConfig` (new `QueriesConfig` model, mirroring the existing `SearchConfig`/`SearchIndexingConfig` nesting style in `matlock/config.py`). `--limit` on both commands defaults to this config value when not explicitly passed on the CLI; passing `--limit` always overrides the config value for that invocation.
 - For `tasks query`, add `--limit INT` (config-defaulted), `--offset INT` (default `0`, `ge=0`), `--count-only`, and `--attribute-filter PATH:OP:VALUE` (repeatable, AND-composed, colon-delimited grammar) using the same operator vocabulary as `SearchMetadataFilter` (`eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `in`, `contains`) via `json_extract`/`json_each` against `t.attributes`.
 - For `projects query`, add `--limit`/`--offset`/`--count-only` (same config-defaulted behavior) and `--min-score FLOAT` (applies only to the automatic file-backed text-search path, forwarded to `MatlockSearchRequest.tuning.min_score`, filtering out low-scoring file hits before they are merged/counted/ranked). No attribute-filter flag (no JSON column exists on `project`).
+- Both query commands use `--text TEXT` for their free-text input. `tasks query --text` retains the current case-insensitive literal match against `task.task_text`. `projects query --text` replaces its positional `TEXT` argument and retains the current direct project-table match plus automatic file-backed search behavior, including `--search-mode` and `--min-score`.
+- This is a deliberate breaking change in `0.8.0`: remove `tasks query --task-text` and the `projects query` positional text argument entirely. Do not retain aliases, emit deprecation warnings, or add compatibility parsing.
 - `projects query`'s text-search path (`list_projects` in `matlock/cli.py`) merges direct `LIKE`-matched rows with file-backed search hits and orders the merged list in Python (not SQL `ORDER BY`), before it ever reaches a `LIMIT`. Pagination for that path must slice the already-ordered in-memory list rather than push `LIMIT`/`OFFSET` into SQL, and `total_matches` must be the size of that merged/deduplicated list (after `--min-score` filtering) before slicing.
 - `--count-only` on `projects query`'s text-search path still requires running the full `run_search_request()` scoring pass (embedding calls included for `hybrid`/`vector_only`) to know the true post-merge count — there is no cheaper accurate shortcut in the current engine, and that cost is accepted.
 - Preserve the existing case-insensitive substring `--attributes TEXT` flag on `tasks query` unchanged for backward compatibility; `--attribute-filter` is additive, not a replacement.
@@ -50,6 +52,7 @@ Reshape `tasks query` and `projects query` JSON output into a paginated response
 | TPQ-S4 | Completed | Add the `task.attributes` JSON-path filter | Add `--attribute-filter` parsing to `matlock/query_models.py`; use the TPQ-S2 shared helper against `t.attributes` in `matlock/db.py`; wire the flag in `matlock/cli.py` | `tests/test_db_queries.py`, `tests/test_cli_queries.py`, `tests/test_query_models.py` |
 | TPQ-S5 | Completed | Add limit/offset/count-only/min-score to `projects query` | Extend `fetch_projects` and the in-memory merged-ranking path in `list_projects` (`matlock/cli.py`) with slicing/count support, `--min-score` forwarding to `tuning.min_score`, and envelope output | `tests/test_db_queries.py`, `tests/test_cli_queries.py` |
 | TPQ-S6 | Completed | Documentation and release preparation | Update `docs/matlock-cli.md`, `docs/matlock-data-model.md`, `docs/matlock-configuration.md`, `CHANGELOG.md`, `pyproject.toml`, `docs/copilot/copilot-docs-reference.md` | Doc review plus focused, adjacent, and full Poetry suite |
+| TPQ-S7 | Completed | Unify query free-text input as `--text` | Replaced `tasks query --task-text` and the `projects query` positional `TEXT` argument with `--text TEXT`; updated command help, tests, release documentation, and examples for the accepted breaking change | `tests/test_cli_queries.py`; CLI help regression coverage; full documentation suite review |
 
 Status values: `Not Started` | `In Progress` | `Completed` | `Blocked`
 
@@ -149,6 +152,25 @@ Status values: `Not Started` | `In Progress` | `Completed` | `Blocked`
 **Definition of done:**
 - Docs and changelog accurately describe the new contract, config key, and flags; release metadata reflects `0.8.0`; doc scan gate satisfied.
 
+### TPQ-S7 Unified `--text` Query Input
+**Files (expected):**
+- `matlock/cli.py`
+- `tests/test_cli_queries.py`
+- `README.md`
+- `docs/matlock-cli.md`
+- `CHANGELOG.md`
+- `docs/copilot/copilot-docs-reference.md` (only if its keyword routing needs adjustment)
+
+**Implementation notes:**
+- Change `list_tasks` to expose `text: str | None = typer.Option(None, "--text", ...)` and pass that value to the existing `task_text` filter contract. Remove the `--task-text` option; do not accept it as an alias.
+- Change `list_projects` from an optional positional `TEXT` argument to `text: str | None = typer.Option(None, "--text", ...)`. Preserve the existing behavior when a nonblank value is supplied: direct project matching plus the automatic file-backed lookup, with `--search-mode` and `--min-score` applying exactly as they do today.
+- Update CLI tests to invoke task and project free-text retrieval with `--text`. Add negative coverage proving `tasks query --task-text ...` and `projects query TEXT` are rejected. Add command-help assertions showing `--text` and excluding `--task-text` and positional `TEXT`.
+- Update all affected user-facing command examples, usage blocks, option tables, and prose in `README.md` and `docs/`. Explicitly call out this additional breaking CLI change in the `0.8.0` CHANGELOG entry.
+- Perform a full documentation suite review: scan every Markdown file under `docs/` and the root `README.md` for `--task-text`, positional `projects query` invocations, `[TEXT]` usage signatures, and prose that describes the old free-text contract. Update every affected reference; record the files scanned and changed in the TPQ-S7 Step Notes Log.
+
+**Definition of done:**
+- `tasks query --text` and `projects query --text` expose the intended existing semantics; the former `--task-text` option and positional project text are rejected; tests and command help cover both the new contract and removed forms; all affected documentation and release notes state the `0.8.0` breaking change; focused, adjacent, full-suite, and full documentation-review gates are recorded.
+
 ---
 
 ## Acceptance Criteria
@@ -158,6 +180,7 @@ Status values: `Not Started` | `In Progress` | `Completed` | `Blocked`
 - `--limit`/`--offset` correctly page through results with stable ordering, for both the direct-only and (for `projects query`) file-backed-merge paths.
 - Omitting `--limit` uses `queries.default_limit` (default `20`) from config; passing `--limit` explicitly overrides it.
 - `projects query`'s automatic file-backed text search supports `--min-score` to exclude low-scoring file hits from ranking, counting, and pagination.
+- `tasks query --text TEXT` searches literal task text, while `projects query --text TEXT` performs the existing project-table and file-backed search flow; `--task-text` and positional text for `projects query` are not accepted.
 - `tasks query --attribute-filter PATH:OP:VALUE` correctly filters on real JSON attribute values via `json_extract`, is repeatable with AND semantics, and coexists with the existing `--attributes` substring flag.
 - `projects query` gains no attribute-filter flag (no applicable JSON column).
 - The JSON-path filter clause-building logic exists in exactly one shared module (`matlock/sql_filters.py`) used by both `matlock/db.py` and `matlock/search/sql_filters.py`.
@@ -173,6 +196,7 @@ Status values: `Not Started` | `In Progress` | `Completed` | `Blocked`
 - **Maximize code reuse:** the generic `json_extract`/`json_each` clause-building logic is extracted from `matlock/search/sql_filters.py` into a new shared, search-independent module `matlock/sql_filters.py`. Both `matlock/db.py` (tasks) and `matlock/search/sql_filters.py` (file metadata) call the shared function; `matlock/db.py` does not depend on `matlock/search/`.
 - **`--min-score` added to `projects query`'s file-backed search path.** Forwarded to `MatlockSearchRequest.tuning.min_score`, applied before ranking/counting/merging. The full embedding-scored search cost under `--count-only` for `hybrid`/`vector_only` is accepted as-is (no cheaper accurate shortcut exists); this is a single-user project so the cost tradeoff is acceptable.
 - **Envelope field naming:** reuse `total_matches`/`returned_matches` naming from `matlock.search.models.SearchResponseStats` for cross-command consistency, add `limit`/`offset` (new), omit `query_time_ms`/`search_mode_executed` (not applicable; `search query`'s own contract is unchanged and out of scope).
+- **Unified query text flag:** `tasks query` and `projects query` both use `--text TEXT`. This is a clean `0.8.0` break: `--task-text` is removed and `projects query` no longer accepts a positional text argument. Project `--search-mode` and `--min-score` continue to tune only the richer project file-backed lookup triggered by `--text`.
 
 ## Risks / Notes
 
@@ -180,6 +204,7 @@ Status values: `Not Started` | `In Progress` | `Completed` | `Blocked`
 - `docs/copilot/current-plan.md` currently points at `20260831-secret-detection-backfill.md` (SDB-S4, review/commit pending). This plan must not become "active" in that pointer file until that gate clears.
 - Moving `build_metadata_filter_clause` out of `matlock/search/sql_filters.py` touches an existing, tested module boundary — TPQ-S2 must keep `matlock/search/sql_filters.py`'s public behavior and existing test coverage green with a pure refactor (no logic changes) before any new callers are added in later steps.
 - For `projects query`'s `hybrid`/`vector_only` text-search path, an accurate `total_matches`/`--count-only` result still requires running full search scoring (embedding calls included) even with `--min-score` applied afterward — `--min-score` reduces which hits count as matches but does not reduce the scoring cost itself.
+- This additional interface break must be reflected consistently in command help, tests, README examples, all relevant docs, and the `0.8.0` changelog before review.
 
 ## Validation Plan
 
@@ -188,16 +213,21 @@ Run tests in this order:
 2. Focused TPQ-S2: `poetry run pytest tests/test_sql_filters.py tests/test_search_metadata_filters.py tests/test_search_query_engine.py`
 3. Focused TPQ-S3/S4: `poetry run pytest tests/test_db_queries.py tests/test_cli_queries.py tests/test_query_models.py`
 4. Focused TPQ-S5: `poetry run pytest tests/test_db_queries.py tests/test_cli_queries.py`
-5. Adjacent regression: `poetry run pytest tests/test_cli_map_projects.py tests/test_search_query_engine.py tests/test_search_metadata_filters.py tests/test_db.py tests/test_models.py tests/test_config.py`
-6. Full suite: `poetry run pytest`
+5. Focused TPQ-S7: `poetry run pytest tests/test_cli_queries.py -q`
+6. Adjacent regression: `poetry run pytest tests/test_cli_map_projects.py tests/test_search_query_engine.py tests/test_search_metadata_filters.py tests/test_db.py tests/test_models.py tests/test_config.py`
+7. Full suite: `poetry run pytest`
+8. TPQ-S7 documentation review: inspect every `docs/**/*.md` file and `README.md`; search for `--task-text`, `projects query [TEXT]`, and positional `projects query` examples, then update affected references and record the scan result.
 
 Record results:
 - Focused TPQ-S1: `poetry run pytest tests/test_query_models.py tests/test_matlock_config.py -q` -> passed (`58 passed`).
 - Focused TPQ-S2: `poetry run pytest tests/test_sql_filters.py tests/test_search_metadata_filters.py tests/test_search_query_engine.py -q` -> passed (`21 passed`).
 - Focused TPQ-S3/S4: `poetry run pytest tests/test_db_queries.py tests/test_cli_queries.py tests/test_query_models.py -q` -> passed (`32 passed`, latest combined run after TPQ-S4).
 - Focused TPQ-S5: `poetry run pytest tests/test_cli_queries.py tests/test_db_queries.py -q` -> passed (`20 passed`).
+- Focused TPQ-S7: `poetry run pytest tests/test_cli_queries.py -q` -> passed (`14 passed`).
 - Adjacent: covered within each step's full-suite run below; no isolated adjacent-only regression found across TPQ-S1–S5.
-- Full suite: `poetry run pytest -q` -> passed (`916 passed`) as of TPQ-S5/S6.
+- Adjacent TPQ-S7: `poetry run pytest tests/test_cli_map_projects.py tests/test_search_query_engine.py tests/test_search_metadata_filters.py tests/test_db.py tests/test_models.py tests/test_config.py -q` -> passed (`90 passed`).
+- Full suite: `poetry run pytest -q` -> passed (`917 passed`) as of TPQ-S7.
+- TPQ-S7 documentation review: scanned every `docs/**/*.md` file and `README.md` for `--task-text`, positional `projects query` examples, and `projects query [TEXT]` signatures. Updated live references in `docs/matlock-cli.md` and `README.md`; remaining matches are intentional migration wording in current docs or historical-plan records.
 
 ---
 
@@ -232,6 +262,11 @@ Record results:
 - Changes made: documented the paginated envelope, `--limit`/`--offset`/`--count-only`, `--min-score`, and `--attribute-filter` in `docs/matlock-cli.md` and `README.md` (both with explicit breaking-change callouts); added a `queries:` block to `docs/matlock-configuration.md` documenting `default_limit`; bumped both docs' version banners to `0.8.x`; added a keyword-index entry to `docs/copilot/copilot-docs-reference.md`; added the `0.8.0` release entry to `CHANGELOG.md`; bumped `pyproject.toml` to `0.8.0`. `docs/matlock-data-model.md` was left unchanged — no schema changed, only command response shape (already documented in the CLI doc). `docs/copilot/current-plan.md` intentionally left unchanged, per the plan's constraint, since the prior `20260831-secret-detection-backfill.md` (SDB-S4) review/commit gate is still pending.
 - Deviations: none.
 - Validation: full suite `poetry run pytest -q` -> passed (`916 passed`); no code changes in this step beyond documentation/release metadata.
+
+### TPQ-S7 Notes
+- Changes made: replaced the `tasks query --task-text` option and the `projects query` positional text argument with `--text TEXT`. The task command still maps the value to its existing `task_text` literal filter, while the project command retains its direct-match and automatic file-backed lookup behavior. Updated CLI command help coverage, migrated query tests and user-facing examples, and documented the additional `0.8.0` breaking change in `CHANGELOG.md`.
+- Deviations: none.
+- Validation: focused `poetry run pytest tests/test_cli_queries.py -q` -> passed (`14 passed`); adjacent `poetry run pytest tests/test_cli_map_projects.py tests/test_search_query_engine.py tests/test_search_metadata_filters.py tests/test_db.py tests/test_models.py tests/test_config.py -q` -> passed (`90 passed`); full `poetry run pytest -q` -> passed (`917 passed`). Full documentation review scanned all Markdown files under `docs/` plus `README.md`; only live references in `docs/matlock-cli.md` and `README.md` required changes. Historical plan records and explicit migration notes retain old-form mentions intentionally.
 
 ---
 
