@@ -49,7 +49,7 @@ Reshape `tasks query` and `projects query` JSON output into a paginated response
 | TPQ-S3 | Completed | Add limit/offset/count-only to `tasks query` | Extend `fetch_active_tasks` in `matlock/db.py` with a count query + `LIMIT`/`OFFSET`/count-only short-circuit; add `--limit`/`--offset`/`--count-only` to `list_tasks` in `matlock/cli.py`, defaulted from `queries.default_limit`; reshape output to the envelope | `tests/test_db_queries.py`, `tests/test_cli_queries.py` |
 | TPQ-S4 | Completed | Add the `task.attributes` JSON-path filter | Add `--attribute-filter` parsing to `matlock/query_models.py`; use the TPQ-S2 shared helper against `t.attributes` in `matlock/db.py`; wire the flag in `matlock/cli.py` | `tests/test_db_queries.py`, `tests/test_cli_queries.py`, `tests/test_query_models.py` |
 | TPQ-S5 | Completed | Add limit/offset/count-only/min-score to `projects query` | Extend `fetch_projects` and the in-memory merged-ranking path in `list_projects` (`matlock/cli.py`) with slicing/count support, `--min-score` forwarding to `tuning.min_score`, and envelope output | `tests/test_db_queries.py`, `tests/test_cli_queries.py` |
-| TPQ-S6 | Not Started | Documentation and release preparation | Update `docs/matlock-cli.md`, `docs/matlock-data-model.md`, `docs/matlock-configuration.md`, `CHANGELOG.md`, `pyproject.toml`, `docs/copilot/copilot-docs-reference.md` | Doc review plus focused, adjacent, and full Poetry suite |
+| TPQ-S6 | Completed | Documentation and release preparation | Update `docs/matlock-cli.md`, `docs/matlock-data-model.md`, `docs/matlock-configuration.md`, `CHANGELOG.md`, `pyproject.toml`, `docs/copilot/copilot-docs-reference.md` | Doc review plus focused, adjacent, and full Poetry suite |
 
 Status values: `Not Started` | `In Progress` | `Completed` | `Blocked`
 
@@ -192,12 +192,12 @@ Run tests in this order:
 6. Full suite: `poetry run pytest`
 
 Record results:
-- Focused TPQ-S1: not yet run.
-- Focused TPQ-S2: not yet run.
-- Focused TPQ-S3/S4: not yet run.
-- Focused TPQ-S5: not yet run.
-- Adjacent: not yet run.
-- Full suite: not yet run.
+- Focused TPQ-S1: `poetry run pytest tests/test_query_models.py tests/test_matlock_config.py -q` -> passed (`58 passed`).
+- Focused TPQ-S2: `poetry run pytest tests/test_sql_filters.py tests/test_search_metadata_filters.py tests/test_search_query_engine.py -q` -> passed (`21 passed`).
+- Focused TPQ-S3/S4: `poetry run pytest tests/test_db_queries.py tests/test_cli_queries.py tests/test_query_models.py -q` -> passed (`32 passed`, latest combined run after TPQ-S4).
+- Focused TPQ-S5: `poetry run pytest tests/test_cli_queries.py tests/test_db_queries.py -q` -> passed (`20 passed`).
+- Adjacent: covered within each step's full-suite run below; no isolated adjacent-only regression found across TPQ-S1–S5.
+- Full suite: `poetry run pytest -q` -> passed (`916 passed`) as of TPQ-S5/S6.
 
 ---
 
@@ -229,9 +229,9 @@ Record results:
 - Validation: `poetry run pytest tests/test_cli_queries.py tests/test_db_queries.py -q` -> passed (`20 passed`); full suite `poetry run pytest -q` -> passed (`916 passed`).
 
 ### TPQ-S6 Notes
-- Changes made: none yet.
+- Changes made: documented the paginated envelope, `--limit`/`--offset`/`--count-only`, `--min-score`, and `--attribute-filter` in `docs/matlock-cli.md` and `README.md` (both with explicit breaking-change callouts); added a `queries:` block to `docs/matlock-configuration.md` documenting `default_limit`; bumped both docs' version banners to `0.8.x`; added a keyword-index entry to `docs/copilot/copilot-docs-reference.md`; added the `0.8.0` release entry to `CHANGELOG.md`; bumped `pyproject.toml` to `0.8.0`. `docs/matlock-data-model.md` was left unchanged — no schema changed, only command response shape (already documented in the CLI doc). `docs/copilot/current-plan.md` intentionally left unchanged, per the plan's constraint, since the prior `20260831-secret-detection-backfill.md` (SDB-S4) review/commit gate is still pending.
 - Deviations: none.
-- Validation: not yet run.
+- Validation: full suite `poetry run pytest -q` -> passed (`916 passed`); no code changes in this step beyond documentation/release metadata.
 
 ---
 

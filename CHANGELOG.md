@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ---
 
+## [0.8.0] — 2026-09-15
+
+### Added
+
+- `matlock tasks query` and `matlock projects query` now accept `--limit`, `--offset`, and `--count-only` for pagination. `--count-only` returns pagination stats with an empty `results` list while still computing an accurate `total_matches`.
+- New `queries.default_limit` config setting (default `20`) supplies the default `--limit` for both commands when the flag is omitted.
+- `matlock tasks query --attribute-filter PATH:OP:VALUE` adds structured JSON-path filtering against `task.attributes` (operators: `eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `in`, `contains`), repeatable and AND-composed, alongside the existing `--attributes` substring flag.
+- `matlock projects query --min-score FLOAT` filters low-scoring file hits out of the automatic file-backed text-search path before ranking, counting, and pagination.
+
+### Changed
+
+- **Breaking:** `matlock tasks query` and `matlock projects query` now emit a JSON object (`{"total_matches": N, "returned_matches": N, "limit": N|null, "offset": N, "results": [...]}`) instead of a bare JSON array.
+- Extracted the shared `json_extract`/`json_each` JSON-path filter clause-building logic into a new `matlock/sql_filters.py`, reused by both `matlock/db.py` (task attribute filtering) and `matlock/search/sql_filters.py` (file metadata filtering).
+
 ## [0.7.0] — 2026-09-14
 
 ### Added

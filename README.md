@@ -248,13 +248,15 @@ poetry run matlock projects discover --merge
 
 ### `matlock projects query`
 
-Return project records as a JSON list. Without a term it returns all projects; with a term it performs a case-insensitive literal substring match across all project columns and automatically unions in projects associated with matching indexed files. Field filters can be combined with AND semantics using flags such as `--project-id`, `--title`, `--home-file`, `--priority`, `--status`, and ISO date predicates.
+Return a paginated JSON envelope of project records: `{"total_matches": N, "returned_matches": N, "limit": N|null, "offset": N, "results": [...]}` (breaking change in 0.8.0 — this command previously returned a bare array). Without a term it returns all projects; with a term it performs a case-insensitive literal substring match across all project columns and automatically unions in projects associated with matching indexed files. Field filters can be combined with AND semantics using flags such as `--project-id`, `--title`, `--home-file`, `--priority`, `--status`, and ISO date predicates. Supports `--limit`/`--offset`/`--count-only` (default limit from `queries.default_limit`) and `--min-score` for the automatic file-backed text-search path.
 
 ```bash
 poetry run matlock projects query
 poetry run matlock projects query "alpha"
-poetry run matlock projects query "alpha" --search-mode hybrid
+poetry run matlock projects query "alpha" --search-mode hybrid --min-score 0.5
 poetry run matlock projects query --project-id backend --status active
+poetry run matlock projects query --limit 10 --offset 20
+poetry run matlock projects query --count-only
 ```
 
 ### `matlock super-projects list`
@@ -267,12 +269,14 @@ poetry run matlock super-projects list
 
 ### `matlock tasks query`
 
-Return active, non-generated task rows as JSON. Supports repeatable `--due-date`, `--est-comp-date`, and `--act-comp-date` predicates, `--checked/--unchecked`, `--task-text`, `--headers`, `--attributes`, `--project-id`, and `--super-project-id` filters.
+Return a paginated JSON envelope of active, non-generated task rows: `{"total_matches": N, "returned_matches": N, "limit": N|null, "offset": N, "results": [...]}` (breaking change in 0.8.0 — this command previously returned a bare array). Supports repeatable `--due-date`, `--est-comp-date`, and `--act-comp-date` predicates, `--checked/--unchecked`, `--task-text`, `--headers`, `--attributes`, repeatable structured `--attribute-filter PATH:OP:VALUE` (JSON-path filtering against `task.attributes`), `--project-id`, and `--super-project-id` filters, plus `--limit`/`--offset`/`--count-only` (default limit from `queries.default_limit`).
 
 ```bash
 poetry run matlock tasks query
 poetry run matlock tasks query --checked --task-text "review"
 poetry run matlock tasks query --project-id backend --due-date ">=2026-01-01"
+poetry run matlock tasks query --attribute-filter "owner:eq:ops"
+poetry run matlock tasks query --limit 10 --offset 20 --count-only
 ```
 
 ### `matlock projects map`
