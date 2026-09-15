@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import re
 from datetime import date
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -138,6 +138,19 @@ class TaskQueryFilters(BaseModel):
     super_project_ids: list[str] = Field(default_factory=list)
 
 
+AttributeFilterOperator = Literal["eq", "neq", "gt", "gte", "lt", "lte", "in", "contains"]
+
+_ATTRIBUTE_FILTER_OPERATORS: set[str] = {"eq", "neq", "gt", "gte", "lt", "lte", "in", "contains"}
+
+
+class AttributeFilterPredicate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    path: str
+    operator: AttributeFilterOperator = "eq"
+    value: Any
+
+
 def parse_date_predicate(raw: str, field: str = "due_date") -> DatePredicate:
     """Parse a date comparison token like ``>=2026-01-01`` or ``2026-01-01``."""
     if raw is None or raw == "":
@@ -156,3 +169,57 @@ def parse_date_predicate(raw: str, field: str = "due_date") -> DatePredicate:
         raise ValueError(f"Invalid date value: {date_value!r}") from exc
 
     return DatePredicate(field=field, operator=operator, value=parsed_date)
+
+
+def _coerce_attribute_token(token: str) -> Any:
+    """Coerce one raw attribute-filter value token to match likely JSON storage types."""
+    lowered = token.lower()
+    if lowered == "true":
+        return True
+    if lowered == "false":
+        return False
+    if lowered == "null":
+        return None
+    try:
+        return int(token)
+    except ValueError:
+        pass
+    try:
+        return float(token)
+    except ValueError:
+        pass
+    return token
+
+
+def parse_attribute_filter_predicate(raw: str) -> AttributeFilterPredicate:
+    """Parse a colon-delimited ``path:operator:value`` attribute-filter token.
+
+    Bare paths without a leading ``$`` are auto-prefixed with ``$.``. The
+    ``in`` operator accepts a comma-separated value list.
+    """
+    if raw is None or raw == "":
+        raise ValueError("Attribute filter cannot be empty")
+
+    parts = raw.split(":", 2)
+    if len(parts) != 3:
+        raise ValueError(
+            f"Invalid attribute filter: {raw!r}; expected PATH:OPERATOR:VALUE"
+        )
+    path, operator, raw_value = parts
+    if not path:
+        raise ValueError(f"Invalid attribute filter: {raw!r}; path cannot be empty")
+    if operator not in _ATTRIBUTE_FILTER_OPERATORS:
+        raise ValueError(
+            f"Invalid attribute filter operator: {operator!r}; "
+            f"expected one of {sorted(_ATTRIBUTE_FILTER_OPERATORS)}"
+        )
+    if not path.startswith("$"):
+        path = f"$.{path}"
+
+    if operator == "in":
+        value: Any = [_coerce_attribute_token(token) for token in raw_value.split(",")]
+    else:
+        value = _coerce_attribute_token(raw_value)
+
+    return AttributeFilterPredicate(path=path, operator=operator, value=value)
+

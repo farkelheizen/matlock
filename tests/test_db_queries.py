@@ -9,6 +9,7 @@ from matlock.db import (
     get_connection,
     init_db,
 )
+from matlock.query_models import AttributeFilterPredicate
 
 
 def _insert_task(conn: sqlite3.Connection, *, task_id: str, file_path: str, task_text: str, checked: int = 0, due_date: str | None = None, est_comp_date: str | None = None, act_comp_date: str | None = None, headers: str = '[]', attributes: str = '{}', errors: str = '[]', overflow: int = 0) -> None:
@@ -142,5 +143,37 @@ def test_fetch_active_tasks_limit_offset_and_count_only() -> None:
     total_matches, rows = fetch_active_tasks(conn, count_only=True)
     assert total_matches == 3
     assert rows == []
+
+    conn.close()
+
+
+def test_fetch_active_tasks_attribute_filters() -> None:
+    conn = get_connection(":memory:")
+    init_db(conn)
+
+    conn.execute("INSERT INTO file (file_path, sha256, file_ext, created, modified, modified_date, deleted, length, word_count, meta_data, is_generated, needs_parsing) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", ("notes/a.md", "hash-a", ".md", 1, 1, "2026-01-01", 0, 1, 1, "{}", 0, 0))
+
+    _insert_task(conn, task_id="t-1", file_path="notes/a.md", task_text="Ops task", attributes='{"owner": "ops", "estimate_hours": 5}')
+    _insert_task(conn, task_id="t-2", file_path="notes/a.md", task_text="Eng task", attributes='{"owner": "eng", "estimate_hours": 8}')
+    conn.commit()
+
+    total_matches, rows = fetch_active_tasks(conn, filters={
+        "attribute_filters": [AttributeFilterPredicate(path="$.owner", operator="eq", value="ops")],
+    })
+    assert total_matches == 1
+    assert [row.task_id for row in rows] == ["t-1"]
+
+    total_matches, rows = fetch_active_tasks(conn, filters={
+        "attribute_filters": [AttributeFilterPredicate(path="$.estimate_hours", operator="gte", value=6)],
+    })
+    assert total_matches == 1
+    assert [row.task_id for row in rows] == ["t-2"]
+
+    total_matches, rows = fetch_active_tasks(conn, filters={
+        "attribute_filters": [AttributeFilterPredicate(path="$.owner", operator="in", value=["ops", "eng"])],
+    })
+    assert total_matches == 2
+
+    conn.close()
 
     conn.close()

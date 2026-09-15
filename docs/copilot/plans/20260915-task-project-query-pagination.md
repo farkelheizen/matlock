@@ -47,7 +47,7 @@ Reshape `tasks query` and `projects query` JSON output into a paginated response
 | TPQ-S1 | Completed | Define the shared paginated response contract and config default | Add `QueryResponseStats`/envelope model to `matlock/query_models.py`; add `QueriesConfig.default_limit` to `matlock/config.py` | `tests/test_query_models.py`, `tests/test_matlock_config.py` |
 | TPQ-S2 | Completed | Extract shared JSON-path filter module | Create `matlock/sql_filters.py` from the generic parts of `matlock/search/sql_filters.py::build_metadata_filter_clause`; update `matlock/search/sql_filters.py` to import from it | `tests/test_search_metadata_filters.py` (regression), new `tests/test_sql_filters.py` |
 | TPQ-S3 | Completed | Add limit/offset/count-only to `tasks query` | Extend `fetch_active_tasks` in `matlock/db.py` with a count query + `LIMIT`/`OFFSET`/count-only short-circuit; add `--limit`/`--offset`/`--count-only` to `list_tasks` in `matlock/cli.py`, defaulted from `queries.default_limit`; reshape output to the envelope | `tests/test_db_queries.py`, `tests/test_cli_queries.py` |
-| TPQ-S4 | Not Started | Add the `task.attributes` JSON-path filter | Add `--attribute-filter` parsing to `matlock/query_models.py`; use the TPQ-S2 shared helper against `t.attributes` in `matlock/db.py`; wire the flag in `matlock/cli.py` | `tests/test_db_queries.py`, `tests/test_cli_queries.py`, `tests/test_query_models.py` |
+| TPQ-S4 | Completed | Add the `task.attributes` JSON-path filter | Add `--attribute-filter` parsing to `matlock/query_models.py`; use the TPQ-S2 shared helper against `t.attributes` in `matlock/db.py`; wire the flag in `matlock/cli.py` | `tests/test_db_queries.py`, `tests/test_cli_queries.py`, `tests/test_query_models.py` |
 | TPQ-S5 | Not Started | Add limit/offset/count-only/min-score to `projects query` | Extend `fetch_projects` and the in-memory merged-ranking path in `list_projects` (`matlock/cli.py`) with slicing/count support, `--min-score` forwarding to `tuning.min_score`, and envelope output | `tests/test_db_queries.py`, `tests/test_cli_queries.py` |
 | TPQ-S6 | Not Started | Documentation and release preparation | Update `docs/matlock-cli.md`, `docs/matlock-data-model.md`, `docs/matlock-configuration.md`, `CHANGELOG.md`, `pyproject.toml`, `docs/copilot/copilot-docs-reference.md` | Doc review plus focused, adjacent, and full Poetry suite |
 
@@ -219,9 +219,9 @@ Record results:
 - Validation: `poetry run pytest tests/test_db_queries.py tests/test_cli_queries.py tests/test_query_models.py -q` -> passed (`24 passed`); full suite `poetry run pytest -q` -> passed (`905 passed`).
 
 ### TPQ-S4 Notes
-- Changes made: none yet.
+- Changes made: added `AttributeFilterPredicate` and `parse_attribute_filter_predicate` (colon-delimited `path:operator:value`, auto-`$.`-prefixing, numeric/bool/null coercion, comma-split `in` lists) to `matlock/query_models.py`; wired repeatable `--attribute-filter` into `list_tasks` in `matlock/cli.py` (AND-composed with existing filters, distinct error message from date-predicate failures); `fetch_active_tasks` consumes `filters["attribute_filters"]` via the TPQ-S2 shared `build_json_path_filter_clause` against `t.attributes` (this clause-building was already added in TPQ-S3's edit to the same function).
 - Deviations: none.
-- Validation: not yet run.
+- Validation: `poetry run pytest tests/test_db_queries.py tests/test_cli_queries.py tests/test_query_models.py -q` -> passed (`32 passed`); full suite `poetry run pytest -q` -> passed (`913 passed`).
 
 ### TPQ-S5 Notes
 - Changes made: none yet.

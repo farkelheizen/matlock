@@ -5,6 +5,7 @@ from datetime import date
 import pytest
 
 from matlock.query_models import (
+    AttributeFilterPredicate,
     DatePredicate,
     ProjectQueryResponse,
     ProjectRecord,
@@ -12,6 +13,7 @@ from matlock.query_models import (
     TaskQueryResponse,
     TaskRecord,
     TaskQueryFilters,
+    parse_attribute_filter_predicate,
     parse_date_predicate,
 )
 
@@ -126,6 +128,47 @@ def test_project_query_response_count_only_envelope() -> None:
     response = ProjectQueryResponse(total_matches=2, returned_matches=0, limit=20, offset=0, results=[])
     assert response.results == []
     assert response.total_matches == 2
+
+
+def test_parse_attribute_filter_predicate_supports_all_operators() -> None:
+    for operator in ("eq", "neq", "gt", "gte", "lt", "lte", "contains"):
+        predicate = parse_attribute_filter_predicate(f"owner:{operator}:ops")
+        assert predicate == AttributeFilterPredicate(path="$.owner", operator=operator, value="ops")
+
+
+def test_parse_attribute_filter_predicate_auto_prefixes_bare_path() -> None:
+    predicate = parse_attribute_filter_predicate("owner:eq:ops")
+    assert predicate.path == "$.owner"
+
+
+def test_parse_attribute_filter_predicate_preserves_explicit_json_path() -> None:
+    predicate = parse_attribute_filter_predicate("$.nested.owner:eq:ops")
+    assert predicate.path == "$.nested.owner"
+
+
+def test_parse_attribute_filter_predicate_coerces_numeric_and_bool_values() -> None:
+    assert parse_attribute_filter_predicate("estimate_hours:gte:5").value == 5
+    assert parse_attribute_filter_predicate("estimate_hours:gte:5.5").value == 5.5
+    assert parse_attribute_filter_predicate("archived:eq:true").value is True
+    assert parse_attribute_filter_predicate("archived:eq:false").value is False
+    assert parse_attribute_filter_predicate("owner:eq:null").value is None
+
+
+def test_parse_attribute_filter_predicate_in_operator_splits_and_coerces_list() -> None:
+    predicate = parse_attribute_filter_predicate("owner:in:ops,eng,5")
+    assert predicate.operator == "in"
+    assert predicate.value == ["ops", "eng", 5]
+
+
+def test_parse_attribute_filter_predicate_rejects_bad_grammar() -> None:
+    with pytest.raises(ValueError):
+        parse_attribute_filter_predicate("")
+    with pytest.raises(ValueError):
+        parse_attribute_filter_predicate("owner:eq")
+    with pytest.raises(ValueError):
+        parse_attribute_filter_predicate(":eq:ops")
+    with pytest.raises(ValueError):
+        parse_attribute_filter_predicate("owner:bogus:ops")
 
 
 

@@ -33,7 +33,12 @@ from matlock.db import (
     set_file_secret_detection,
 )
 from matlock.logging_setup import setup_logging
-from matlock.query_models import ProjectRecord, TaskQueryResponse, parse_date_predicate
+from matlock.query_models import (
+    ProjectRecord,
+    TaskQueryResponse,
+    parse_attribute_filter_predicate,
+    parse_date_predicate,
+)
 from matlock.redaction import get_redacted_document, scan_document_for_secrets
 from matlock.search.logging import isolated_search_logging
 from matlock.search.query_cli import (
@@ -333,6 +338,11 @@ def list_tasks(
     task_text: str | None = typer.Option(None, "--task-text", help="Case-insensitive literal task text match."),
     headers: str | None = typer.Option(None, "--headers", help="Case-insensitive literal header JSON match."),
     attributes: str | None = typer.Option(None, "--attributes", help="Case-insensitive literal attribute JSON match."),
+    attribute_filters: list[str] = typer.Option(
+        [],
+        "--attribute-filter",
+        help="Repeatable structured JSON-path attribute filter, e.g. 'owner:eq:ops'. AND-composed.",
+    ),
     project_ids: list[str] = typer.Option([], "--project-id", help="Repeatable project filter."),
     super_project_ids: list[str] = typer.Option([], "--super-project-id", help="Repeatable super-project filter."),
     limit: int | None = typer.Option(None, "--limit", min=1, help="Maximum rows to return. Defaults to queries.default_limit."),
@@ -351,21 +361,30 @@ def list_tasks(
         ):
             if raw_values:
                 filter_map[field_name] = [parse_date_predicate(value, field_name).model_dump(mode="json") for value in raw_values]
-        if checked is not None:
-            filter_map["checked"] = checked
-        if task_text:
-            filter_map["task_text"] = task_text
-        if headers:
-            filter_map["headers"] = headers
-        if attributes:
-            filter_map["attributes"] = attributes
-        if project_ids:
-            filter_map["project_ids"] = list(project_ids)
-        if super_project_ids:
-            filter_map["super_project_ids"] = list(super_project_ids)
     except ValueError as exc:
         typer.echo(f"Error: Invalid date predicate: {exc}", err=True)
         raise typer.Exit(code=1)
+
+    if checked is not None:
+        filter_map["checked"] = checked
+    if task_text:
+        filter_map["task_text"] = task_text
+    if headers:
+        filter_map["headers"] = headers
+    if attributes:
+        filter_map["attributes"] = attributes
+    if attribute_filters:
+        try:
+            filter_map["attribute_filters"] = [
+                parse_attribute_filter_predicate(raw) for raw in attribute_filters
+            ]
+        except ValueError as exc:
+            typer.echo(f"Error: Invalid attribute filter: {exc}", err=True)
+            raise typer.Exit(code=1)
+    if project_ids:
+        filter_map["project_ids"] = list(project_ids)
+    if super_project_ids:
+        filter_map["super_project_ids"] = list(super_project_ids)
 
     effective_limit = limit if limit is not None else cfg.queries.default_limit
 

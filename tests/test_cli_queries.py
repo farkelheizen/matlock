@@ -194,6 +194,36 @@ def test_list_tasks_default_limit_and_offset(tmp_path: Path) -> None:
     assert payload["limit"] == 20
 
 
+def test_list_tasks_attribute_filter(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    db_path = tmp_path / "matlock.db"
+    cfg_path = tmp_path / "config.yaml"
+    _write_config(cfg_path, vault, db_path)
+
+    conn = get_connection(db_path)
+    init_db(conn)
+    conn.execute("INSERT INTO file (file_path, sha256, file_ext, created, modified, modified_date, deleted, length, word_count, meta_data, is_generated, needs_parsing) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", ("notes/live.md", "hash-1", ".md", 1, 1, "2026-01-01", 0, 1, 1, "{}", 0, 0))
+    conn.execute("INSERT INTO task (task_id, file_path, parent_task_id, created_date, due_date, est_comp_date, act_comp_date, checked, task_text, overflow, headers, attributes, errors, twin_index) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", ("t-1", "notes/live.md", None, "2026-01-01", None, None, None, 0, "Ops task", 0, "[]", '{"owner": "ops", "estimate_hours": 5}', "[]", 0))
+    conn.execute("INSERT INTO task (task_id, file_path, parent_task_id, created_date, due_date, est_comp_date, act_comp_date, checked, task_text, overflow, headers, attributes, errors, twin_index) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", ("t-2", "notes/live.md", None, "2026-01-01", None, None, None, 0, "Eng task", 0, "[]", '{"owner": "eng", "estimate_hours": 8}', "[]", 0))
+    conn.commit()
+    conn.close()
+
+    result = runner.invoke(app, ["--config", str(cfg_path), "tasks", "query", "--attribute-filter", "owner:eq:ops"])
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert [row["task_id"] for row in payload["results"]] == ["t-1"]
+
+    result = runner.invoke(app, ["--config", str(cfg_path), "tasks", "query", "--attribute-filter", "estimate_hours:gte:6"])
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert [row["task_id"] for row in payload["results"]] == ["t-2"]
+
+    result = runner.invoke(app, ["--config", str(cfg_path), "tasks", "query", "--attribute-filter", "owner:bogus:ops"])
+    assert result.exit_code == 1
+    assert "invalid attribute filter" in result.output.lower()
+
+
 def test_find_projects_search_files_returns_union_and_ranking(tmp_path: Path, monkeypatch) -> None:
     vault = tmp_path / "vault"
     vault.mkdir()
