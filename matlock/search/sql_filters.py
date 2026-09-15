@@ -4,6 +4,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from matlock.search.models import SearchDateRange, SearchFilters, SearchMetadataFilter
+from matlock.sql_filters import build_json_path_filter_clause
 
 
 def build_file_filter_clause(
@@ -95,37 +96,11 @@ def build_metadata_filter_clause(
 ) -> tuple[str, list[Any]]:
     """Compile one metadata filter into a SQLite predicate."""
 
-    path = metadata_filter.path
-    operator = metadata_filter.operator
-    value = metadata_filter.value
-
-    if operator in {"eq", "neq", "gt", "gte", "lt", "lte"}:
-        sql_operator = {
-            "eq": "=",
-            "neq": "!=",
-            "gt": ">",
-            "gte": ">=",
-            "lt": "<",
-            "lte": "<=",
-        }[operator]
-        return (
-            f"json_extract({json_column}, ?) {sql_operator} ?",
-            [path, _coerce_scalar_value(value)],
-        )
-
-    values = _coerce_collection_values(value)
-    return (
-        "EXISTS ("
-        " SELECT 1"
-        " FROM json_each("
-        "   CASE"
-        f"     WHEN json_type({json_column}, ?) = 'array' THEN json_extract({json_column}, ?)"
-        f"     ELSE json_array(json_extract({json_column}, ?))"
-        "   END"
-        " ) AS metadata_value"
-        f" WHERE metadata_value.value IN ({_placeholders(len(values))})"
-        ")",
-        [path, path, path, *values],
+    return build_json_path_filter_clause(
+        path=metadata_filter.path,
+        operator=metadata_filter.operator,
+        value=metadata_filter.value,
+        json_column=json_column,
     )
 
 
@@ -154,20 +129,6 @@ def _build_exists_clause(sql: str, params: Sequence[Any]) -> tuple[str, list[Any
 
 def _placeholders(count: int) -> str:
     return ", ".join("?" for _ in range(count))
-
-
-def _coerce_scalar_value(value: Any) -> Any:
-    if isinstance(value, list):
-        if not value:
-            return None
-        return value[0]
-    return value
-
-
-def _coerce_collection_values(value: Any) -> list[Any]:
-    if isinstance(value, list):
-        return value
-    return [value]
 
 
 __all__ = ["build_file_filter_clause", "build_metadata_filter_clause"]
