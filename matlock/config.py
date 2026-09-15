@@ -226,6 +226,12 @@ class SearchConfig(BaseModel):
     embedding: SearchEmbeddingConfig = Field(default_factory=SearchEmbeddingConfig)
 
 
+class QueriesConfig(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    default_limit: int = Field(default=20, ge=1)
+
+
 # ---------------------------------------------------------------------------
 # Root config model
 # ---------------------------------------------------------------------------
@@ -244,6 +250,7 @@ class MatlockConfig(BaseModel):
     tasks: TasksConfig = Field(default_factory=TasksConfig)
     cache: CacheConfig = Field(default_factory=CacheConfig)
     search: SearchConfig = Field(default_factory=SearchConfig)
+    queries: QueriesConfig = Field(default_factory=QueriesConfig)
     task_attributes: dict[str, TaskAttributeConfig] = Field(default_factory=dict)
     super_projects: list[SuperProjectConfig] = Field(default_factory=list)
     projects: list[ProjectConfig] = Field(default_factory=list)

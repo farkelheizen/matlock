@@ -109,6 +109,23 @@ class DatePredicate(BaseModel):
     value: date
 
 
+class QueryResponseStats(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    total_matches: int = Field(ge=0)
+    returned_matches: int = Field(ge=0)
+    limit: int | None = Field(default=None, ge=1)
+    offset: int = Field(default=0, ge=0)
+
+
+class TaskQueryResponse(QueryResponseStats):
+    results: list[TaskRecord] = Field(default_factory=list)
+
+
+class ProjectQueryResponse(QueryResponseStats):
+    results: list[ProjectRecord] = Field(default_factory=list)
+
+
 class TaskQueryFilters(BaseModel):
     due_date: list[DatePredicate] = Field(default_factory=list)
     est_comp_date: list[DatePredicate] = Field(default_factory=list)
