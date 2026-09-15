@@ -34,6 +34,7 @@ from matlock.db import (
 )
 from matlock.logging_setup import setup_logging
 from matlock.query_models import (
+    ProjectQueryResponse,
     ProjectRecord,
     TaskQueryResponse,
     parse_attribute_filter_predicate,
@@ -220,8 +221,16 @@ def list_projects(
         "--search-mode",
         help="Search mode to use for the automatic file-backed project lookup.",
     ),
+    min_score: float | None = typer.Option(
+        None,
+        "--min-score",
+        help="Minimum score for the automatic file-backed project lookup (text queries only).",
+    ),
+    limit: int | None = typer.Option(None, "--limit", min=1, help="Maximum rows to return. Defaults to queries.default_limit."),
+    offset: int = typer.Option(0, "--offset", min=0, help="Number of matching rows to skip before returning results."),
+    count_only: bool = typer.Option(False, "--count-only", help="Return only pagination stats; omit row results."),
 ) -> None:
-    """Return project rows as JSON. Supports free-text and project-table field filtering."""
+    """Return a paginated JSON envelope of project rows. Supports free-text and project-table field filtering."""
     cfg = _load_and_validate(ctx.obj[_CONFIG_KEY])
 
     field_filters: dict[str, object] = {}
@@ -245,69 +254,99 @@ def list_projects(
         typer.echo(f"Error: Invalid date predicate: {exc}", err=True)
         raise typer.Exit(code=1)
 
+    effective_limit = limit if limit is not None else cfg.queries.default_limit
+
     conn = get_connection(cfg.db_path)
     try:
         init_db(conn)
 
         if text and text.strip():
-            direct_rows = fetch_projects(conn, term=text, filters=field_filters)
+            _, direct_rows = fetch_projects(conn, term=text, filters=field_filters)
             direct_ids = {row.project_id for row in direct_rows}
 
-            if search_files or True:
-                outcome = run_search_request(
-                    cfg,
-                    conn,
-                    {
-                        "query": text,
-                        "search_mode": search_mode,
-                        "output": {
-                            "granularity": "file",
-                            "limit": 100000,
-                            "include_content": False,
-                        },
+            outcome = run_search_request(
+                cfg,
+                conn,
+                {
+                    "query": text,
+                    "search_mode": search_mode,
+                    "tuning": {"min_score": min_score},
+                    "output": {
+                        "granularity": "file",
+                        "limit": 100000,
+                        "include_content": False,
                     },
-                )
-                if outcome.exit_code != 0:
-                    error_message = "search request failed"
-                    if outcome.response.error is not None:
-                        error_message = outcome.response.error.message
-                    typer.echo(f"Error: {error_message}", err=True)
-                    raise typer.Exit(code=outcome.exit_code)
+                },
+            )
+            if outcome.exit_code != 0:
+                error_message = "search request failed"
+                if outcome.response.error is not None:
+                    error_message = outcome.response.error.message
+                typer.echo(f"Error: {error_message}", err=True)
+                raise typer.Exit(code=outcome.exit_code)
 
-                file_scores: dict[str, float] = {}
-                for result in outcome.response.results:
-                    for project_id in _project_ids_for_file(conn, result.file_path):
-                        file_scores[project_id] = max(file_scores.get(project_id, 0.0), float(result.score))
+            file_scores: dict[str, float] = {}
+            for result in outcome.response.results:
+                for project_id in _project_ids_for_file(conn, result.file_path):
+                    file_scores[project_id] = max(file_scores.get(project_id, 0.0), float(result.score))
 
-                ranked_file_ids = [
-                    project_id for project_id, _ in sorted(file_scores.items(), key=lambda item: (-item[1], item[0]))
-                ]
-                direct_only_ids = sorted(direct_ids - set(file_scores))
-                ordered_project_ids = ranked_file_ids + direct_only_ids
-                if ordered_project_ids:
-                    placeholders = ", ".join("?" for _ in ordered_project_ids)
-                    rows = conn.execute(
-                        "SELECT project_id, super_project_id, title, home_file, priority, status, start_date, due_date FROM project WHERE project_id IN ("
-                        + placeholders
-                        + ")",
-                        ordered_project_ids,
-                    ).fetchall()
-                    rows_by_id = {row["project_id"]: row for row in rows}
-                    payload = [
-                        ProjectRecord.model_validate(dict(rows_by_id[project_id])).model_dump(mode="json")
-                        for project_id in ordered_project_ids
-                        if project_id in rows_by_id
-                    ]
-                else:
-                    payload = []
+            ranked_file_ids = [
+                project_id for project_id, _ in sorted(file_scores.items(), key=lambda item: (-item[1], item[0]))
+            ]
+            direct_only_ids = sorted(direct_ids - set(file_scores))
+            ordered_project_ids = ranked_file_ids + direct_only_ids
+            total_matches = len(ordered_project_ids)
+
+            if count_only:
+                page_ids: list[str] = []
+            elif effective_limit is not None:
+                page_ids = ordered_project_ids[offset : offset + effective_limit]
             else:
-                payload = [row.model_dump(mode="json") for row in direct_rows]
-            typer.echo(json.dumps(payload), nl=False)
+                page_ids = ordered_project_ids[offset:]
+
+            if page_ids:
+                placeholders = ", ".join("?" for _ in page_ids)
+                rows = conn.execute(
+                    "SELECT project_id, super_project_id, title, home_file, priority, status, start_date, due_date FROM project WHERE project_id IN ("
+                    + placeholders
+                    + ")",
+                    page_ids,
+                ).fetchall()
+                rows_by_id = {row["project_id"]: row for row in rows}
+                results = [
+                    ProjectRecord.model_validate(dict(rows_by_id[project_id]))
+                    for project_id in page_ids
+                    if project_id in rows_by_id
+                ]
+            else:
+                results = []
+
+            response = ProjectQueryResponse(
+                total_matches=total_matches,
+                returned_matches=len(results),
+                limit=effective_limit,
+                offset=offset,
+                results=results,
+            )
+            typer.echo(response.model_dump_json(), nl=False)
             return
 
-        rows = fetch_projects(conn, filters=field_filters, term=text if text else None)
-        payload = [row.model_dump(mode="json") for row in rows]
-        typer.echo(json.dumps(payload), nl=False)
+        total_matches, rows = fetch_projects(
+            conn,
+            filters=field_filters,
+            term=text if text else None,
+            limit=effective_limit,
+            offset=offset,
+            count_only=count_only,
+        )
+        response = ProjectQueryResponse(
+            total_matches=total_matches,
+            returned_matches=len(rows),
+            limit=effective_limit,
+            offset=offset,
+            results=rows,
+        )
+        typer.echo(response.model_dump_json(), nl=False)
     finally:
         conn.close()
 

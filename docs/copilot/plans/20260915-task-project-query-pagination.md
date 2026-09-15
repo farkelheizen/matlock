@@ -48,7 +48,7 @@ Reshape `tasks query` and `projects query` JSON output into a paginated response
 | TPQ-S2 | Completed | Extract shared JSON-path filter module | Create `matlock/sql_filters.py` from the generic parts of `matlock/search/sql_filters.py::build_metadata_filter_clause`; update `matlock/search/sql_filters.py` to import from it | `tests/test_search_metadata_filters.py` (regression), new `tests/test_sql_filters.py` |
 | TPQ-S3 | Completed | Add limit/offset/count-only to `tasks query` | Extend `fetch_active_tasks` in `matlock/db.py` with a count query + `LIMIT`/`OFFSET`/count-only short-circuit; add `--limit`/`--offset`/`--count-only` to `list_tasks` in `matlock/cli.py`, defaulted from `queries.default_limit`; reshape output to the envelope | `tests/test_db_queries.py`, `tests/test_cli_queries.py` |
 | TPQ-S4 | Completed | Add the `task.attributes` JSON-path filter | Add `--attribute-filter` parsing to `matlock/query_models.py`; use the TPQ-S2 shared helper against `t.attributes` in `matlock/db.py`; wire the flag in `matlock/cli.py` | `tests/test_db_queries.py`, `tests/test_cli_queries.py`, `tests/test_query_models.py` |
-| TPQ-S5 | Not Started | Add limit/offset/count-only/min-score to `projects query` | Extend `fetch_projects` and the in-memory merged-ranking path in `list_projects` (`matlock/cli.py`) with slicing/count support, `--min-score` forwarding to `tuning.min_score`, and envelope output | `tests/test_db_queries.py`, `tests/test_cli_queries.py` |
+| TPQ-S5 | Completed | Add limit/offset/count-only/min-score to `projects query` | Extend `fetch_projects` and the in-memory merged-ranking path in `list_projects` (`matlock/cli.py`) with slicing/count support, `--min-score` forwarding to `tuning.min_score`, and envelope output | `tests/test_db_queries.py`, `tests/test_cli_queries.py` |
 | TPQ-S6 | Not Started | Documentation and release preparation | Update `docs/matlock-cli.md`, `docs/matlock-data-model.md`, `docs/matlock-configuration.md`, `CHANGELOG.md`, `pyproject.toml`, `docs/copilot/copilot-docs-reference.md` | Doc review plus focused, adjacent, and full Poetry suite |
 
 Status values: `Not Started` | `In Progress` | `Completed` | `Blocked`
@@ -224,9 +224,9 @@ Record results:
 - Validation: `poetry run pytest tests/test_db_queries.py tests/test_cli_queries.py tests/test_query_models.py -q` -> passed (`32 passed`); full suite `poetry run pytest -q` -> passed (`913 passed`).
 
 ### TPQ-S5 Notes
-- Changes made: none yet.
+- Changes made: `fetch_projects` now returns `(total_matches, results)`, sharing a `COUNT(*)` query with the same WHERE-clause builder and supporting `limit`/`offset`/`count_only` identically to `fetch_active_tasks`. `list_projects` in `matlock/cli.py` adds `--limit`/`--offset`/`--count-only`/`--min-score`; the no-text path uses SQL-level pagination via `fetch_projects`, while the text-search merged-ranking path forwards `--min-score` to `MatlockSearchRequest.tuning.min_score`, computes `total_matches` from the full ordered/deduplicated in-memory project-ID list, and slices that list in Python for `--limit`/`--offset`/`--count-only` before the final `IN (...)` row fetch. Removed the previous always-true `search_files or True` no-op branch (kept the `--search-files` flag for CLI compatibility; it is now unused since the file-backed lookup always runs, as before).
 - Deviations: none.
-- Validation: not yet run.
+- Validation: `poetry run pytest tests/test_cli_queries.py tests/test_db_queries.py -q` -> passed (`20 passed`); full suite `poetry run pytest -q` -> passed (`916 passed`).
 
 ### TPQ-S6 Notes
 - Changes made: none yet.

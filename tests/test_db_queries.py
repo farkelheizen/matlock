@@ -26,13 +26,16 @@ def test_fetch_projects_returns_ordered_rows_and_literal_like_matches() -> None:
     conn.execute("INSERT INTO project (project_id, super_project_id, title, home_file, priority, status, start_date, due_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", ("proj-a", None, "Alpha", "notes/a.md", "P1", "Active", "2026-01-02", "2026-03-02"))
     conn.commit()
 
-    projects = fetch_projects(conn)
+    total_matches, projects = fetch_projects(conn)
+    assert total_matches == 2
     assert [project.project_id for project in projects] == ["proj-a", "proj-b"]
 
-    filtered = fetch_projects(conn, term="100%")
+    filtered_total, filtered = fetch_projects(conn, term="100%")
+    assert filtered_total == 1
     assert [project.project_id for project in filtered] == ["proj-b"]
 
-    filtered = fetch_projects(conn, term="alpha")
+    filtered_total, filtered = fetch_projects(conn, term="alpha")
+    assert filtered_total == 1
     assert [project.project_id for project in filtered] == ["proj-a"]
 
     conn.close()
@@ -47,6 +50,31 @@ def test_fetch_super_projects_returns_all_rows_sorted() -> None:
 
     rows = fetch_super_projects(conn)
     assert [row.super_project_id for row in rows] == ["sp-a", "sp-b"]
+
+    conn.close()
+
+
+def test_fetch_projects_limit_offset_and_count_only() -> None:
+    conn = get_connection(":memory:")
+    init_db(conn)
+    for pid in ("proj-a", "proj-b", "proj-c"):
+        conn.execute(
+            "INSERT INTO project (project_id, super_project_id, title, home_file, priority, status, start_date, due_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (pid, None, pid, None, None, None, None, None),
+        )
+    conn.commit()
+
+    total_matches, rows = fetch_projects(conn, limit=2, offset=0)
+    assert total_matches == 3
+    assert [row.project_id for row in rows] == ["proj-a", "proj-b"]
+
+    total_matches, rows = fetch_projects(conn, limit=2, offset=2)
+    assert total_matches == 3
+    assert [row.project_id for row in rows] == ["proj-c"]
+
+    total_matches, rows = fetch_projects(conn, count_only=True)
+    assert total_matches == 3
+    assert rows == []
 
     conn.close()
 

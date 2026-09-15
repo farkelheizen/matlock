@@ -769,8 +769,16 @@ def fetch_projects(
     *,
     term: str | None = None,
     filters: dict[str, Any] | None = None,
-) -> list[ProjectRecord]:
-    """Return project rows, optionally filtered by a literal case-insensitive substring and project-table field filters."""
+    limit: int | None = None,
+    offset: int = 0,
+    count_only: bool = False,
+) -> tuple[int, list[ProjectRecord]]:
+    """Return `(total_matches, projects)` for rows matching an optional literal substring and field filters.
+
+    `total_matches` always reflects the full filtered count, independent of
+    `limit`/`offset`. When `count_only` is True, no rows are fetched and an
+    empty project list is returned alongside the count.
+    """
     filters = filters or {}
     clauses: list[str] = []
     params: list[Any] = []
@@ -831,12 +839,29 @@ def fetch_projects(
             clauses.append(f"{field_name} {pred.operator} ?")
             params.append(pred.value.isoformat())
 
-    sql = "SELECT project_id, super_project_id, title, home_file, priority, status, start_date, due_date FROM project"
-    if clauses:
-        sql += " WHERE " + " AND ".join(clauses)
-    sql += " ORDER BY project_id ASC"
-    rows = conn.execute(sql, params).fetchall()
-    return [ProjectRecord.model_validate(dict(row)) for row in rows]
+    where_sql = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+    total_matches = conn.execute(
+        f"SELECT COUNT(*) AS cnt FROM project{where_sql}", params
+    ).fetchone()["cnt"]
+
+    if count_only:
+        return total_matches, []
+
+    sql = (
+        "SELECT project_id, super_project_id, title, home_file, priority, status, start_date, due_date FROM project"
+        + where_sql
+        + " ORDER BY project_id ASC"
+    )
+    row_params = list(params)
+    if limit is not None:
+        sql += " LIMIT ? OFFSET ?"
+        row_params.extend([limit, offset])
+    elif offset:
+        sql += " LIMIT -1 OFFSET ?"
+        row_params.append(offset)
+
+    rows = conn.execute(sql, row_params).fetchall()
+    return total_matches, [ProjectRecord.model_validate(dict(row)) for row in rows]
 
 
 def fetch_super_projects(conn: sqlite3.Connection) -> list[SuperProjectRecord]:

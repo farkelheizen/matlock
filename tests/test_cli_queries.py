@@ -59,7 +59,8 @@ def test_list_projects_returns_all_projects_json(tmp_path: Path) -> None:
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
-    assert [row["project_id"] for row in payload] == ["proj-a", "proj-b"]
+    assert payload["total_matches"] == 2
+    assert [row["project_id"] for row in payload["results"]] == ["proj-a", "proj-b"]
 
 
 def test_list_projects_direct_term_matches_any_project_column(tmp_path: Path) -> None:
@@ -74,7 +75,7 @@ def test_list_projects_direct_term_matches_any_project_column(tmp_path: Path) ->
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
-    assert [row["project_id"] for row in payload] == ["proj-b"]
+    assert [row["project_id"] for row in payload["results"]] == ["proj-b"]
 
 
 def test_list_projects_supports_field_filters_with_and_semantics(tmp_path: Path) -> None:
@@ -89,7 +90,113 @@ def test_list_projects_supports_field_filters_with_and_semantics(tmp_path: Path)
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
-    assert [row["project_id"] for row in payload] == ["proj-a"]
+    assert [row["project_id"] for row in payload["results"]] == ["proj-a"]
+
+
+def test_list_projects_limit_offset_and_count_only(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    db_path = tmp_path / "matlock.db"
+    cfg_path = tmp_path / "config.yaml"
+    _write_config(cfg_path, vault, db_path)
+    _seed_projects(db_path)
+
+    result = runner.invoke(app, ["--config", str(cfg_path), "projects", "query", "--limit", "1"])
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["total_matches"] == 2
+    assert payload["returned_matches"] == 1
+    assert [row["project_id"] for row in payload["results"]] == ["proj-a"]
+
+    result = runner.invoke(app, ["--config", str(cfg_path), "projects", "query", "--limit", "1", "--offset", "1"])
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert [row["project_id"] for row in payload["results"]] == ["proj-b"]
+
+    result = runner.invoke(app, ["--config", str(cfg_path), "projects", "query", "--count-only"])
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["total_matches"] == 2
+    assert payload["returned_matches"] == 0
+    assert payload["results"] == []
+
+
+def test_list_projects_text_search_pagination_and_min_score(tmp_path: Path, monkeypatch) -> None:
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    db_path = tmp_path / "matlock.db"
+    cfg_path = tmp_path / "config.yaml"
+    _write_config(cfg_path, vault, db_path)
+    _seed_projects(db_path)
+
+    conn = get_connection(db_path)
+    init_db(conn)
+    conn.execute("INSERT INTO file (file_path, sha256, file_ext, created, modified, modified_date, deleted, length, word_count, meta_data, is_generated, needs_parsing) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", ("docs/alpha.md", "hash-a", ".md", 1, 1, "2026-01-01", 0, 1, 1, "{}", 0, 0))
+    conn.execute("INSERT INTO file (file_path, sha256, file_ext, created, modified, modified_date, deleted, length, word_count, meta_data, is_generated, needs_parsing) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", ("docs/beta.md", "hash-b", ".md", 1, 1, "2026-01-01", 0, 1, 1, "{}", 0, 0))
+    conn.execute("INSERT INTO file_project (file_path, project_id) VALUES (?, ?)", ("docs/alpha.md", "proj-a"))
+    conn.execute("INSERT INTO file_project (file_path, project_id) VALUES (?, ?)", ("docs/beta.md", "proj-b"))
+    conn.commit()
+    conn.close()
+
+    captured_requests: list[dict] = []
+
+    def fake_run_search_request(config, conn, request_data):
+        captured_requests.append(request_data)
+        response = MatlockSearchResponse(
+            status="success",
+            stats=SearchResponseStats(
+                total_matches=2,
+                returned_matches=2,
+                query_time_ms=1.0,
+                search_mode_executed=request_data["search_mode"],
+            ),
+            results=[
+                SearchResponseResult(
+                    file_path="docs/alpha.md",
+                    absolute_path="file:///tmp/docs/alpha.md",
+                    project_id="proj-a",
+                    score=0.60,
+                    score_breakdown={},
+                    created="2026-01-01T00:00:00Z",
+                    modified="2026-01-01T00:00:00Z",
+                    frontmatter={},
+                    has_secrets=False,
+                    secret_detection_error=None,
+                ),
+                SearchResponseResult(
+                    file_path="docs/beta.md",
+                    absolute_path="file:///tmp/docs/beta.md",
+                    project_id="proj-b",
+                    score=0.95,
+                    score_breakdown={},
+                    created="2026-01-01T00:00:00Z",
+                    modified="2026-01-01T00:00:00Z",
+                    frontmatter={},
+                    has_secrets=False,
+                    secret_detection_error=None,
+                ),
+            ],
+            error=None,
+        )
+        return SearchCliOutcome(response=response, exit_code=0)
+
+    monkeypatch.setattr("matlock.cli.run_search_request", fake_run_search_request)
+
+    result = runner.invoke(app, ["--config", str(cfg_path), "projects", "query", "alpha", "--limit", "1", "--min-score", "0.5"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["total_matches"] == 2
+    assert payload["returned_matches"] == 1
+    assert [row["project_id"] for row in payload["results"]] == ["proj-b"]
+    assert captured_requests[0]["tuning"]["min_score"] == 0.5
+
+    result = runner.invoke(app, ["--config", str(cfg_path), "projects", "query", "alpha", "--count-only"])
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["total_matches"] == 2
+    assert payload["returned_matches"] == 0
+    assert payload["results"] == []
 
 
 def test_list_super_projects_returns_all_rows(tmp_path: Path) -> None:
@@ -288,7 +395,8 @@ def test_find_projects_search_files_returns_union_and_ranking(tmp_path: Path, mo
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
-    assert [row["project_id"] for row in payload] == ["proj-b", "proj-a"]
+    assert payload["total_matches"] == 2
+    assert [row["project_id"] for row in payload["results"]] == ["proj-b", "proj-a"]
 
 
 def test_list_projects_returns_all_projects_when_text_is_missing_even_with_search_mode(tmp_path: Path, monkeypatch) -> None:
@@ -303,7 +411,7 @@ def test_list_projects_returns_all_projects_when_text_is_missing_even_with_searc
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
-    assert [row["project_id"] for row in payload] == ["proj-a", "proj-b"]
+    assert [row["project_id"] for row in payload["results"]] == ["proj-a", "proj-b"]
 
 
 def test_list_projects_search_propagates_search_error(tmp_path: Path, monkeypatch) -> None:
