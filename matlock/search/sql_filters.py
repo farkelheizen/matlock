@@ -33,6 +33,18 @@ def build_file_filter_clause(
         clauses.append(modified_clause)
         params.extend(modified_params)
 
+    for column_name, predicates in (
+        ("created", filters.created_predicates),
+        ("modified", filters.modified_predicates),
+    ):
+        predicate_clause, predicate_params = _build_date_predicates_clause(
+            column=f"{file_alias}.{column_name}",
+            predicates=predicates,
+        )
+        if predicate_clause:
+            clauses.append(predicate_clause)
+            params.extend(predicate_params)
+
     if filters.project_id:
         if filters.project_match_mode != "exact":
             raise ValueError(
@@ -43,9 +55,9 @@ def build_file_filter_clause(
                 "SELECT 1"
                 " FROM file_project fp"
                 f" WHERE fp.file_path = {file_alias}.file_path"
-                f"   AND fp.project_id IN ({_placeholders(len(filters.project_id))})"
+                f"   AND LOWER(fp.project_id) IN ({_placeholders(len(filters.project_id))})"
             ),
-            params=filters.project_id,
+            params=[value.lower() for value in filters.project_id],
         )
         clauses.append(project_clause)
         params.extend(project_params)
@@ -61,19 +73,29 @@ def build_file_filter_clause(
                 " FROM file_project fp"
                 " JOIN project p ON p.project_id = fp.project_id"
                 f" WHERE fp.file_path = {file_alias}.file_path"
-                f"   AND p.super_project_id IN ({_placeholders(len(filters.super_project_id))})"
+                f"   AND LOWER(p.super_project_id) IN ({_placeholders(len(filters.super_project_id))})"
             ),
-            params=filters.super_project_id,
+            params=[value.lower() for value in filters.super_project_id],
         )
         clauses.append(super_project_clause)
         params.extend(super_project_params)
 
     if filters.file_paths:
         file_path_clause = " OR ".join(
-            f"{file_alias}.file_path GLOB ?" for _ in filters.file_paths
+            f"substr({file_alias}.file_path, 1, length(?)) = ?" for _ in filters.file_paths
         )
         clauses.append(f"({file_path_clause})")
-        params.extend(filters.file_paths)
+        for value in filters.file_paths:
+            normalized = value.lstrip("/")
+            params.extend([normalized, normalized])
+
+    if filters.file_exts:
+        clauses.append(
+            "(" + " OR ".join(
+                f"LOWER({file_alias}.file_ext) = LOWER(?)" for _ in filters.file_exts
+            ) + ")"
+        )
+        params.extend(filters.file_exts)
 
     for metadata_filter in filters.metadata:
         metadata_clause, metadata_params = build_metadata_filter_clause(
@@ -120,6 +142,20 @@ def _build_date_range_clause(
     if date_range.max is not None:
         clauses.append(f"datetime({column}, 'unixepoch') <= datetime(?)")
         params.append(date_range.max)
+    return " AND ".join(clauses), params
+
+
+def _build_date_predicates_clause(
+    *,
+    column: str,
+    predicates: Sequence[object],
+) -> tuple[str, list[Any]]:
+    clauses: list[str] = []
+    params: list[Any] = []
+    for predicate in predicates:
+        operator = predicate.operator
+        clauses.append(f"date(datetime({column}, 'unixepoch')) {operator} ?")
+        params.append(predicate.value)
     return " AND ".join(clauses), params
 
 
