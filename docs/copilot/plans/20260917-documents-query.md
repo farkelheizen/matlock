@@ -263,13 +263,13 @@ Each value matches the beginning of the vault-relative path. Strip all leading `
 
 Match the search engine default of active, non-generated files only. Administrative inclusion flags are deferred unless separately requested.
 
-**Q8 — What is the `search query` retirement policy? Resolved: deprecate, then remove at the next major.**
+**Q8 — What is the `search query` retirement policy? Resolved: deprecate, then remove in 0.10.0.**
 
-Add `documents query`, deprecate `search query`, and remove it at the next major release. The `--stdio` transport remains a compatibility concern and must not lose its strict JSON/exit-code behavior during the deprecation period.
+Add `documents query`, deprecate `search query`, and remove it in the next planned release, `0.10.0`. The `--stdio` transport remains a compatibility concern and must not lose its strict JSON/exit-code behavior during the deprecation period.
 
-**Q9 — What is the release target? Resolved: next major release.**
+**Q9 — What is the release target? Resolved: 0.10.0 for retirement.**
 
-This feature and the eventual `search query` removal target the next major release. The exact semantic version remains to be set by release planning.
+The current documents-query feature ships in `0.9.0`; the deprecated `search query` command is planned for removal in `0.10.0`.
 
 **Q10 — Should `documents` be singular or plural elsewhere? Resolved: keep both groups for now.**
 
