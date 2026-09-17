@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ---
 
-## [1.0.0] — 2026-09-17
+## [0.9.0] — 2026-09-17
 
 ### Added
 
@@ -23,7 +23,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Removed
 
-- Nothing in 1.0.0. `matlock search query` remains available during deprecation and is targeted for removal in the next major release.
+- Nothing in 0.9.0. `matlock search query` remains available during deprecation and is targeted for removal in the next major release (1.0.0).
 
 ## [0.8.0] — 2026-09-15
 

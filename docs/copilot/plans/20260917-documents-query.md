@@ -305,7 +305,7 @@ Add plural `documents query` without moving `document read` in this work, avoidi
 - Validation: `poetry run pytest tests/test_cli_search_query.py tests/test_cli_documents_query.py tests/test_search_stdio_contract.py -q` passed (15 tests).
 
 ### DQ-S6 Notes
-- Changes made: Added 1.0.0 release metadata, CLI and README references, search migration guidance, document response contract documentation, architecture routing updates, and the Copilot docs index entry. No examples directory or new configuration keys required updates.
+- Changes made: Added 0.9.0 release metadata, CLI and README references, search migration guidance, document response contract documentation, architecture routing updates, and the Copilot docs index entry. No examples directory or new configuration keys required updates.
 - Deviations: Historical plan text retains its original 0.8.x release note; no current behavior documentation uses that stale baseline.
 - Validation: Focused, compatibility, adjacent, full-suite, documentation-scan, and diff checks all passed as recorded above; final empty-value validation rerun passed (16 focused, 928 full-suite tests).
 
