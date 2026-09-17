@@ -3,8 +3,8 @@
 Use this file to identify the active implementation plan before starting work.
 
 - Active plan: `docs/copilot/plans/20260917-documents-query.md`
-- Current step: DQ-S6 (In Progress)
-- Next plan: Document and release the new surface
+- Current step: DQ-S6 (Completed)
+- Next plan: None
 - Last updated: 2026-09-17
 - Owner: CopilotWhat 
 

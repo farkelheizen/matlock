@@ -158,6 +158,7 @@ Matlock Search is an optional local-first subsystem layered on top of the core p
 
 - `matlock search index` chunks active vault files, injects optional frontmatter context, and stores FTS plus embedding-backed search records in SQLite.
 - `matlock search query` supports human CLI output and strict `--stdio` JSON transport for editor and agent integrations.
+- `matlock documents query` provides paginated JSON document and chunk retrieval with named metadata filters.
 - `matlock pipeline run --index-search` runs indexing after the core pipeline.
 - `matlock serve --index-search --index-search-continuous` can do one startup indexing pass and continue polling for stale search work in the background.
 
@@ -235,6 +236,19 @@ Read one tracked document from the vault. Matlock rejects paths outside `base_di
 poetry run matlock document read Notes/today.md
 poetry run matlock document read /absolute/path/inside/your/vault/Notes/today.md
 ```
+
+### `matlock documents query`
+
+Return active, non-generated documents as a paginated JSON envelope. File results are the default; use chunk granularity for indexed chunk hits. Empty text uses metadata-only browsing, and content remains secret-safe.
+
+```bash
+poetry run matlock documents query
+poetry run matlock documents query --text "database" --search-mode fts_only
+poetry run matlock documents query --file-path /Notes/ --file-ext .md --attributes "status:eq:active"
+poetry run matlock documents query --modified ">=2026-01-01" --modified "<2026-02-01" --count-only
+```
+
+Named options are repeatable: values within one option are ORed and categories are ANDed. Use `--granularity chunk` and `--surrounding-chunks` for chunk details. `matlock search query` is deprecated for human use but its strict `--stdio` contract remains available during migration.
 
 ### `matlock projects discover`
 
@@ -402,7 +416,7 @@ config.yaml             ← your local config (not committed)
 ## Documentation
 
 - [docs/matlock-search.md](docs/matlock-search.md) — search indexing, query modes, STDIO transport, and server/search orchestration.
-- [docs/matlock-cli.md](docs/matlock-cli.md) — full CLI reference including `search` commands.
+- [docs/matlock-cli.md](docs/matlock-cli.md) — full CLI reference including document, query, and search commands.
 - [docs/matlock-configuration.md](docs/matlock-configuration.md) — `config.yaml` schema, including the `search` block.
 - [docs/matlock-data-model.md](docs/matlock-data-model.md) — SQLite search tables plus request/response model contracts.
 - [docs/matlock-pipeline-specification.md](docs/matlock-pipeline-specification.md) — core pipeline stages and optional search indexing hooks.

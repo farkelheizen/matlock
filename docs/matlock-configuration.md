@@ -1,6 +1,6 @@
 # Matlock Configuration
 
-**Version:** 0.8.x
+**Version:** 1.0.x
 
 All Matlock configuration lives in a single `config.yaml` file — one per "second brain" vault. It combines application-level settings (paths, DB connection, project structure) with task-attribute parsing rules.
 

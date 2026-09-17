@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ---
 
+## [1.0.0] — 2026-09-17
+
+### Added
+
+- `matlock documents query` provides paginated JSON document and chunk retrieval with metadata-only, FTS, vector, and hybrid modes.
+- Document queries support repeatable named path, extension, project, super-project, date, and frontmatter attribute filters with secret-safe content.
+
+### Changed
+
+- Document query results use a document-oriented envelope with file metadata, project linkage, scores, and optional file or chunk details.
+
+### Fixed
+
+- Repeated document date predicates, path-prefix filters, extension filters, and case-insensitive project filters are validated and compiled as parameterized SQL.
+
+### Removed
+
+- Nothing in 1.0.0. `matlock search query` remains available during deprecation and is targeted for removal in the next major release.
+
 ## [0.8.0] — 2026-09-15
 
 ### Added

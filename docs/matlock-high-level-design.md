@@ -41,6 +41,7 @@ Matlock Search is additive rather than replacing the core pipeline:
 
 - `matlock search index` reads active vault files, creates chunk/FTS/vector search state, and tracks freshness on `file` rows.
 - `matlock search query` is read-only against the local SQLite search index and supports both human CLI output and strict machine JSON transport.
+- `matlock documents query` adapts the same search engine into a paginated document-oriented JSON surface with named metadata filters.
 - `matlock pipeline run --index-search` appends indexing after the five core stages.
 
 ## 4. Directory Structure Boundary (The Guardrail)
@@ -94,6 +95,7 @@ The optional search subsystem adds local retrieval without changing the existing
 |:--------|:--------|
 | `matlock search index` | Build or refresh local chunk, FTS, and embedding-backed search state |
 | `matlock search query` | Query the local index in human mode or strict `--stdio` JSON mode |
+| `matlock documents query` | Query active documents with file/chunk granularity and paginated JSON |
 
 Secret-safe behavior applies to search results and direct document reads:
 

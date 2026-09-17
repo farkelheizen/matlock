@@ -1,6 +1,6 @@
 # Matlock Search
 
-**Version:** 0.7.x
+**Version:** 1.0.x
 
 Matlock Search is an optional local-first retrieval subsystem layered on top of the core pipeline. It uses the same SQLite database as the rest of Matlock and adds chunk, FTS, and embedding-backed search state without changing the default behavior of non-search commands.
 
@@ -14,6 +14,7 @@ Search adds two user-facing commands:
 |:--------|:--------|
 | `matlock search index` | Build or refresh local search state for active vault files |
 | `matlock search query` | Query the local index in human mode or strict machine mode |
+| `matlock documents query` | Query active documents with paginated JSON output and named metadata filters |
 
 Related orchestration hooks:
 
@@ -91,6 +92,12 @@ Output controls:
 - In FTS-backed modes, query tokens are treated as literal search terms. Characters such as `:`, `-`, `*`, quotes, and parentheses do not enable SQLite FTS operators or column filters.
 
 Project filters currently execute as exact matching even though the request contract accepts additional `project_match_mode` values for forward compatibility.
+
+## Document Query
+
+`matlock documents query` is the document-oriented replacement for new CLI integrations. It reuses this search engine but returns the shared pagination envelope used by task and project queries. It defaults to active, non-generated files at file granularity and supports repeatable `--file-path`, `--file-ext`, `--project-id`, `--super-project-id`, `--created`, `--modified`, and `--attributes PATH:OPERATOR:VALUE` filters. Path values are normalized vault-relative prefixes; project IDs are case-insensitive exact matches; date predicates repeat with AND semantics. Empty text selects `metadata_only` regardless of the requested mode.
+
+The legacy `search query` command is deprecated for human use and targeted for removal in the next major release. Its strict `--stdio` JSON transport remains unchanged during the migration period.
 
 ---
 

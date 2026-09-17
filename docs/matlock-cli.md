@@ -1,6 +1,6 @@
 # Matlock CLI Reference
 
-**Version:** 0.8.x
+**Version:** 1.0.x
 
 Matlock is invoked via the `matlock` command (registered as a Poetry script entrypoint). All commands accept `--config PATH` to specify a non-default `config.yaml` location.
 
@@ -116,6 +116,49 @@ Behavior:
 poetry run matlock document read Notes/today.md
 poetry run matlock document read /absolute/path/inside/your/vault/Notes/today.md
 ```
+
+---
+
+### `matlock documents query`
+
+Return a JSON-only paginated envelope of active, non-generated documents. The default `file` granularity returns one row per file; use `--granularity chunk` for indexed chunk hits and optional surrounding chunks. Missing or blank `--text` always falls back to metadata-only browsing, even when another search mode is requested.
+
+```
+matlock documents query [OPTIONS]
+```
+
+| Option | Default | Description |
+|:-------|:--------|:------------|
+| `--text TEXT` | None | Optional literal search text |
+| `--search-mode MODE` | `hybrid` | `hybrid`, `fts_only`, `vector_only`, or `metadata_only`; no text executes metadata-only |
+| `--min-score FLOAT` | None | Minimum indexed match score |
+| `--project-id VALUE` | repeated | Case-insensitive exact project ID; repeated values OR |
+| `--super-project-id VALUE` | repeated | Case-insensitive exact super-project ID; repeated values OR |
+| `--file-path VALUE` | repeated | Prefix of normalized vault-relative path; leading `/` is ignored |
+| `--file-ext VALUE` | repeated | File extension; repeated values OR |
+| `--attributes PATH:OPERATOR:VALUE` | repeated | Frontmatter JSON-path filter; supported operators are `eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `in`, `contains` |
+| `--created VALUE` | repeated | `YYYY-MM-DD` or `=`, `>`, `>=`, `<`, `<=` date predicate; repeated values AND |
+| `--modified VALUE` | repeated | Same date predicate grammar as `--created`; repeated values AND |
+| `--limit INT` | `queries.default_limit` (`20`) | Maximum rows |
+| `--offset INT` | `0` | Matching rows to skip |
+| `--count-only` | `False` | Return pagination stats with `results: []` |
+| `--include-content / --no-include-content` | `True` | Include matched file/chunk content after secret-safe redaction |
+| `--granularity {file,chunk}` | `file` | Select file or chunk results |
+| `--surrounding-chunks INT` | `0` | Number of adjacent chunks for chunk results (0-3) |
+| `--config PATH` | `./config.yaml` | Config file location |
+
+Filters in one option are OR-composed; separate filter categories are AND-composed. `--attributes` uses the same typed value coercion and JSON-path grammar as task attribute filters. The response envelope is `{"total_matches": N, "returned_matches": N, "limit": N|null, "offset": N, "results": [...]}`. File results include file metadata and `file_details`; chunk results include `chunk_details`, never both detail blocks.
+
+**Examples:**
+```bash
+poetry run matlock documents query
+poetry run matlock documents query --text "database" --search-mode fts_only
+poetry run matlock documents query --file-path /Notes/ --file-ext .md --attributes "status:eq:active"
+poetry run matlock documents query --modified ">=2026-01-01" --modified "<2026-02-01" --count-only
+poetry run matlock documents query --granularity chunk --surrounding-chunks 1 --no-include-content
+```
+
+`matlock search query` remains available during the 1.0.x migration window and is deprecated in human mode. Its `--stdio` transport remains unchanged and emits only the legacy `matlock.search.response.v1` JSON contract; migrate new integrations to `documents query` when they do not require strict stdio transport.
 
 ---
 

@@ -598,8 +598,14 @@ def documents_query(
             "project_match_mode": "exact",
             "file_paths": [value.lstrip("/") for value in file_path],
             "file_exts": file_ext,
-            "created_predicates": [predicate.model_dump(mode="json") for predicate in created_predicates],
-            "modified_predicates": [predicate.model_dump(mode="json") for predicate in modified_predicates],
+            "created_predicates": [
+                {"operator": predicate.operator, "value": predicate.value.isoformat()}
+                for predicate in created_predicates
+            ],
+            "modified_predicates": [
+                {"operator": predicate.operator, "value": predicate.value.isoformat()}
+                for predicate in modified_predicates
+            ],
             "metadata": metadata_filters,
         },
         "output": {
