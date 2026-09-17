@@ -34,6 +34,8 @@ from matlock.db import (
 )
 from matlock.logging_setup import setup_logging
 from matlock.query_models import (
+    DocumentQueryResponse,
+    DocumentRecord,
     ProjectQueryResponse,
     ProjectRecord,
     TaskQueryResponse,
@@ -66,6 +68,7 @@ app = typer.Typer(
     add_completion=False,
 )
 document_app = typer.Typer(help="Document commands.")
+documents_app = typer.Typer(help="Document query commands.")
 metrics_app = typer.Typer(help="Metrics commands.")
 pipeline_app = typer.Typer(help="Pipeline commands.")
 projects_app = typer.Typer(help="Project commands.")
@@ -75,6 +78,7 @@ super_projects_app = typer.Typer(help="Super-project commands.")
 tasks_app = typer.Typer(help="Task commands.")
 search_app = typer.Typer(help="Search indexing and query commands.")
 app.add_typer(document_app, name="document")
+app.add_typer(documents_app, name="documents")
 app.add_typer(metrics_app, name="metrics")
 app.add_typer(pipeline_app, name="pipeline")
 app.add_typer(projects_app, name="projects")
@@ -506,6 +510,130 @@ def doc_read(
         conn.close()
 
     typer.echo(content, nl=False)
+
+
+def _document_record_from_search_result(conn, cfg, result) -> DocumentRecord:
+    """Enrich one search result with file-table metadata for document queries."""
+    row = conn.execute(
+        "SELECT file_ext, created, modified, modified_date, length, word_count"
+        " FROM file WHERE file_path = ?",
+        (result.file_path,),
+    ).fetchone()
+    project_ids = _project_ids_for_file(conn, result.file_path)
+    return DocumentRecord(
+        file_path=result.file_path,
+        absolute_path=result.absolute_path,
+        file_ext=row["file_ext"] if row else None,
+        created=result.created,
+        modified=result.modified,
+        modified_date=row["modified_date"] if row else None,
+        length=row["length"] if row else None,
+        word_count=row["word_count"] if row else None,
+        project_ids=project_ids,
+        project_id=result.project_id,
+        super_project_id=result.super_project_id,
+        score=result.score,
+        score_breakdown=result.score_breakdown.model_dump(mode="json"),
+        frontmatter=result.frontmatter,
+        has_secrets=result.has_secrets,
+        secret_detection_error=result.secret_detection_error,
+        chunk_details=(
+            result.chunk_details.model_dump(mode="json")
+            if result.chunk_details is not None
+            else None
+        ),
+        file_details=(
+            result.file_details.model_dump(mode="json")
+            if result.file_details is not None
+            else None
+        ),
+    )
+
+
+@documents_app.command(name="query")
+def documents_query(
+    ctx: typer.Context,
+    text: str | None = typer.Option(None, "--text", help="Optional search text."),
+    search_mode: str = typer.Option("hybrid", "--search-mode", help="Search mode."),
+    min_score: float | None = typer.Option(None, "--min-score", help="Minimum score."),
+    project_id: list[str] = typer.Option([], "--project-id", help="Repeatable case-insensitive project ID."),
+    super_project_id: list[str] = typer.Option([], "--super-project-id", help="Repeatable case-insensitive super-project ID."),
+    file_path: list[str] = typer.Option([], "--file-path", help="Repeatable vault-relative path prefix."),
+    file_ext: list[str] = typer.Option([], "--file-ext", help="Repeatable file extension."),
+    attributes: list[str] = typer.Option([], "--attributes", help="Repeatable PATH:OPERATOR:VALUE frontmatter filter."),
+    created: list[str] = typer.Option([], "--created", help="Repeatable date predicate for creation date."),
+    modified: list[str] = typer.Option([], "--modified", help="Repeatable date predicate for modification date."),
+    limit: int | None = typer.Option(None, "--limit", min=1, help="Maximum results."),
+    offset: int = typer.Option(0, "--offset", min=0, help="Results to skip."),
+    count_only: bool = typer.Option(False, "--count-only", help="Return only pagination stats."),
+    include_content: bool = typer.Option(True, "--include-content/--no-include-content", help="Include redacted-safe content."),
+    granularity: str = typer.Option("file", "--granularity", help="Result granularity: file or chunk."),
+    surrounding_chunks: int = typer.Option(0, "--surrounding-chunks", min=0, max=3, help="Adjacent chunks for chunk results."),
+) -> None:
+    """Return a paginated JSON document query envelope."""
+    if granularity not in {"file", "chunk"}:
+        typer.echo("Error: granularity must be 'file' or 'chunk'", err=True)
+        raise typer.Exit(code=1)
+
+    cfg = _load_query_config(ctx.obj[_CONFIG_KEY], stdio=False)
+    try:
+        created_predicates = [parse_date_predicate(value, "created") for value in created]
+        modified_predicates = [parse_date_predicate(value, "modified") for value in modified]
+        metadata_filters = [
+            parse_attribute_filter_predicate(value).model_dump(mode="json")
+            for value in attributes
+        ]
+    except ValueError as exc:
+        typer.echo(f"Error: invalid document filter: {exc}", err=True)
+        raise typer.Exit(code=1)
+
+    effective_limit = limit if limit is not None else cfg.queries.default_limit
+    request_payload = {
+        "query": text,
+        "search_mode": search_mode,
+        "tuning": {"min_score": min_score},
+        "filters": {
+            "project_id": project_id,
+            "super_project_id": super_project_id,
+            "project_match_mode": "exact",
+            "file_paths": [value.lstrip("/") for value in file_path],
+            "file_exts": file_ext,
+            "created_predicates": [predicate.model_dump(mode="json") for predicate in created_predicates],
+            "modified_predicates": [predicate.model_dump(mode="json") for predicate in modified_predicates],
+            "metadata": metadata_filters,
+        },
+        "output": {
+            "granularity": granularity,
+            "surrounding_chunks": surrounding_chunks,
+            "limit": effective_limit,
+            "offset": offset,
+            "include_content": include_content,
+        },
+    }
+
+    conn = get_connection(cfg.db_path)
+    try:
+        init_db(conn)
+        outcome = run_search_request(cfg, conn, request_payload)
+        if outcome.exit_code != 0:
+            message = outcome.response.error.message if outcome.response.error else "document query failed"
+            typer.echo(f"Error: {message}", err=True)
+            raise typer.Exit(code=outcome.exit_code)
+        results = [] if count_only else [
+            _document_record_from_search_result(conn, cfg, result)
+            for result in outcome.response.results
+        ]
+    finally:
+        conn.close()
+
+    response = DocumentQueryResponse(
+        total_matches=outcome.response.stats.total_matches,
+        returned_matches=len(results),
+        limit=effective_limit,
+        offset=offset,
+        results=results,
+    )
+    typer.echo(response.model_dump_json(), nl=False)
 
 
 @secrets_app.command(name="backfill")

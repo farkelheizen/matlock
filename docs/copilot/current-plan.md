@@ -3,8 +3,8 @@
 Use this file to identify the active implementation plan before starting work.
 
 - Active plan: `docs/copilot/plans/20260917-documents-query.md`
-- Current step: DQ-S4 (In Progress)
-- Next plan: Expose `matlock documents query`
+- Current step: DQ-S5 (In Progress)
+- Next plan: Add migration and compatibility behavior
 - Last updated: 2026-09-17
 - Owner: CopilotWhat 
 

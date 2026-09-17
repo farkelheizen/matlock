@@ -45,8 +45,8 @@ Add a document-oriented `matlock documents query` command that provides paginate
 | DQ-S1 | Completed | Resolve the public document-query contract | Finalize command naming, response shape, compatibility policy, named file filters, frontmatter attribute grammar, and defaults; update this plan's questions section to `Design Decisions (Resolved)` | Existing contract/model tests for accepted and rejected date and attribute shapes |
 | DQ-S2 | Completed | Define document and chunk result models | Add document-oriented result/envelope models while preserving or adapting existing search fields; define file metadata, project linkage, score, chunk details, and optional content | `tests/test_query_models.py`, `tests/test_documents_query_models.py`, `tests/test_search_models.py` |
 | DQ-S3 | Completed | Implement named document filters | Add named file-column options and a task-style `--attributes PATH:OPERATOR:VALUE` parser/compiler for JSON frontmatter; support repeated predicates, typed values, dates, path-prefix matching, and clear validation errors | `tests/test_search_metadata_filters.py`, `tests/test_sql_filters.py`, `tests/test_search_models.py` |
-| DQ-S4 | In Progress | Expose `matlock documents query` | Register the command, wire core arguments, chunk-level controls, filters, pagination, count-only behavior, search modes, and secret-safe output through the existing engine | New `tests/test_cli_documents_query.py`; focused engine integration tests |
-| DQ-S5 | Not Started | Add migration and compatibility behavior | Implement the resolved alias/deprecation/forwarding strategy for `search query`, including `--stdio` treatment and exit-code behavior | `tests/test_cli_search_query.py`, document-query compatibility tests |
+| DQ-S4 | Completed | Expose `matlock documents query` | Register the command, wire core arguments, chunk-level controls, filters, pagination, count-only behavior, search modes, and secret-safe output through the existing engine | `tests/test_cli_documents_query.py`, `tests/test_search_query_engine.py` |
+| DQ-S5 | In Progress | Add migration and compatibility behavior | Implement the resolved alias/deprecation/forwarding strategy for `search query`, including `--stdio` treatment and exit-code behavior | `tests/test_cli_search_query.py`, `tests/test_cli_documents_query.py`, `tests/test_search_stdio_contract.py` |
 | DQ-S6 | Not Started | Document and release the new surface | Update CLI/search/data-model/configuration docs, README or examples as applicable, changelog, version metadata, docs routing, and high-level design references | Documentation scan plus focused, adjacent, and full Poetry test suite |
 
 Status values: `Not Started` | `In Progress` | `Completed` | `Blocked`
@@ -277,10 +277,12 @@ Add plural `documents query` without moving `document read` in this work, avoidi
 ## Step Notes Log (update as work progresses)
 
 ### DQ-S1 Notes
-- Changes made: Recorded the resolved public contract, including the plural `documents query` command, named filters, metadata-only fallback, default file granularity, and deprecated `search query` policy.
+- Changes made: Added the plural `documents query` command, named filter wiring, metadata-only fallback, file/chunk output adaptation, pagination/count-only JSON, and file metadata enrichment.
+- Deviations: None.
+- Validation: `poetry run pytest tests/test_cli_documents_query.py tests/test_search_query_engine.py -q` passed (15 tests).
 - Deviations: None.
 - Validation: `poetry run pytest tests/test_query_models.py -q` passed.
-
+- Changes made: In progress.
 ### DQ-S2 Notes
 - Changes made: Added `DocumentRecord`, `DocumentChunkDetails`, `DocumentFileDetails`, and `DocumentQueryResponse` with mutually exclusive detail validation.
 - Deviations: None.
