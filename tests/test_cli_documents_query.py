@@ -95,3 +95,16 @@ def test_documents_query_rejects_invalid_filters(tmp_path: Path) -> None:
 
     assert result.exit_code == 1
     assert "invalid document filter" in result.stderr
+
+
+def test_documents_query_rejects_empty_named_filter_values(tmp_path: Path) -> None:
+    cfg_path, _, db_path = _make_cfg(tmp_path)
+    db_path.touch()
+
+    result = runner.invoke(
+        app,
+        ["--config", str(cfg_path), "documents", "query", "--file-path", ""],
+    )
+
+    assert result.exit_code == 1
+    assert "values cannot be empty" in result.stderr

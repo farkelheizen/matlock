@@ -575,6 +575,16 @@ def documents_query(
         typer.echo("Error: granularity must be 'file' or 'chunk'", err=True)
         raise typer.Exit(code=1)
 
+    for option_name, values in (
+        ("--file-path", file_path),
+        ("--file-ext", file_ext),
+        ("--project-id", project_id),
+        ("--super-project-id", super_project_id),
+    ):
+        if any(not value.strip() for value in values):
+            typer.echo(f"Error: {option_name} values cannot be empty", err=True)
+            raise typer.Exit(code=1)
+
     cfg = _load_query_config(ctx.obj[_CONFIG_KEY], stdio=False)
     try:
         created_predicates = [parse_date_predicate(value, "created") for value in created]

@@ -228,7 +228,7 @@ Record results:
 - Focused document command: passed (`poetry run pytest tests/test_cli_documents_query.py tests/test_search_query_engine.py -q`; 15 tests).
 - Compatibility: passed (`poetry run pytest tests/test_cli_search_query.py tests/test_cli_queries.py tests/test_search_stdio_contract.py -q`; 25 tests).
 - Adjacent regressions: passed (`poetry run pytest tests/test_db_queries.py tests/test_search_chunking.py tests/test_search_embedding_provider.py tests/test_server_search_indexing.py -q`; 18 tests).
-- Full suite: passed (`poetry run pytest`; 927 tests).
+- Full suite: passed (`poetry run pytest`; 928 tests).
 - Documentation scan and `git diff --check`: passed. One historical 0.8.x reference remains in an older plan note.
 
 ---
@@ -307,7 +307,7 @@ Add plural `documents query` without moving `document read` in this work, avoidi
 ### DQ-S6 Notes
 - Changes made: Added 1.0.0 release metadata, CLI and README references, search migration guidance, document response contract documentation, architecture routing updates, and the Copilot docs index entry. No examples directory or new configuration keys required updates.
 - Deviations: Historical plan text retains its original 0.8.x release note; no current behavior documentation uses that stale baseline.
-- Validation: Focused, compatibility, adjacent, full-suite, documentation-scan, and diff checks all passed as recorded above.
+- Validation: Focused, compatibility, adjacent, full-suite, documentation-scan, and diff checks all passed as recorded above; final empty-value validation rerun passed (16 focused, 928 full-suite tests).
 
 ---
 
