@@ -109,6 +109,7 @@ class TestSearchQueryHumanMode:
         )
 
         assert result.exit_code == 0
+        assert "deprecated" in result.stderr
         assert "Search mode: fts_only" in result.stdout
         assert "Notes/alpha.md" in result.stdout
         assert "Database optimization notes" in result.stdout

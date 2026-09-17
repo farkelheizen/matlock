@@ -914,6 +914,12 @@ def search_query(
     """Run a local search query in human or strict stdio mode."""
     cfg = _load_query_config(ctx.obj[_CONFIG_KEY], stdio=stdio)
 
+    if not stdio:
+        typer.echo(
+            "Warning: search query is deprecated; use documents query instead.",
+            err=True,
+        )
+
     if stdio and query_text is not None:
         _raise_search_error(
             stdio=True,
