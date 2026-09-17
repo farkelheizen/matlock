@@ -43,7 +43,8 @@ Add a document-oriented `matlock documents query` command that provides paginate
 | Step ID | Status | Goal | Planned Changes | Test Coverage |
 |---|---|---|---|---|
 | DQ-S1 | Completed | Resolve the public document-query contract | Finalize command naming, response shape, compatibility policy, named file filters, frontmatter attribute grammar, and defaults; update this plan's questions section to `Design Decisions (Resolved)` | Existing contract/model tests for accepted and rejected date and attribute shapes |
-| DQ-S2 | Not Started | Define document and chunk result models | Add document-oriented result/envelope models while preserving or adapting existing search fields; define file metadata, project linkage, score, chunk details, and optional content | `tests/test_query_models.py`, new document-query model tests |
+| DQ-S2 | Completed | Define document and chunk result models | Add document-oriented result/envelope models while preserving or adapting existing search fields; define file metadata, project linkage, score, chunk details, and optional content | `tests/test_query_models.py`, `tests/test_documents_query_models.py`, `tests/test_search_models.py` |
+| DQ-S3 | In Progress | Implement named document filters | Add named file-column options and a task-style `--attributes PATH:OPERATOR:VALUE` parser/compiler for JSON frontmatter; support repeated predicates, typed values, dates, path-prefix matching, and clear validation errors | New document-filter tests; existing `tests/test_sql_filters.py` and `tests/test_search_metadata_filters.py` regression coverage |
 | DQ-S3 | Not Started | Implement named document filters | Add named file-column options and a task-style `--attributes PATH:OPERATOR:VALUE` parser/compiler for JSON frontmatter; support repeated predicates, typed values, dates, path-prefix matching, and clear validation errors | New document-filter tests; existing `tests/test_sql_filters.py` and `tests/test_search_metadata_filters.py` regression coverage |
 | DQ-S4 | Not Started | Expose `matlock documents query` | Register the command, wire core arguments, chunk-level controls, filters, pagination, count-only behavior, search modes, and secret-safe output through the existing engine | New `tests/test_cli_documents_query.py`; focused engine integration tests |
 | DQ-S5 | Not Started | Add migration and compatibility behavior | Implement the resolved alias/deprecation/forwarding strategy for `search query`, including `--stdio` treatment and exit-code behavior | `tests/test_cli_search_query.py`, document-query compatibility tests |
@@ -282,12 +283,12 @@ Add plural `documents query` without moving `document read` in this work, avoidi
 - Validation: `poetry run pytest tests/test_query_models.py -q` passed.
 
 ### DQ-S2 Notes
-- Changes made: Not started.
+- Changes made: Added `DocumentRecord`, `DocumentChunkDetails`, `DocumentFileDetails`, and `DocumentQueryResponse` with mutually exclusive detail validation.
 - Deviations: None.
-- Validation: Not run.
+- Validation: `poetry run pytest tests/test_documents_query_models.py tests/test_query_models.py tests/test_search_models.py -q` passed (30 tests).
 
 ### DQ-S3 Notes
-- Changes made: Not started.
+- Changes made: In progress.
 - Deviations: None.
 - Validation: Not run.
 

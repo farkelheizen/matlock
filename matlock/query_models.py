@@ -5,7 +5,7 @@ import re
 from datetime import date
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class ProjectRecord(BaseModel):
@@ -124,6 +124,57 @@ class TaskQueryResponse(QueryResponseStats):
 
 class ProjectQueryResponse(QueryResponseStats):
     results: list[ProjectRecord] = Field(default_factory=list)
+
+
+class DocumentChunkDetails(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    chunk_id: str
+    chunk_index: int = Field(ge=0)
+    total_chunks: int = Field(ge=1)
+    content: str | None = None
+    before: list[str] = Field(default_factory=list)
+    after: list[str] = Field(default_factory=list)
+
+
+class DocumentFileDetails(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    total_matching_chunks: int = Field(ge=1)
+    content: str | None = None
+
+
+class DocumentRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    file_path: str
+    absolute_path: str
+    file_ext: str | None = None
+    created: str | None = None
+    modified: str | None = None
+    modified_date: str | None = None
+    length: int | None = Field(default=None, ge=0)
+    word_count: int | None = Field(default=None, ge=0)
+    project_ids: list[str] = Field(default_factory=list)
+    project_id: str | None = None
+    super_project_id: str | None = None
+    score: float = 0.0
+    score_breakdown: dict[str, Any] = Field(default_factory=dict)
+    frontmatter: dict[str, Any] = Field(default_factory=dict)
+    has_secrets: bool | None = None
+    secret_detection_error: str | None = None
+    chunk_details: DocumentChunkDetails | None = None
+    file_details: DocumentFileDetails | None = None
+
+    @model_validator(mode="after")
+    def _check_detail_shapes(self) -> "DocumentRecord":
+        if self.chunk_details is not None and self.file_details is not None:
+            raise ValueError("document cannot include both chunk_details and file_details")
+        return self
+
+
+class DocumentQueryResponse(QueryResponseStats):
+    results: list[DocumentRecord] = Field(default_factory=list)
 
 
 class TaskQueryFilters(BaseModel):

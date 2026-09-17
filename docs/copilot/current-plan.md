@@ -3,8 +3,8 @@
 Use this file to identify the active implementation plan before starting work.
 
 - Active plan: `docs/copilot/plans/20260917-documents-query.md`
-- Current step: DQ-S2 (In Progress)
-- Next plan: Define the document and chunk result contracts
+- Current step: DQ-S3 (In Progress)
+- Next plan: Implement named document filters
 - Last updated: 2026-09-17
 - Owner: CopilotWhat 
 
