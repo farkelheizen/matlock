@@ -142,12 +142,11 @@ matlock documents query [OPTIONS]
 | `--limit INT` | `queries.default_limit` (`20`) | Maximum rows |
 | `--offset INT` | `0` | Matching rows to skip |
 | `--count-only` | `False` | Return pagination stats with `results: []` |
-| `--include-content / --no-include-content` | `True` | Include matched file/chunk content after secret-safe redaction |
 | `--granularity {file,chunk}` | `file` | Select file or chunk results |
 | `--surrounding-chunks INT` | `0` | Number of adjacent chunks for chunk results (0-3) |
 | `--config PATH` | `./config.yaml` | Config file location |
 
-Filters in one option are OR-composed; separate filter categories are AND-composed. `--attributes` uses the same typed value coercion and JSON-path grammar as task attribute filters. The response envelope is `{"total_matches": N, "returned_matches": N, "limit": N|null, "offset": N, "results": [...]}`. File results include file metadata and `file_details`; chunk results include `chunk_details`, never both detail blocks.
+Filters in one option are OR-composed; separate filter categories are AND-composed. `--attributes` uses the same typed value coercion and JSON-path grammar as task attribute filters. The response envelope is `{"total_matches": N, "returned_matches": N, "limit": N|null, "offset": N, "results": [...]}`. File results include file metadata and `file_details` with `content: null`; chunk results include `chunk_details` with matched and surrounding content, never both detail blocks. Content inclusion is determined solely by `--granularity` and remains secret-safe.
 
 **Examples:**
 ```bash
@@ -155,7 +154,7 @@ poetry run matlock documents query
 poetry run matlock documents query --text "database" --search-mode fts_only
 poetry run matlock documents query --file-path /Notes/ --file-ext .md --attributes "status:eq:active"
 poetry run matlock documents query --modified ">=2026-01-01" --modified "<2026-02-01" --count-only
-poetry run matlock documents query --granularity chunk --surrounding-chunks 1 --no-include-content
+poetry run matlock documents query --granularity chunk --surrounding-chunks 1
 ```
 
 `matlock search query` remains available during the 1.0.x migration window and is deprecated in human mode. Its `--stdio` transport remains unchanged and emits only the legacy `matlock.search.response.v1` JSON contract; migrate new integrations to `documents query` when they do not require strict stdio transport.

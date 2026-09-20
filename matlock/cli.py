@@ -514,6 +514,13 @@ def doc_read(
 
 def _document_record_from_search_result(conn, cfg, result) -> DocumentRecord:
     """Enrich one search result with file-table metadata for document queries."""
+    file_details = (
+        result.file_details.model_dump(mode="json")
+        if result.file_details is not None
+        else None
+    )
+    if file_details is not None and file_details["content"] == "":
+        file_details["content"] = None
     row = conn.execute(
         "SELECT file_ext, created, modified, modified_date, length, word_count"
         " FROM file WHERE file_path = ?",
@@ -542,11 +549,7 @@ def _document_record_from_search_result(conn, cfg, result) -> DocumentRecord:
             if result.chunk_details is not None
             else None
         ),
-        file_details=(
-            result.file_details.model_dump(mode="json")
-            if result.file_details is not None
-            else None
-        ),
+        file_details=file_details,
     )
 
 
@@ -566,7 +569,6 @@ def documents_query(
     limit: int | None = typer.Option(None, "--limit", min=1, help="Maximum results."),
     offset: int = typer.Option(0, "--offset", min=0, help="Results to skip."),
     count_only: bool = typer.Option(False, "--count-only", help="Return only pagination stats."),
-    include_content: bool = typer.Option(True, "--include-content/--no-include-content", help="Include redacted-safe content."),
     granularity: str = typer.Option("file", "--granularity", help="Result granularity: file or chunk."),
     surrounding_chunks: int = typer.Option(0, "--surrounding-chunks", min=0, max=3, help="Adjacent chunks for chunk results."),
 ) -> None:
@@ -623,7 +625,7 @@ def documents_query(
             "surrounding_chunks": surrounding_chunks,
             "limit": effective_limit,
             "offset": offset,
-            "include_content": include_content,
+            "include_content": granularity == "chunk",
         },
     }
 

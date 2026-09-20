@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ---
 
+## [0.9.1] — 2026-09-20
+
+### Added
+
+- Nothing in 0.9.1.
+
+### Changed
+
+- `matlock documents query` now derives content inclusion from `--granularity`: file results are metadata-only, while chunk results include matched and surrounding content.
+
+### Fixed
+
+- Document queries no longer read or return full document bodies for file-granularity results.
+
+### Removed
+
+- Removed `--include-content` and `--no-include-content` from `matlock documents query`. The legacy `matlock search query` options remain unchanged.
+
 ## [0.9.0] — 2026-09-17
 
 ### Added

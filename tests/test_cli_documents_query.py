@@ -16,7 +16,7 @@ def test_documents_query_defaults_to_metadata_file_results(tmp_path: Path) -> No
     cfg_path, vault, db_path = _make_cfg(tmp_path)
     seed_search_db(db_path, vault)
 
-    result = runner.invoke(app, ["--config", str(cfg_path), "documents", "query", "--no-include-content"])
+    result = runner.invoke(app, ["--config", str(cfg_path), "documents", "query"])
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
@@ -24,7 +24,7 @@ def test_documents_query_defaults_to_metadata_file_results(tmp_path: Path) -> No
     assert payload["returned_matches"] == 1
     assert payload["results"][0]["file_path"] == "Notes/alpha.md"
     assert payload["results"][0]["file_ext"] == ".md"
-    assert payload["results"][0]["file_details"]["content"] == ""
+    assert payload["results"][0]["file_details"]["content"] is None
 
 
 def test_documents_query_fts_supports_chunk_granularity_and_context(tmp_path: Path) -> None:
@@ -43,7 +43,18 @@ def test_documents_query_fts_supports_chunk_granularity_and_context(tmp_path: Pa
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
     assert payload["results"][0]["chunk_details"]["chunk_id"] == "Notes/alpha.md#0000"
+    assert "Database" in payload["results"][0]["chunk_details"]["content"]
     assert payload["results"][0]["file_details"] is None
+
+
+def test_documents_query_rejects_content_options(tmp_path: Path) -> None:
+    cfg_path, _, db_path = _make_cfg(tmp_path)
+    db_path.touch()
+
+    for option in ("--include-content", "--no-include-content"):
+        result = runner.invoke(app, ["--config", str(cfg_path), "documents", "query", option])
+
+        assert result.exit_code != 0
 
 
 def test_documents_query_named_filters_and_count_only(tmp_path: Path) -> None:

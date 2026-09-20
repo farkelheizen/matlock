@@ -95,7 +95,7 @@ Project filters currently execute as exact matching even though the request cont
 
 ## Document Query
 
-`matlock documents query` is the document-oriented replacement for new CLI integrations. It reuses this search engine but returns the shared pagination envelope used by task and project queries. It defaults to active, non-generated files at file granularity and supports repeatable `--file-path`, `--file-ext`, `--project-id`, `--super-project-id`, `--created`, `--modified`, and `--attributes PATH:OPERATOR:VALUE` filters. Path values are normalized vault-relative prefixes; project IDs are case-insensitive exact matches; date predicates repeat with AND semantics. Empty text selects `metadata_only` regardless of the requested mode.
+`matlock documents query` is the document-oriented replacement for new CLI integrations. It reuses this search engine but returns the shared pagination envelope used by task and project queries. It defaults to active, non-generated files at file granularity and supports repeatable `--file-path`, `--file-ext`, `--project-id`, `--super-project-id`, `--created`, `--modified`, and `--attributes PATH:OPERATOR:VALUE` filters. Path values are normalized vault-relative prefixes; project IDs are case-insensitive exact matches; date predicates repeat with AND semantics. Empty text selects `metadata_only` regardless of the requested mode. File granularity returns metadata only with `file_details.content: null`; chunk granularity implicitly returns matched and surrounding content through the secret-safe path.
 
 The legacy `search query` command is deprecated for human use and targeted for removal in the next planned release, `0.10.0`. Its strict `--stdio` JSON transport remains unchanged during the migration period.
 
