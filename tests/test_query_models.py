@@ -5,11 +5,15 @@ from datetime import date
 import pytest
 
 from matlock.query_models import (
+    AttributeFilterPredicate,
     DatePredicate,
+    ProjectQueryResponse,
     ProjectRecord,
     SuperProjectRecord,
+    TaskQueryResponse,
     TaskRecord,
     TaskQueryFilters,
+    parse_attribute_filter_predicate,
     parse_date_predicate,
 )
 
@@ -78,6 +82,94 @@ def test_project_and_super_project_records_model_cleanly() -> None:
         {"super_project_id": "sp-2", "title": "Foundation", "priority": "P1"}
     )
     assert super_project.super_project_id == "sp-2"
+
+
+def test_task_query_response_populated_envelope() -> None:
+    task = TaskRecord.model_validate(
+        {
+            "task_id": "t-1",
+            "file_path": "notes/demo.md",
+            "parent_task_id": None,
+            "created_date": "2026-01-01",
+            "due_date": None,
+            "est_comp_date": None,
+            "act_comp_date": None,
+            "checked": 0,
+            "task_text": "Ship it",
+            "overflow": 0,
+            "headers": "[]",
+            "attributes": "{}",
+            "errors": "[]",
+            "twin_index": 0,
+            "project_ids": [],
+        }
+    )
+    response = TaskQueryResponse(total_matches=5, returned_matches=1, limit=20, offset=0, results=[task])
+    assert response.total_matches == 5
+    assert response.returned_matches == 1
+    assert response.results[0].task_id == "t-1"
+
+
+def test_task_query_response_count_only_envelope() -> None:
+    response = TaskQueryResponse(total_matches=5, returned_matches=0, limit=20, offset=0, results=[])
+    assert response.results == []
+    assert response.returned_matches == 0
+    assert response.total_matches == 5
+
+
+def test_project_query_response_populated_envelope() -> None:
+    project = ProjectRecord.model_validate({"project_id": "p-1"})
+    response = ProjectQueryResponse(total_matches=2, returned_matches=1, limit=None, offset=0, results=[project])
+    assert response.limit is None
+    assert response.results[0].project_id == "p-1"
+
+
+def test_project_query_response_count_only_envelope() -> None:
+    response = ProjectQueryResponse(total_matches=2, returned_matches=0, limit=20, offset=0, results=[])
+    assert response.results == []
+    assert response.total_matches == 2
+
+
+def test_parse_attribute_filter_predicate_supports_all_operators() -> None:
+    for operator in ("eq", "neq", "gt", "gte", "lt", "lte", "contains"):
+        predicate = parse_attribute_filter_predicate(f"owner:{operator}:ops")
+        assert predicate == AttributeFilterPredicate(path="$.owner", operator=operator, value="ops")
+
+
+def test_parse_attribute_filter_predicate_auto_prefixes_bare_path() -> None:
+    predicate = parse_attribute_filter_predicate("owner:eq:ops")
+    assert predicate.path == "$.owner"
+
+
+def test_parse_attribute_filter_predicate_preserves_explicit_json_path() -> None:
+    predicate = parse_attribute_filter_predicate("$.nested.owner:eq:ops")
+    assert predicate.path == "$.nested.owner"
+
+
+def test_parse_attribute_filter_predicate_coerces_numeric_and_bool_values() -> None:
+    assert parse_attribute_filter_predicate("estimate_hours:gte:5").value == 5
+    assert parse_attribute_filter_predicate("estimate_hours:gte:5.5").value == 5.5
+    assert parse_attribute_filter_predicate("archived:eq:true").value is True
+    assert parse_attribute_filter_predicate("archived:eq:false").value is False
+    assert parse_attribute_filter_predicate("owner:eq:null").value is None
+
+
+def test_parse_attribute_filter_predicate_in_operator_splits_and_coerces_list() -> None:
+    predicate = parse_attribute_filter_predicate("owner:in:ops,eng,5")
+    assert predicate.operator == "in"
+    assert predicate.value == ["ops", "eng", 5]
+
+
+def test_parse_attribute_filter_predicate_rejects_bad_grammar() -> None:
+    with pytest.raises(ValueError):
+        parse_attribute_filter_predicate("")
+    with pytest.raises(ValueError):
+        parse_attribute_filter_predicate("owner:eq")
+    with pytest.raises(ValueError):
+        parse_attribute_filter_predicate(":eq:ops")
+    with pytest.raises(ValueError):
+        parse_attribute_filter_predicate("owner:bogus:ops")
+
 
 
 def test_task_query_filters_accept_default_values() -> None:

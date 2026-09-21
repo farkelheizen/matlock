@@ -23,6 +23,7 @@ from matlock.query_models import (
     TaskRecord,
     parse_date_predicate,
 )
+from matlock.sql_filters import build_json_path_filter_clause
 
 UNKNOWN_PROJECT = "__UNKNOWN__"
 
@@ -768,8 +769,16 @@ def fetch_projects(
     *,
     term: str | None = None,
     filters: dict[str, Any] | None = None,
-) -> list[ProjectRecord]:
-    """Return project rows, optionally filtered by a literal case-insensitive substring and project-table field filters."""
+    limit: int | None = None,
+    offset: int = 0,
+    count_only: bool = False,
+) -> tuple[int, list[ProjectRecord]]:
+    """Return `(total_matches, projects)` for rows matching an optional literal substring and field filters.
+
+    `total_matches` always reflects the full filtered count, independent of
+    `limit`/`offset`. When `count_only` is True, no rows are fetched and an
+    empty project list is returned alongside the count.
+    """
     filters = filters or {}
     clauses: list[str] = []
     params: list[Any] = []
@@ -830,12 +839,29 @@ def fetch_projects(
             clauses.append(f"{field_name} {pred.operator} ?")
             params.append(pred.value.isoformat())
 
-    sql = "SELECT project_id, super_project_id, title, home_file, priority, status, start_date, due_date FROM project"
-    if clauses:
-        sql += " WHERE " + " AND ".join(clauses)
-    sql += " ORDER BY project_id ASC"
-    rows = conn.execute(sql, params).fetchall()
-    return [ProjectRecord.model_validate(dict(row)) for row in rows]
+    where_sql = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+    total_matches = conn.execute(
+        f"SELECT COUNT(*) AS cnt FROM project{where_sql}", params
+    ).fetchone()["cnt"]
+
+    if count_only:
+        return total_matches, []
+
+    sql = (
+        "SELECT project_id, super_project_id, title, home_file, priority, status, start_date, due_date FROM project"
+        + where_sql
+        + " ORDER BY project_id ASC"
+    )
+    row_params = list(params)
+    if limit is not None:
+        sql += " LIMIT ? OFFSET ?"
+        row_params.extend([limit, offset])
+    elif offset:
+        sql += " LIMIT -1 OFFSET ?"
+        row_params.append(offset)
+
+    rows = conn.execute(sql, row_params).fetchall()
+    return total_matches, [ProjectRecord.model_validate(dict(row)) for row in rows]
 
 
 def fetch_super_projects(conn: sqlite3.Connection) -> list[SuperProjectRecord]:
@@ -850,8 +876,16 @@ def fetch_active_tasks(
     conn: sqlite3.Connection,
     *,
     filters: dict | None = None,
-) -> list[TaskRecord]:
-    """Return active, non-generated tasks with project IDs aggregated and JSON fields decoded."""
+    limit: int | None = None,
+    offset: int = 0,
+    count_only: bool = False,
+) -> tuple[int, list[TaskRecord]]:
+    """Return `(total_matches, tasks)` for active, non-generated tasks matching `filters`.
+
+    `total_matches` always reflects the full filtered count, independent of
+    `limit`/`offset`. When `count_only` is True, no rows are fetched/decoded
+    and an empty task list is returned alongside the count.
+    """
     filters = filters or {}
     clauses: list[str] = [
         "t.file_path IN (SELECT file_path FROM file WHERE deleted = 0 AND is_generated = 0)",
@@ -896,6 +930,16 @@ def fetch_active_tasks(
         clauses.append("LOWER(CAST(t.attributes AS TEXT)) LIKE LOWER(?)")
         params.append(f"%{term}%")
 
+    for attribute_filter in filters.get("attribute_filters") or []:
+        clause, filter_params = build_json_path_filter_clause(
+            path=attribute_filter.path,
+            operator=attribute_filter.operator,
+            value=attribute_filter.value,
+            json_column="t.attributes",
+        )
+        clauses.append(clause)
+        params.extend(filter_params)
+
     if filters.get("checked") is not None:
         clauses.append("t.checked = ?")
         params.append(_SQLITE_TRUE if filters["checked"] else 0)
@@ -915,16 +959,32 @@ def fetch_active_tasks(
         )
         params.extend(filters["super_project_ids"])
 
+    where_sql = " AND ".join(clauses)
+    total_matches = conn.execute(
+        f"SELECT COUNT(*) AS cnt FROM task t WHERE {where_sql}", params
+    ).fetchone()["cnt"]
+
+    if count_only:
+        return total_matches, []
+
     sql = (
         "SELECT t.*, COALESCE(("
         " SELECT GROUP_CONCAT(fp.project_id, ',') FROM ("
         "   SELECT DISTINCT fp.project_id FROM file_project fp WHERE fp.file_path = t.file_path"
         " ) fp"
         " ), '') AS project_ids FROM task t WHERE "
-        + " AND ".join(clauses) +
+        + where_sql +
         " ORDER BY t.file_path ASC, t.task_id ASC"
     )
-    rows = conn.execute(sql, params).fetchall()
+    row_params = list(params)
+    if limit is not None:
+        sql += " LIMIT ? OFFSET ?"
+        row_params.extend([limit, offset])
+    elif offset:
+        sql += " LIMIT -1 OFFSET ?"
+        row_params.append(offset)
+
+    rows = conn.execute(sql, row_params).fetchall()
     result: list[TaskRecord] = []
     for row in rows:
         raw_project_ids = row["project_ids"]
@@ -941,4 +1001,4 @@ def fetch_active_tasks(
         task_dict["overflow"] = bool(task_dict.get("overflow") or 0)
         task_dict["project_ids"] = sorted(set(project_ids))
         result.append(TaskRecord.model_validate(task_dict))
-    return result
+    return total_matches, result

@@ -9,6 +9,7 @@ from matlock.db import (
     get_connection,
     init_db,
 )
+from matlock.query_models import AttributeFilterPredicate
 
 
 def _insert_task(conn: sqlite3.Connection, *, task_id: str, file_path: str, task_text: str, checked: int = 0, due_date: str | None = None, est_comp_date: str | None = None, act_comp_date: str | None = None, headers: str = '[]', attributes: str = '{}', errors: str = '[]', overflow: int = 0) -> None:
@@ -25,13 +26,16 @@ def test_fetch_projects_returns_ordered_rows_and_literal_like_matches() -> None:
     conn.execute("INSERT INTO project (project_id, super_project_id, title, home_file, priority, status, start_date, due_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", ("proj-a", None, "Alpha", "notes/a.md", "P1", "Active", "2026-01-02", "2026-03-02"))
     conn.commit()
 
-    projects = fetch_projects(conn)
+    total_matches, projects = fetch_projects(conn)
+    assert total_matches == 2
     assert [project.project_id for project in projects] == ["proj-a", "proj-b"]
 
-    filtered = fetch_projects(conn, term="100%")
+    filtered_total, filtered = fetch_projects(conn, term="100%")
+    assert filtered_total == 1
     assert [project.project_id for project in filtered] == ["proj-b"]
 
-    filtered = fetch_projects(conn, term="alpha")
+    filtered_total, filtered = fetch_projects(conn, term="alpha")
+    assert filtered_total == 1
     assert [project.project_id for project in filtered] == ["proj-a"]
 
     conn.close()
@@ -46,6 +50,31 @@ def test_fetch_super_projects_returns_all_rows_sorted() -> None:
 
     rows = fetch_super_projects(conn)
     assert [row.super_project_id for row in rows] == ["sp-a", "sp-b"]
+
+    conn.close()
+
+
+def test_fetch_projects_limit_offset_and_count_only() -> None:
+    conn = get_connection(":memory:")
+    init_db(conn)
+    for pid in ("proj-a", "proj-b", "proj-c"):
+        conn.execute(
+            "INSERT INTO project (project_id, super_project_id, title, home_file, priority, status, start_date, due_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (pid, None, pid, None, None, None, None, None),
+        )
+    conn.commit()
+
+    total_matches, rows = fetch_projects(conn, limit=2, offset=0)
+    assert total_matches == 3
+    assert [row.project_id for row in rows] == ["proj-a", "proj-b"]
+
+    total_matches, rows = fetch_projects(conn, limit=2, offset=2)
+    assert total_matches == 3
+    assert [row.project_id for row in rows] == ["proj-c"]
+
+    total_matches, rows = fetch_projects(conn, count_only=True)
+    assert total_matches == 3
+    assert rows == []
 
     conn.close()
 
@@ -68,7 +97,8 @@ def test_fetch_active_tasks_filters_deleted_and_generated_files_and_decodes_json
     _insert_task(conn, task_id="t-4", file_path="notes/generated.md", task_text="Hidden too", checked=0)
     conn.commit()
 
-    rows = fetch_active_tasks(conn)
+    total_matches, rows = fetch_active_tasks(conn)
+    assert total_matches == 2
     assert [row.task_id for row in rows] == ["t-1", "t-2"]
     assert rows[0].headers == ["one"]
     assert rows[0].attributes == {"owner": "ops"}
@@ -77,12 +107,13 @@ def test_fetch_active_tasks_filters_deleted_and_generated_files_and_decodes_json
     assert rows[0].checked is True
     assert rows[0].overflow is True
 
-    filtered = fetch_active_tasks(conn, filters={
+    filtered_total, filtered = fetch_active_tasks(conn, filters={
         "due_date": [{"field": "due_date", "operator": ">=", "value": "2026-03-01"}],
         "checked": True,
         "task_text": "alpha",
         "project_ids": ["p-1"],
     })
+    assert filtered_total == 1
     assert [row.task_id for row in filtered] == ["t-1"]
 
     conn.close()
@@ -104,10 +135,73 @@ def test_fetch_active_tasks_applies_duplicate_and_date_filters() -> None:
     _insert_task(conn, task_id="t-2", file_path="notes/b.md", task_text="Beta task", checked=0, due_date="2026-03-04", headers='["ops"]', attributes='{"owner": "ops"}')
     conn.commit()
 
-    rows = fetch_active_tasks(conn, filters={
+    total_matches, rows = fetch_active_tasks(conn, filters={
         "due_date": [{"field": "due_date", "operator": ">=", "value": "2026-03-03"}, {"field": "due_date", "operator": "<", "value": "2026-03-05"}],
         "project_ids": ["p-2"],
     })
+    assert total_matches == 1
     assert [row.task_id for row in rows] == ["t-2"]
+
+    conn.close()
+
+
+def test_fetch_active_tasks_limit_offset_and_count_only() -> None:
+    conn = get_connection(":memory:")
+    init_db(conn)
+
+    conn.execute("INSERT INTO file (file_path, sha256, file_ext, created, modified, modified_date, deleted, length, word_count, meta_data, is_generated, needs_parsing) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", ("notes/a.md", "hash-a", ".md", 1, 1, "2026-01-01", 0, 1, 1, "{}", 0, 0))
+
+    _insert_task(conn, task_id="t-1", file_path="notes/a.md", task_text="Task one")
+    _insert_task(conn, task_id="t-2", file_path="notes/a.md", task_text="Task two")
+    _insert_task(conn, task_id="t-3", file_path="notes/a.md", task_text="Task three")
+    conn.commit()
+
+    total_matches, rows = fetch_active_tasks(conn, limit=2, offset=0)
+    assert total_matches == 3
+    assert [row.task_id for row in rows] == ["t-1", "t-2"]
+
+    total_matches, rows = fetch_active_tasks(conn, limit=2, offset=2)
+    assert total_matches == 3
+    assert [row.task_id for row in rows] == ["t-3"]
+
+    total_matches, rows = fetch_active_tasks(conn, offset=1)
+    assert total_matches == 3
+    assert [row.task_id for row in rows] == ["t-2", "t-3"]
+
+    total_matches, rows = fetch_active_tasks(conn, count_only=True)
+    assert total_matches == 3
+    assert rows == []
+
+    conn.close()
+
+
+def test_fetch_active_tasks_attribute_filters() -> None:
+    conn = get_connection(":memory:")
+    init_db(conn)
+
+    conn.execute("INSERT INTO file (file_path, sha256, file_ext, created, modified, modified_date, deleted, length, word_count, meta_data, is_generated, needs_parsing) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", ("notes/a.md", "hash-a", ".md", 1, 1, "2026-01-01", 0, 1, 1, "{}", 0, 0))
+
+    _insert_task(conn, task_id="t-1", file_path="notes/a.md", task_text="Ops task", attributes='{"owner": "ops", "estimate_hours": 5}')
+    _insert_task(conn, task_id="t-2", file_path="notes/a.md", task_text="Eng task", attributes='{"owner": "eng", "estimate_hours": 8}')
+    conn.commit()
+
+    total_matches, rows = fetch_active_tasks(conn, filters={
+        "attribute_filters": [AttributeFilterPredicate(path="$.owner", operator="eq", value="ops")],
+    })
+    assert total_matches == 1
+    assert [row.task_id for row in rows] == ["t-1"]
+
+    total_matches, rows = fetch_active_tasks(conn, filters={
+        "attribute_filters": [AttributeFilterPredicate(path="$.estimate_hours", operator="gte", value=6)],
+    })
+    assert total_matches == 1
+    assert [row.task_id for row in rows] == ["t-2"]
+
+    total_matches, rows = fetch_active_tasks(conn, filters={
+        "attribute_filters": [AttributeFilterPredicate(path="$.owner", operator="in", value=["ops", "eng"])],
+    })
+    assert total_matches == 2
+
+    conn.close()
 
     conn.close()

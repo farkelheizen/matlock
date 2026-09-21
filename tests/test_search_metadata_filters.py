@@ -101,3 +101,36 @@ def test_numeric_and_not_equal_filters_compose_with_and_semantics(conn) -> None:
     )
 
     assert _matching_paths(conn, filters) == ["Notes/alpha.md", "Notes/gamma.md"]
+
+
+def test_named_document_filters_use_prefix_extension_and_case_insensitive_projects(conn) -> None:
+    filters = SearchFilters.model_validate(
+        {
+            "file_paths": ["/Notes/a", "Other/"],
+            "file_exts": [".MD"],
+            "project_id": ["ALPHA"],
+            "project_match_mode": "exact",
+        }
+    )
+    clause, params = build_file_filter_clause(filters)
+
+    assert "substr(f.file_path" in clause
+    assert "LOWER(f.file_ext)" in clause
+    assert "LOWER(fp.project_id)" in clause
+    assert "/Notes/a" not in params
+    assert params.count("Notes/a") == 2
+    assert params.count("Other/") == 2
+    assert "alpha" in params
+
+
+def test_repeated_date_predicates_and_compose(conn) -> None:
+    filters = SearchFilters.model_validate(
+        {
+            "created_predicates": [
+                {"operator": ">=", "value": "2024-08-09"},
+                {"operator": "<", "value": "2024-08-11"},
+            ]
+        }
+    )
+
+    assert _matching_paths(conn, filters) == ["Notes/alpha.md", "Notes/beta.md", "Notes/gamma.md"]

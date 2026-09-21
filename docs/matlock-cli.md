@@ -1,6 +1,6 @@
 # Matlock CLI Reference
 
-**Version:** 0.7.x
+**Version:** 1.0.x
 
 Matlock is invoked via the `matlock` command (registered as a Poetry script entrypoint). All commands accept `--config PATH` to specify a non-default `config.yaml` location.
 
@@ -119,17 +119,61 @@ poetry run matlock document read /absolute/path/inside/your/vault/Notes/today.md
 
 ---
 
-### `matlock projects query`
+### `matlock documents query`
 
-Return project records as JSON. Without a positional term, it emits the complete project table in `project_id` order. With a term, it performs a case-insensitive literal substring match across every project-column value and automatically unions in projects associated with matching indexed files. Field filters are AND-composed across categories with repeated values ORed within the same option.
+Return a JSON-only paginated envelope of active, non-generated documents. The default `file` granularity returns one row per file; use `--granularity chunk` for indexed chunk hits and optional surrounding chunks. Missing or blank `--text` always falls back to metadata-only browsing, even when another search mode is requested.
 
 ```
-matlock projects query [TEXT] [OPTIONS]
+matlock documents query [OPTIONS]
+```
+
+| Option | Default | Description |
+|:-------|:--------|:------------|
+| `--text TEXT` | None | Optional literal search text |
+| `--search-mode MODE` | `hybrid` | `hybrid`, `fts_only`, `vector_only`, or `metadata_only`; no text executes metadata-only |
+| `--min-score FLOAT` | None | Minimum indexed match score |
+| `--project-id VALUE` | repeated | Case-insensitive exact project ID; repeated values OR |
+| `--super-project-id VALUE` | repeated | Case-insensitive exact super-project ID; repeated values OR |
+| `--file-path VALUE` | repeated | Prefix of normalized vault-relative path; leading `/` is ignored |
+| `--file-ext VALUE` | repeated | File extension; repeated values OR |
+| `--attributes PATH:OPERATOR:VALUE` | repeated | Frontmatter JSON-path filter; supported operators are `eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `in`, `contains` |
+| `--created VALUE` | repeated | `YYYY-MM-DD` or `=`, `>`, `>=`, `<`, `<=` date predicate; repeated values AND |
+| `--modified VALUE` | repeated | Same date predicate grammar as `--created`; repeated values AND |
+| `--limit INT` | `queries.default_limit` (`20`) | Maximum rows |
+| `--offset INT` | `0` | Matching rows to skip |
+| `--count-only` | `False` | Return pagination stats with `results: []` |
+| `--granularity {file,chunk}` | `file` | Select file or chunk results |
+| `--surrounding-chunks INT` | `0` | Number of adjacent chunks for chunk results (0-3) |
+| `--config PATH` | `./config.yaml` | Config file location |
+
+Filters in one option are OR-composed; separate filter categories are AND-composed. `--attributes` uses the same typed value coercion and JSON-path grammar as task attribute filters. The response envelope is `{"total_matches": N, "returned_matches": N, "limit": N|null, "offset": N, "results": [...]}`. File results include file metadata and `file_details` with `content: null`; chunk results include `chunk_details` with matched and surrounding content, never both detail blocks. Content inclusion is determined solely by `--granularity` and remains secret-safe.
+
+**Examples:**
+```bash
+poetry run matlock documents query
+poetry run matlock documents query --text "database" --search-mode fts_only
+poetry run matlock documents query --file-path /Notes/ --file-ext .md --attributes "status:eq:active"
+poetry run matlock documents query --modified ">=2026-01-01" --modified "<2026-02-01" --count-only
+poetry run matlock documents query --granularity chunk --surrounding-chunks 1
+```
+
+`matlock search query` remains available during the 1.0.x migration window and is deprecated in human mode. Its `--stdio` transport remains unchanged and emits only the legacy `matlock.search.response.v1` JSON contract; migrate new integrations to `documents query` when they do not require strict stdio transport.
+
+---
+
+### `matlock projects query`
+
+Return a paginated JSON envelope of project records. Without `--text`, it emits the project table in `project_id` order. With `--text`, it performs a case-insensitive literal substring match across every project-column value and automatically unions in projects associated with matching indexed files. Field filters are AND-composed across categories with repeated values ORed within the same option.
+
+**Breaking change (0.8.0):** this command previously emitted a bare JSON array and accepted free text as a positional argument. It now emits a JSON object: `{"total_matches": N, "returned_matches": N, "limit": N|null, "offset": N, "results": [...]}`, and free text must be passed with `--text`.
+
+```
+matlock projects query [OPTIONS]
 ```
 
 | Argument / Option | Default | Description |
 |:------------------|:--------|:------------|
-| `TEXT` | None | Optional project text filter |
+| `--text TEXT` | None | Optional project text filter; also enables file-backed project search |
 | `--project-id VALUE` | repeated | Repeatable project ID match |
 | `--super-project-id VALUE` | repeated | Repeatable super-project ID match |
 | `--title TEXT` | repeated | Repeatable title literal substring search |
@@ -139,14 +183,22 @@ matlock projects query [TEXT] [OPTIONS]
 | `--start-date VALUE` | repeated | Repeatable ISO date predicate such as `>=2026-01-01` |
 | `--due-date VALUE` | repeated | Repeatable ISO date predicate for due_date |
 | `--search-mode {hybrid,fts_only,vector_only}` | `hybrid` | Search mode reused by the existing search contract |
+| `--min-score FLOAT` | None | Minimum score for the automatic file-backed project lookup (text queries only) |
+| `--limit INT` | `queries.default_limit` (`20`) | Maximum rows to return; overrides the configured default for this invocation |
+| `--offset INT` | `0` | Number of matching rows to skip before returning results |
+| `--count-only` | `False` | Return only pagination stats (`results: []`); still computes accurate `total_matches` |
 | `--config PATH` | `./config.yaml` | Config file location |
+
+For text queries, `total_matches`, `--limit`, and `--offset` apply to the deduplicated union of direct project-table matches and file-backed search hits, ranked by best associated-file score. `--count-only` still executes the full file-backed search scoring pass (embedding calls included for `hybrid`/`vector_only`) to compute an accurate count; there is no cheaper shortcut.
 
 **Examples:**
 ```bash
 poetry run matlock projects query
-poetry run matlock projects query "alpha"
-poetry run matlock projects query "alpha" --search-mode hybrid
+poetry run matlock projects query --text "alpha"
+poetry run matlock projects query --text "alpha" --search-mode hybrid --min-score 0.5
 poetry run matlock projects query --project-id backend --status active
+poetry run matlock projects query --limit 10 --offset 20
+poetry run matlock projects query --count-only
 ```
 
 ---
@@ -172,7 +224,9 @@ poetry run matlock super-projects list
 
 ### `matlock tasks query`
 
-Return active, non-generated tasks as JSON, optionally filtered by date, completion, text, headers, attributes, project IDs, and super-project IDs.
+Return a paginated JSON envelope of active, non-generated tasks, optionally filtered by date, completion, text, headers, attributes, project IDs, and super-project IDs.
+
+**Breaking change (0.8.0):** this command previously emitted a bare JSON array and used `--task-text` for its text filter. It now emits a JSON object: `{"total_matches": N, "returned_matches": N, "limit": N|null, "offset": N, "results": [...]}`, and task text must be passed with `--text`.
 
 ```
 matlock tasks query [OPTIONS]
@@ -184,18 +238,28 @@ matlock tasks query [OPTIONS]
 | `--est-comp-date VALUE` | repeated | Repeatable estimated completion predicate |
 | `--act-comp-date VALUE` | repeated | Repeatable actual completion predicate |
 | `--checked / --unchecked` | none | Filter by completion state |
-| `--task-text TEXT` | None | Case-insensitive literal substring match |
+| `--text TEXT` | None | Case-insensitive literal task-text substring match |
 | `--headers TEXT` | None | Case-insensitive literal JSON-list match |
 | `--attributes TEXT` | None | Case-insensitive literal JSON-object match |
+| `--attribute-filter PATH:OP:VALUE` | repeated | Repeatable structured JSON-path filter against `task.attributes`, AND-composed |
 | `--project-id VALUE` | repeated | Repeatable project filter |
 | `--super-project-id VALUE` | repeated | Repeatable super-project filter |
+| `--limit INT` | `queries.default_limit` (`20`) | Maximum rows to return; overrides the configured default for this invocation |
+| `--offset INT` | `0` | Number of matching rows to skip before returning results |
+| `--count-only` | `False` | Return only pagination stats (`results: []`); still computes accurate `total_matches` |
 | `--config PATH` | `./config.yaml` | Config file location |
+
+`--attribute-filter` accepts a colon-delimited `path:operator:value` token, e.g. `owner:eq:ops` or `estimate_hours:gte:5`. Bare paths are auto-prefixed with `$.`. Supported operators: `eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `in` (comma-separated value list), `contains`. Values are coerced to `int`/`float`/`bool`/`null` when they look numeric/boolean/null, otherwise treated as strings. Repeated `--attribute-filter` values AND-compose and coexist with the existing `--attributes` substring flag.
 
 **Examples:**
 ```bash
 poetry run matlock tasks query
-poetry run matlock tasks query --checked --task-text "review"
+poetry run matlock tasks query --checked --text "review"
 poetry run matlock tasks query --project-id backend --due-date ">=2026-01-01"
+poetry run matlock tasks query --attribute-filter "owner:eq:ops"
+poetry run matlock tasks query --attribute-filter "estimate_hours:gte:5"
+poetry run matlock tasks query --limit 10 --offset 20
+poetry run matlock tasks query --count-only
 ```
 
 ---

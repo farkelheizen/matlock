@@ -84,6 +84,10 @@ Matlock Search uses two Pydantic contracts for machine-facing request/response t
 - `has_secrets`: `NULL` (legacy unknown), `0` (clean), `1` (secrets found or scan failed).
 - `secret_detection_error`: optional scanner error text. Populated only when detection fails.
 
+### `DocumentQueryResponse`
+
+`matlock documents query` returns the same `total_matches`, `returned_matches`, `limit`, `offset`, and `results` pagination envelope used by task and project queries. Each `DocumentRecord` includes `file_path`, absolute path, file extension, created/modified timestamps, `modified_date`, byte length, word count, all linked project IDs, selected project/super-project IDs, score data, frontmatter, secret state, and exactly one optional detail block: `file_details` at file granularity or `chunk_details` at chunk granularity.
+
 ---
 
 ## Database Models (SQLite)

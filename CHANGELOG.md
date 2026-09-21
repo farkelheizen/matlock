@@ -6,6 +6,58 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ---
 
+## [0.9.1] — 2026-09-20
+
+### Added
+
+- Nothing in 0.9.1.
+
+### Changed
+
+- `matlock documents query` now derives content inclusion from `--granularity`: file results are metadata-only, while chunk results include matched and surrounding content.
+
+### Fixed
+
+- Document queries no longer read or return full document bodies for file-granularity results.
+
+### Removed
+
+- Removed `--include-content` and `--no-include-content` from `matlock documents query`. The legacy `matlock search query` options remain unchanged.
+
+## [0.9.0] — 2026-09-17
+
+### Added
+
+- `matlock documents query` provides paginated JSON document and chunk retrieval with metadata-only, FTS, vector, and hybrid modes.
+- Document queries support repeatable named path, extension, project, super-project, date, and frontmatter attribute filters with secret-safe content.
+
+### Changed
+
+- Document query results use a document-oriented envelope with file metadata, project linkage, scores, and optional file or chunk details.
+
+### Fixed
+
+- Repeated document date predicates, path-prefix filters, extension filters, and case-insensitive project filters are validated and compiled as parameterized SQL.
+
+### Removed
+
+- Nothing in 0.9.0. `matlock search query` remains available during deprecation and is targeted for removal in the next planned release (0.10.0).
+
+## [0.8.0] — 2026-09-15
+
+### Added
+
+- `matlock tasks query` and `matlock projects query` now accept `--limit`, `--offset`, and `--count-only` for pagination. `--count-only` returns pagination stats with an empty `results` list while still computing an accurate `total_matches`.
+- New `queries.default_limit` config setting (default `20`) supplies the default `--limit` for both commands when the flag is omitted.
+- `matlock tasks query --attribute-filter PATH:OP:VALUE` adds structured JSON-path filtering against `task.attributes` (operators: `eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `in`, `contains`), repeatable and AND-composed, alongside the existing `--attributes` substring flag.
+- `matlock projects query --min-score FLOAT` filters low-scoring file hits out of the automatic file-backed text-search path before ranking, counting, and pagination.
+
+### Changed
+
+- **Breaking:** `matlock tasks query` and `matlock projects query` now emit a JSON object (`{"total_matches": N, "returned_matches": N, "limit": N|null, "offset": N, "results": [...]}`) instead of a bare JSON array.
+- **Breaking:** `matlock tasks query --text TEXT` replaces `--task-text`, and `matlock projects query --text TEXT` replaces its positional text argument. The retired forms are no longer accepted.
+- Extracted the shared `json_extract`/`json_each` JSON-path filter clause-building logic into a new `matlock/sql_filters.py`, reused by both `matlock/db.py` (task attribute filtering) and `matlock/search/sql_filters.py` (file metadata filtering).
+
 ## [0.7.0] — 2026-09-14
 
 ### Added

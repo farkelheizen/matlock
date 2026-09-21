@@ -66,6 +66,13 @@ class SearchDateRange(BaseModel):
         return _normalize_rfc3339(value)
 
 
+class SearchDatePredicate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    operator: Literal["=", ">", ">=", "<", "<="] = "="
+    value: str
+
+
 class SearchMetadataFilter(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -96,6 +103,9 @@ class SearchFilters(BaseModel):
     super_project_id: list[str] | None = None
     project_match_mode: ProjectMatchMode = "hybrid"
     file_paths: list[str] = Field(default_factory=list)
+    file_exts: list[str] = Field(default_factory=list)
+    created_predicates: list[SearchDatePredicate] = Field(default_factory=list)
+    modified_predicates: list[SearchDatePredicate] = Field(default_factory=list)
     metadata: list[SearchMetadataFilter] = Field(default_factory=list)
 
     @field_validator("project_id", "super_project_id", mode="before")

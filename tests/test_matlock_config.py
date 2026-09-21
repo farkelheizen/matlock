@@ -116,6 +116,26 @@ def test_default_ignore_dirs(tmp_path: Path) -> None:
     assert load_config(cfg_file).ignore_dirs == []
 
 
+def test_default_queries_default_limit(tmp_path: Path) -> None:
+    cfg_file = _write_config(tmp_path, _minimal_data())
+    assert load_config(cfg_file).queries.default_limit == 20
+
+
+def test_custom_queries_default_limit(tmp_path: Path) -> None:
+    data = _minimal_data()
+    data["queries"] = {"default_limit": 5}
+    cfg_file = _write_config(tmp_path, data)
+    assert load_config(cfg_file).queries.default_limit == 5
+
+
+def test_queries_default_limit_rejects_non_positive(tmp_path: Path) -> None:
+    data = _minimal_data()
+    data["queries"] = {"default_limit": 0}
+    cfg_file = _write_config(tmp_path, data)
+    with pytest.raises(ValidationError):
+        load_config(cfg_file)
+
+
 def test_default_header_maxlen(tmp_path: Path) -> None:
     cfg_file = _write_config(tmp_path, _minimal_data())
     assert load_config(cfg_file).headers.header_text_maxlen == 200

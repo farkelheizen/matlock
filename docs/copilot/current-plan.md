@@ -2,10 +2,10 @@
 
 Use this file to identify the active implementation plan before starting work.
 
-- Active plan: `docs/copilot/plans/20260831-secret-detection-backfill.md`
-- Current step: SDB-S4 (Completed; review and commit approval pending)
-- Next plan: Commit SDB-S4 detection compatibility fix after approval
-- Last updated: 2026-08-31
+- Active plan: `docs/copilot/plans/20260920-documents-query-chunk-content.md`
+- Current step: DQC-S4 (Completed)
+- Next plan: None
+- Last updated: 2026-09-20
 - Owner: CopilotWhat 
 
 ## Update Rules

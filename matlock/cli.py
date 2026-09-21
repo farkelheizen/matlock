@@ -33,7 +33,15 @@ from matlock.db import (
     set_file_secret_detection,
 )
 from matlock.logging_setup import setup_logging
-from matlock.query_models import ProjectRecord, parse_date_predicate
+from matlock.query_models import (
+    DocumentQueryResponse,
+    DocumentRecord,
+    ProjectQueryResponse,
+    ProjectRecord,
+    TaskQueryResponse,
+    parse_attribute_filter_predicate,
+    parse_date_predicate,
+)
 from matlock.redaction import get_redacted_document, scan_document_for_secrets
 from matlock.search.logging import isolated_search_logging
 from matlock.search.query_cli import (
@@ -60,6 +68,7 @@ app = typer.Typer(
     add_completion=False,
 )
 document_app = typer.Typer(help="Document commands.")
+documents_app = typer.Typer(help="Document query commands.")
 metrics_app = typer.Typer(help="Metrics commands.")
 pipeline_app = typer.Typer(help="Pipeline commands.")
 projects_app = typer.Typer(help="Project commands.")
@@ -69,6 +78,7 @@ super_projects_app = typer.Typer(help="Super-project commands.")
 tasks_app = typer.Typer(help="Task commands.")
 search_app = typer.Typer(help="Search indexing and query commands.")
 app.add_typer(document_app, name="document")
+app.add_typer(documents_app, name="documents")
 app.add_typer(metrics_app, name="metrics")
 app.add_typer(pipeline_app, name="pipeline")
 app.add_typer(projects_app, name="projects")
@@ -193,8 +203,9 @@ def _project_ids_for_file(conn, file_path: str) -> list[str]:
 @projects_app.command(name="query")
 def list_projects(
     ctx: typer.Context,
-    text: str | None = typer.Argument(
+    text: str | None = typer.Option(
         None,
+        "--text",
         help="Optional literal text filter for project records.",
     ),
     project_id: list[str] = typer.Option([], "--project-id", help="Repeatable project ID match."),
@@ -215,8 +226,16 @@ def list_projects(
         "--search-mode",
         help="Search mode to use for the automatic file-backed project lookup.",
     ),
+    min_score: float | None = typer.Option(
+        None,
+        "--min-score",
+        help="Minimum score for the automatic file-backed project lookup (text queries only).",
+    ),
+    limit: int | None = typer.Option(None, "--limit", min=1, help="Maximum rows to return. Defaults to queries.default_limit."),
+    offset: int = typer.Option(0, "--offset", min=0, help="Number of matching rows to skip before returning results."),
+    count_only: bool = typer.Option(False, "--count-only", help="Return only pagination stats; omit row results."),
 ) -> None:
-    """Return project rows as JSON. Supports free-text and project-table field filtering."""
+    """Return a paginated JSON envelope of project rows. Supports free-text and project-table field filtering."""
     cfg = _load_and_validate(ctx.obj[_CONFIG_KEY])
 
     field_filters: dict[str, object] = {}
@@ -240,69 +259,99 @@ def list_projects(
         typer.echo(f"Error: Invalid date predicate: {exc}", err=True)
         raise typer.Exit(code=1)
 
+    effective_limit = limit if limit is not None else cfg.queries.default_limit
+
     conn = get_connection(cfg.db_path)
     try:
         init_db(conn)
 
         if text and text.strip():
-            direct_rows = fetch_projects(conn, term=text, filters=field_filters)
+            _, direct_rows = fetch_projects(conn, term=text, filters=field_filters)
             direct_ids = {row.project_id for row in direct_rows}
 
-            if search_files or True:
-                outcome = run_search_request(
-                    cfg,
-                    conn,
-                    {
-                        "query": text,
-                        "search_mode": search_mode,
-                        "output": {
-                            "granularity": "file",
-                            "limit": 100000,
-                            "include_content": False,
-                        },
+            outcome = run_search_request(
+                cfg,
+                conn,
+                {
+                    "query": text,
+                    "search_mode": search_mode,
+                    "tuning": {"min_score": min_score},
+                    "output": {
+                        "granularity": "file",
+                        "limit": 100000,
+                        "include_content": False,
                     },
-                )
-                if outcome.exit_code != 0:
-                    error_message = "search request failed"
-                    if outcome.response.error is not None:
-                        error_message = outcome.response.error.message
-                    typer.echo(f"Error: {error_message}", err=True)
-                    raise typer.Exit(code=outcome.exit_code)
+                },
+            )
+            if outcome.exit_code != 0:
+                error_message = "search request failed"
+                if outcome.response.error is not None:
+                    error_message = outcome.response.error.message
+                typer.echo(f"Error: {error_message}", err=True)
+                raise typer.Exit(code=outcome.exit_code)
 
-                file_scores: dict[str, float] = {}
-                for result in outcome.response.results:
-                    for project_id in _project_ids_for_file(conn, result.file_path):
-                        file_scores[project_id] = max(file_scores.get(project_id, 0.0), float(result.score))
+            file_scores: dict[str, float] = {}
+            for result in outcome.response.results:
+                for project_id in _project_ids_for_file(conn, result.file_path):
+                    file_scores[project_id] = max(file_scores.get(project_id, 0.0), float(result.score))
 
-                ranked_file_ids = [
-                    project_id for project_id, _ in sorted(file_scores.items(), key=lambda item: (-item[1], item[0]))
-                ]
-                direct_only_ids = sorted(direct_ids - set(file_scores))
-                ordered_project_ids = ranked_file_ids + direct_only_ids
-                if ordered_project_ids:
-                    placeholders = ", ".join("?" for _ in ordered_project_ids)
-                    rows = conn.execute(
-                        "SELECT project_id, super_project_id, title, home_file, priority, status, start_date, due_date FROM project WHERE project_id IN ("
-                        + placeholders
-                        + ")",
-                        ordered_project_ids,
-                    ).fetchall()
-                    rows_by_id = {row["project_id"]: row for row in rows}
-                    payload = [
-                        ProjectRecord.model_validate(dict(rows_by_id[project_id])).model_dump(mode="json")
-                        for project_id in ordered_project_ids
-                        if project_id in rows_by_id
-                    ]
-                else:
-                    payload = []
+            ranked_file_ids = [
+                project_id for project_id, _ in sorted(file_scores.items(), key=lambda item: (-item[1], item[0]))
+            ]
+            direct_only_ids = sorted(direct_ids - set(file_scores))
+            ordered_project_ids = ranked_file_ids + direct_only_ids
+            total_matches = len(ordered_project_ids)
+
+            if count_only:
+                page_ids: list[str] = []
+            elif effective_limit is not None:
+                page_ids = ordered_project_ids[offset : offset + effective_limit]
             else:
-                payload = [row.model_dump(mode="json") for row in direct_rows]
-            typer.echo(json.dumps(payload), nl=False)
+                page_ids = ordered_project_ids[offset:]
+
+            if page_ids:
+                placeholders = ", ".join("?" for _ in page_ids)
+                rows = conn.execute(
+                    "SELECT project_id, super_project_id, title, home_file, priority, status, start_date, due_date FROM project WHERE project_id IN ("
+                    + placeholders
+                    + ")",
+                    page_ids,
+                ).fetchall()
+                rows_by_id = {row["project_id"]: row for row in rows}
+                results = [
+                    ProjectRecord.model_validate(dict(rows_by_id[project_id]))
+                    for project_id in page_ids
+                    if project_id in rows_by_id
+                ]
+            else:
+                results = []
+
+            response = ProjectQueryResponse(
+                total_matches=total_matches,
+                returned_matches=len(results),
+                limit=effective_limit,
+                offset=offset,
+                results=results,
+            )
+            typer.echo(response.model_dump_json(), nl=False)
             return
 
-        rows = fetch_projects(conn, filters=field_filters, term=text if text else None)
-        payload = [row.model_dump(mode="json") for row in rows]
-        typer.echo(json.dumps(payload), nl=False)
+        total_matches, rows = fetch_projects(
+            conn,
+            filters=field_filters,
+            term=text if text else None,
+            limit=effective_limit,
+            offset=offset,
+            count_only=count_only,
+        )
+        response = ProjectQueryResponse(
+            total_matches=total_matches,
+            returned_matches=len(rows),
+            limit=effective_limit,
+            offset=offset,
+            results=rows,
+        )
+        typer.echo(response.model_dump_json(), nl=False)
     finally:
         conn.close()
 
@@ -330,13 +379,21 @@ def list_tasks(
     est_comp_date: list[str] = typer.Option([], "--est-comp-date", help="Repeatable estimated completion date filter."),
     act_comp_date: list[str] = typer.Option([], "--act-comp-date", help="Repeatable actual completion date filter."),
     checked: bool | None = typer.Option(None, "--checked/--unchecked", help="Filter tasks by checked state."),
-    task_text: str | None = typer.Option(None, "--task-text", help="Case-insensitive literal task text match."),
+    text: str | None = typer.Option(None, "--text", help="Case-insensitive literal task text match."),
     headers: str | None = typer.Option(None, "--headers", help="Case-insensitive literal header JSON match."),
     attributes: str | None = typer.Option(None, "--attributes", help="Case-insensitive literal attribute JSON match."),
+    attribute_filters: list[str] = typer.Option(
+        [],
+        "--attribute-filter",
+        help="Repeatable structured JSON-path attribute filter, e.g. 'owner:eq:ops'. AND-composed.",
+    ),
     project_ids: list[str] = typer.Option([], "--project-id", help="Repeatable project filter."),
     super_project_ids: list[str] = typer.Option([], "--super-project-id", help="Repeatable super-project filter."),
+    limit: int | None = typer.Option(None, "--limit", min=1, help="Maximum rows to return. Defaults to queries.default_limit."),
+    offset: int = typer.Option(0, "--offset", min=0, help="Number of matching rows to skip before returning results."),
+    count_only: bool = typer.Option(False, "--count-only", help="Return only pagination stats; omit row results."),
 ) -> None:
-    """Return active task rows as JSON, optionally filtered by date, state, text, and project linkage."""
+    """Return a paginated JSON envelope of active task rows, optionally filtered by date, state, text, and project linkage."""
     cfg = _load_and_validate(ctx.obj[_CONFIG_KEY])
 
     filter_map: dict[str, object] = {}
@@ -348,31 +405,54 @@ def list_tasks(
         ):
             if raw_values:
                 filter_map[field_name] = [parse_date_predicate(value, field_name).model_dump(mode="json") for value in raw_values]
-        if checked is not None:
-            filter_map["checked"] = checked
-        if task_text:
-            filter_map["task_text"] = task_text
-        if headers:
-            filter_map["headers"] = headers
-        if attributes:
-            filter_map["attributes"] = attributes
-        if project_ids:
-            filter_map["project_ids"] = list(project_ids)
-        if super_project_ids:
-            filter_map["super_project_ids"] = list(super_project_ids)
     except ValueError as exc:
         typer.echo(f"Error: Invalid date predicate: {exc}", err=True)
         raise typer.Exit(code=1)
 
+    if checked is not None:
+        filter_map["checked"] = checked
+    if text:
+        filter_map["task_text"] = text
+    if headers:
+        filter_map["headers"] = headers
+    if attributes:
+        filter_map["attributes"] = attributes
+    if attribute_filters:
+        try:
+            filter_map["attribute_filters"] = [
+                parse_attribute_filter_predicate(raw) for raw in attribute_filters
+            ]
+        except ValueError as exc:
+            typer.echo(f"Error: Invalid attribute filter: {exc}", err=True)
+            raise typer.Exit(code=1)
+    if project_ids:
+        filter_map["project_ids"] = list(project_ids)
+    if super_project_ids:
+        filter_map["super_project_ids"] = list(super_project_ids)
+
+    effective_limit = limit if limit is not None else cfg.queries.default_limit
+
     conn = get_connection(cfg.db_path)
     try:
         init_db(conn)
-        rows = fetch_active_tasks(conn, filters=filter_map)
+        total_matches, rows = fetch_active_tasks(
+            conn,
+            filters=filter_map,
+            limit=effective_limit,
+            offset=offset,
+            count_only=count_only,
+        )
     finally:
         conn.close()
 
-    payload = [row.model_dump(mode="json") for row in rows]
-    typer.echo(json.dumps(payload), nl=False)
+    response = TaskQueryResponse(
+        total_matches=total_matches,
+        returned_matches=len(rows),
+        limit=effective_limit,
+        offset=offset,
+        results=rows,
+    )
+    typer.echo(response.model_dump_json(), nl=False)
 
 
 @document_app.command(name="read")
@@ -430,6 +510,148 @@ def doc_read(
         conn.close()
 
     typer.echo(content, nl=False)
+
+
+def _document_record_from_search_result(conn, cfg, result) -> DocumentRecord:
+    """Enrich one search result with file-table metadata for document queries."""
+    file_details = (
+        result.file_details.model_dump(mode="json")
+        if result.file_details is not None
+        else None
+    )
+    if file_details is not None and file_details["content"] == "":
+        file_details["content"] = None
+    row = conn.execute(
+        "SELECT file_ext, created, modified, modified_date, length, word_count"
+        " FROM file WHERE file_path = ?",
+        (result.file_path,),
+    ).fetchone()
+    project_ids = _project_ids_for_file(conn, result.file_path)
+    return DocumentRecord(
+        file_path=result.file_path,
+        absolute_path=result.absolute_path,
+        file_ext=row["file_ext"] if row else None,
+        created=result.created,
+        modified=result.modified,
+        modified_date=row["modified_date"] if row else None,
+        length=row["length"] if row else None,
+        word_count=row["word_count"] if row else None,
+        project_ids=project_ids,
+        project_id=result.project_id,
+        super_project_id=result.super_project_id,
+        score=result.score,
+        score_breakdown=result.score_breakdown.model_dump(mode="json"),
+        frontmatter=result.frontmatter,
+        has_secrets=result.has_secrets,
+        secret_detection_error=result.secret_detection_error,
+        chunk_details=(
+            result.chunk_details.model_dump(mode="json")
+            if result.chunk_details is not None
+            else None
+        ),
+        file_details=file_details,
+    )
+
+
+@documents_app.command(name="query")
+def documents_query(
+    ctx: typer.Context,
+    text: str | None = typer.Option(None, "--text", help="Optional search text."),
+    search_mode: str = typer.Option("hybrid", "--search-mode", help="Search mode."),
+    min_score: float | None = typer.Option(None, "--min-score", help="Minimum score."),
+    project_id: list[str] = typer.Option([], "--project-id", help="Repeatable case-insensitive project ID."),
+    super_project_id: list[str] = typer.Option([], "--super-project-id", help="Repeatable case-insensitive super-project ID."),
+    file_path: list[str] = typer.Option([], "--file-path", help="Repeatable vault-relative path prefix."),
+    file_ext: list[str] = typer.Option([], "--file-ext", help="Repeatable file extension."),
+    attributes: list[str] = typer.Option([], "--attributes", help="Repeatable PATH:OPERATOR:VALUE frontmatter filter."),
+    created: list[str] = typer.Option([], "--created", help="Repeatable date predicate for creation date."),
+    modified: list[str] = typer.Option([], "--modified", help="Repeatable date predicate for modification date."),
+    limit: int | None = typer.Option(None, "--limit", min=1, help="Maximum results."),
+    offset: int = typer.Option(0, "--offset", min=0, help="Results to skip."),
+    count_only: bool = typer.Option(False, "--count-only", help="Return only pagination stats."),
+    granularity: str = typer.Option("file", "--granularity", help="Result granularity: file or chunk."),
+    surrounding_chunks: int = typer.Option(0, "--surrounding-chunks", min=0, max=3, help="Adjacent chunks for chunk results."),
+) -> None:
+    """Return a paginated JSON document query envelope."""
+    if granularity not in {"file", "chunk"}:
+        typer.echo("Error: granularity must be 'file' or 'chunk'", err=True)
+        raise typer.Exit(code=1)
+
+    for option_name, values in (
+        ("--file-path", file_path),
+        ("--file-ext", file_ext),
+        ("--project-id", project_id),
+        ("--super-project-id", super_project_id),
+    ):
+        if any(not value.strip() for value in values):
+            typer.echo(f"Error: {option_name} values cannot be empty", err=True)
+            raise typer.Exit(code=1)
+
+    cfg = _load_query_config(ctx.obj[_CONFIG_KEY], stdio=False)
+    try:
+        created_predicates = [parse_date_predicate(value, "created") for value in created]
+        modified_predicates = [parse_date_predicate(value, "modified") for value in modified]
+        metadata_filters = [
+            parse_attribute_filter_predicate(value).model_dump(mode="json")
+            for value in attributes
+        ]
+    except ValueError as exc:
+        typer.echo(f"Error: invalid document filter: {exc}", err=True)
+        raise typer.Exit(code=1)
+
+    effective_limit = limit if limit is not None else cfg.queries.default_limit
+    request_payload = {
+        "query": text,
+        "search_mode": search_mode,
+        "tuning": {"min_score": min_score},
+        "filters": {
+            "project_id": project_id,
+            "super_project_id": super_project_id,
+            "project_match_mode": "exact",
+            "file_paths": [value.lstrip("/") for value in file_path],
+            "file_exts": file_ext,
+            "created_predicates": [
+                {"operator": predicate.operator, "value": predicate.value.isoformat()}
+                for predicate in created_predicates
+            ],
+            "modified_predicates": [
+                {"operator": predicate.operator, "value": predicate.value.isoformat()}
+                for predicate in modified_predicates
+            ],
+            "metadata": metadata_filters,
+        },
+        "output": {
+            "granularity": granularity,
+            "surrounding_chunks": surrounding_chunks,
+            "limit": effective_limit,
+            "offset": offset,
+            "include_content": granularity == "chunk",
+        },
+    }
+
+    conn = get_connection(cfg.db_path)
+    try:
+        init_db(conn)
+        outcome = run_search_request(cfg, conn, request_payload)
+        if outcome.exit_code != 0:
+            message = outcome.response.error.message if outcome.response.error else "document query failed"
+            typer.echo(f"Error: {message}", err=True)
+            raise typer.Exit(code=outcome.exit_code)
+        results = [] if count_only else [
+            _document_record_from_search_result(conn, cfg, result)
+            for result in outcome.response.results
+        ]
+    finally:
+        conn.close()
+
+    response = DocumentQueryResponse(
+        total_matches=outcome.response.stats.total_matches,
+        returned_matches=len(results),
+        limit=effective_limit,
+        offset=offset,
+        results=results,
+    )
+    typer.echo(response.model_dump_json(), nl=False)
 
 
 @secrets_app.command(name="backfill")
@@ -709,6 +931,12 @@ def search_query(
 ) -> None:
     """Run a local search query in human or strict stdio mode."""
     cfg = _load_query_config(ctx.obj[_CONFIG_KEY], stdio=stdio)
+
+    if not stdio:
+        typer.echo(
+            "Warning: search query is deprecated; use documents query instead.",
+            err=True,
+        )
 
     if stdio and query_text is not None:
         _raise_search_error(

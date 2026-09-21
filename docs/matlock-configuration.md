@@ -1,6 +1,6 @@
 # Matlock Configuration
 
-**Version:** 0.7.x
+**Version:** 1.0.x
 
 All Matlock configuration lives in a single `config.yaml` file — one per "second brain" vault. It combines application-level settings (paths, DB connection, project structure) with task-attribute parsing rules.
 
@@ -109,6 +109,15 @@ search:
     api_base_url: null
     api_base_url_env_var: null
     api_key_env_var: OPENAI_API_KEY
+
+# ────────────────────────────────────────────────────
+# Queries
+# ────────────────────────────────────────────────────
+
+queries:
+  # Default --limit applied to `tasks query` and `projects query` when the
+  # CLI flag is omitted. Passing --limit explicitly always overrides this.
+  default_limit: 20
 
 # ────────────────────────────────────────────────────
 # Parser: task attributes

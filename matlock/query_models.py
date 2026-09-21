@@ -3,9 +3,9 @@ from __future__ import annotations
 import json
 import re
 from datetime import date
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class ProjectRecord(BaseModel):
@@ -109,6 +109,74 @@ class DatePredicate(BaseModel):
     value: date
 
 
+class QueryResponseStats(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    total_matches: int = Field(ge=0)
+    returned_matches: int = Field(ge=0)
+    limit: int | None = Field(default=None, ge=1)
+    offset: int = Field(default=0, ge=0)
+
+
+class TaskQueryResponse(QueryResponseStats):
+    results: list[TaskRecord] = Field(default_factory=list)
+
+
+class ProjectQueryResponse(QueryResponseStats):
+    results: list[ProjectRecord] = Field(default_factory=list)
+
+
+class DocumentChunkDetails(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    chunk_id: str
+    chunk_index: int = Field(ge=0)
+    total_chunks: int = Field(ge=1)
+    content: str | None = None
+    before: list[str] = Field(default_factory=list)
+    after: list[str] = Field(default_factory=list)
+
+
+class DocumentFileDetails(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    total_matching_chunks: int = Field(ge=1)
+    content: str | None = None
+
+
+class DocumentRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    file_path: str
+    absolute_path: str
+    file_ext: str | None = None
+    created: str | None = None
+    modified: str | None = None
+    modified_date: str | None = None
+    length: int | None = Field(default=None, ge=0)
+    word_count: int | None = Field(default=None, ge=0)
+    project_ids: list[str] = Field(default_factory=list)
+    project_id: str | None = None
+    super_project_id: str | None = None
+    score: float = 0.0
+    score_breakdown: dict[str, Any] = Field(default_factory=dict)
+    frontmatter: dict[str, Any] = Field(default_factory=dict)
+    has_secrets: bool | None = None
+    secret_detection_error: str | None = None
+    chunk_details: DocumentChunkDetails | None = None
+    file_details: DocumentFileDetails | None = None
+
+    @model_validator(mode="after")
+    def _check_detail_shapes(self) -> "DocumentRecord":
+        if self.chunk_details is not None and self.file_details is not None:
+            raise ValueError("document cannot include both chunk_details and file_details")
+        return self
+
+
+class DocumentQueryResponse(QueryResponseStats):
+    results: list[DocumentRecord] = Field(default_factory=list)
+
+
 class TaskQueryFilters(BaseModel):
     due_date: list[DatePredicate] = Field(default_factory=list)
     est_comp_date: list[DatePredicate] = Field(default_factory=list)
@@ -119,6 +187,19 @@ class TaskQueryFilters(BaseModel):
     attributes: str | None = None
     project_ids: list[str] = Field(default_factory=list)
     super_project_ids: list[str] = Field(default_factory=list)
+
+
+AttributeFilterOperator = Literal["eq", "neq", "gt", "gte", "lt", "lte", "in", "contains"]
+
+_ATTRIBUTE_FILTER_OPERATORS: set[str] = {"eq", "neq", "gt", "gte", "lt", "lte", "in", "contains"}
+
+
+class AttributeFilterPredicate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    path: str
+    operator: AttributeFilterOperator = "eq"
+    value: Any
 
 
 def parse_date_predicate(raw: str, field: str = "due_date") -> DatePredicate:
@@ -139,3 +220,57 @@ def parse_date_predicate(raw: str, field: str = "due_date") -> DatePredicate:
         raise ValueError(f"Invalid date value: {date_value!r}") from exc
 
     return DatePredicate(field=field, operator=operator, value=parsed_date)
+
+
+def _coerce_attribute_token(token: str) -> Any:
+    """Coerce one raw attribute-filter value token to match likely JSON storage types."""
+    lowered = token.lower()
+    if lowered == "true":
+        return True
+    if lowered == "false":
+        return False
+    if lowered == "null":
+        return None
+    try:
+        return int(token)
+    except ValueError:
+        pass
+    try:
+        return float(token)
+    except ValueError:
+        pass
+    return token
+
+
+def parse_attribute_filter_predicate(raw: str) -> AttributeFilterPredicate:
+    """Parse a colon-delimited ``path:operator:value`` attribute-filter token.
+
+    Bare paths without a leading ``$`` are auto-prefixed with ``$.``. The
+    ``in`` operator accepts a comma-separated value list.
+    """
+    if raw is None or raw == "":
+        raise ValueError("Attribute filter cannot be empty")
+
+    parts = raw.split(":", 2)
+    if len(parts) != 3:
+        raise ValueError(
+            f"Invalid attribute filter: {raw!r}; expected PATH:OPERATOR:VALUE"
+        )
+    path, operator, raw_value = parts
+    if not path:
+        raise ValueError(f"Invalid attribute filter: {raw!r}; path cannot be empty")
+    if operator not in _ATTRIBUTE_FILTER_OPERATORS:
+        raise ValueError(
+            f"Invalid attribute filter operator: {operator!r}; "
+            f"expected one of {sorted(_ATTRIBUTE_FILTER_OPERATORS)}"
+        )
+    if not path.startswith("$"):
+        path = f"$.{path}"
+
+    if operator == "in":
+        value: Any = [_coerce_attribute_token(token) for token in raw_value.split(",")]
+    else:
+        value = _coerce_attribute_token(raw_value)
+
+    return AttributeFilterPredicate(path=path, operator=operator, value=value)
+
