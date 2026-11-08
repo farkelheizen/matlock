@@ -8,12 +8,15 @@ SQLite.
 Python 3.11 or newer is required. Install the project and its dependencies:
 
 ```sh
+cd /path/to/matlock2  # the repository directory containing pyproject.toml
 python -m venv .venv
 . .venv/bin/activate
 python -m pip install -e .
 ```
 
 The configured embedding model is downloaded on first use.
+The `docs_local` link points to a separate local notes directory; it is not the
+Python project directory.
 
 ## Configure
 
@@ -43,3 +46,12 @@ pytest
 Tests use temporary databases and synthetic Markdown files. Set
 `MATLOCK2_TEST_VAULT` to a local test corpus to enable the optional integration
 test.
+
+## Documentation and example
+
+- [Getting started](docs/getting-started.md)
+- [Configuration and metadata hooks](docs/configuration.md)
+- [Database and troubleshooting](docs/operations.md)
+- [Complete example](docs/example.md), with a small fictional vault in
+  [`examples/second-brain/`](examples/second-brain/)
+- [Changelog](docs/CHANGELOG.md)

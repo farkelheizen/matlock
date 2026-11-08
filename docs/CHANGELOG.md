@@ -1,0 +1,21 @@
+# Changelog
+
+Notable project changes are recorded here. Entries under **Unreleased** have
+not necessarily been published as a release.
+
+## Unreleased
+
+### Added
+
+- Expanded setup, configuration, operations, and example documentation.
+- A small fictional second-brain example for a self-contained ingestion demo.
+- An example hook that fills missing or null project identifiers from file paths.
+
+## 0.1.0
+
+### Added
+
+- Python CLI for one-shot Markdown ingestion and filesystem watching.
+- SQLite persistence with JSON metadata, FTS5, and `sqlite-vec` embeddings.
+- YAML frontmatter parsing, metadata hooks, and configurable chunking.
+- File hashing, incremental ingestion, reconciliation, and persistent errors.

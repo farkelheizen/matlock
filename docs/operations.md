@@ -1,0 +1,62 @@
+# Operation and troubleshooting
+
+## What a scan does
+
+The engine walks the configured vault for `.md` files, reads their bytes and
+stores a SHA-256 digest. It skips a previously indexed file when its digest and
+processing fingerprint match. It processes changed files and removes indexed
+records for files no longer found during a complete scan. Symbolic links are
+not followed during discovery.
+
+For each note, frontmatter becomes JSON metadata and the body is split into
+heading-aware chunks. Each chunk is stored alongside an FTS5 index and a
+`sqlite-vec` embedding. File replacement is transactional. If a changed note
+fails, its previous successfully indexed representation remains in the
+database until a later successful ingestion.
+
+`scan` reports per-file status and returns a nonzero exit code when ingestion
+errors remain or discovery was incomplete. `watch` starts with a scan,
+processes filesystem events, and periodically reconciles the vault. Event
+retries use exponential delays capped at 30 seconds; later scans can retry
+again.
+
+## Inspect errors
+
+The database contains note content and metadata: treat it as private. For a
+database at `.matlock2/index.sqlite3`, this read-only inspection uses Python's
+standard SQLite module:
+
+```sh
+python - <<'PY'
+import sqlite3
+
+with sqlite3.connect("file:.matlock2/index.sqlite3?mode=ro", uri=True) as db:
+    for row in db.execute(
+        "SELECT source_path, stage, attempt_count, status, error_details "
+        "FROM ingestion_errors ORDER BY last_attempt_at DESC"
+    ):
+        print(row)
+PY
+```
+
+Fix the file or configuration and scan again. Error statuses are retained as
+`unresolved`, `resolved`, or `superseded`; a failure to read a file can have an
+empty hash because the bytes were not available.
+
+## Common issues
+
+- **`pip install -e .` says no project was found:** run it from the repository
+  directory containing `pyproject.toml`, not from a notes directory.
+- **Vault path is not a directory:** check the configured path. Relative paths
+  are relative to the configuration file.
+- **Model initialization fails:** check the FastEmbed model name and initial
+  download connectivity. `check-config` does not test the model download.
+- **`sqlite-vec` cannot load:** verify the installed extension and that the
+  active Python's SQLite supports extension loading on your platform.
+- **Configured dimension differs from the database:** use a new database or
+  migrate the existing one before switching to a model with a different
+  embedding dimension.
+
+The application currently provides ingestion commands, not an MCP server or
+search CLI. The [example](example.md) shows how to inspect indexed data
+directly.
