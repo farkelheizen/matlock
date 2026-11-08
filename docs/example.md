@@ -81,6 +81,8 @@ overview note's missing value become `atlas`; the retrospective retains
 `custom-atlas`. The FTS query returns the decision note containing
 `migration`. The last section is empty after a successful scan. This query is
 an inspection example, not a supported search API or MCP tool.
+For metadata, full-text, and vector query examples, see
+[querying the example database](queries.md).
 
 ## 4. Try watching
 

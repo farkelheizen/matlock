@@ -7,6 +7,8 @@ not necessarily been published as a release.
 
 ### Added
 
+- Database schema, Python internals, and runnable metadata, FTS, and vector
+  query examples.
 - Expanded setup, configuration, operations, and example documentation.
 - A small fictional second-brain example for a self-contained ingestion demo.
 - An example hook that fills missing or null project identifiers from file paths.

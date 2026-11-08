@@ -52,6 +52,8 @@ test.
 - [Getting started](docs/getting-started.md)
 - [Configuration and metadata hooks](docs/configuration.md)
 - [Database and troubleshooting](docs/operations.md)
+- [Database structure](docs/database.md), [query examples](docs/queries.md),
+  and [Python internals](docs/python-internals.md)
 - [Complete example](docs/example.md), with a small fictional vault in
   [`examples/second-brain/`](examples/second-brain/)
 - [Changelog](docs/CHANGELOG.md)
