@@ -34,6 +34,7 @@ class _VaultEventHandler(FileSystemEventHandler):
             self.events.put(_FULL_SCAN)
             return
         if event.event_type == "moved":
+            # Treat a move as removal of the old path and ingestion of the new one.
             source = getattr(event, "src_path", "")
             destination = getattr(event, "dest_path", "")
             self._enqueue_path("delete", source)
@@ -75,6 +76,7 @@ class VaultWatcher:
         observer.start()
         try:
             self._report(self.engine.scan(self.on_progress))
+            # Coalesce repeated events for each path before touching the database.
             pending: dict[str, tuple[object, float]] = {}
             next_reconciliation = (
                 time.monotonic() + self.engine.config.reconcile_interval_seconds

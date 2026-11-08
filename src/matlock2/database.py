@@ -208,6 +208,7 @@ class Database:
                 ).fetchall()
                 old_ids = [row["id"] for row in previous]
                 if old_ids:
+                    # Virtual index rows do not follow the chunk foreign-key cascade.
                     placeholders = ",".join("?" for _ in old_ids)
                     self.connection.execute(
                         f"DELETE FROM chunks_fts WHERE rowid IN ({placeholders})", old_ids
@@ -225,6 +226,7 @@ class Database:
                     row_id = cursor.lastrowid
                     if row_id is None:
                         raise DatabaseError("SQLite did not return a chunk row id")
+                    # All three tables share the numeric rowid for their joins.
                     self.connection.execute(
                         "INSERT INTO chunks_fts(rowid, chunk_id, content) VALUES (?, ?, ?)",
                         (row_id, chunk.chunk_id, chunk.content),

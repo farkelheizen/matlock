@@ -128,6 +128,7 @@ class IngestionEngine:
             raw_bytes = candidate.read_bytes()
             source_hash = hashlib.sha256(raw_bytes).hexdigest()
             existing = self.database.get_source(relative_path)
+            # Bytes and processing inputs must both match to reuse the existing index.
             if (
                 existing is not None
                 and existing["sha256"] == source_hash
@@ -243,6 +244,7 @@ class IngestionEngine:
                 progress(index, len(discovered), relative_path, result)
 
         removed = 0
+        # An incomplete listing cannot establish that unseen files were deleted.
         if discovery_complete:
             removed = self.database.reconcile_sources(set(discovered))
             self.database.reconcile_errors(set(discovered))

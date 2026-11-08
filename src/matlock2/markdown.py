@@ -18,6 +18,7 @@ _FRONTMATTER_START = re.compile(r"\A(?:\ufeff)?---[ \t]*\r?\n")
 
 
 def _json_value(value: Any) -> Any:
+    # YAML dates need conversion before metadata can be serialized as JSON.
     if isinstance(value, (dt.date, dt.datetime)):
         return value.isoformat()
     if isinstance(value, dict):

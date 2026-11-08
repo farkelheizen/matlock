@@ -32,6 +32,7 @@ def _sections(markdown: str) -> list[_Section]:
 
     for line in markdown.splitlines():
         fence_match = _FENCE.match(line)
+        # A heading-looking line inside a code fence belongs to the current section.
         if fence is not None:
             body_lines.append(line)
             if (
@@ -61,6 +62,7 @@ def _sections(markdown: str) -> list[_Section]:
         else:
             assert setext_match is not None
             level = 1 if setext_match.group(1).startswith("=") else 2
+            # The preceding line is the heading, not part of the old section.
             heading = body_lines.pop().strip()
 
         flush()
@@ -112,6 +114,7 @@ def _split_text(
             break
         overlap_start = end
         if overlap_tokens:
+            # Choose a suffix within the overlap budget, then avoid splitting a word.
             low, high = start, end
             while low < high:
                 middle = (low + high) // 2
@@ -196,6 +199,7 @@ def chunk_markdown(
             if tokenizer.count(content) > max_input_tokens:
                 raise ValueError("Chunk exceeds the embedding model input limit")
             ordinal = len(chunks)
+            # Stable for a path/ordinal pair, not a content hash.
             digest = hashlib.sha256(
                 f"{relative_path}\0{ordinal}".encode("utf-8")
             ).hexdigest()[:24]
