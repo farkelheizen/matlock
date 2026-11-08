@@ -1,0 +1,62 @@
+# Byte-compiled / optimized files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Distribution / packaging
+build/
+dist/
+site/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# Test and coverage reports
+.pytest_cache/
+.tox/
+.nox/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# Type checking and linting caches
+.mypy_cache/
+.dmypy.json
+.pyre/
+.ruff_cache/
+.hypothesis/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Operating system files
+.DS_Store
+Thumbs.db
+
+# Local-only requirements and notes
+/docs_local
+
+# Local database and configuration
+/.matlock2/
+/matlock2.toml
+*.sqlite3
+*.sqlite3-shm
+*.sqlite3-wal
