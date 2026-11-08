@@ -5,6 +5,7 @@ from matlock2.models import DocumentContext
 
 def project_id_from_path(context: DocumentContext, metadata: dict[str, object]) -> None:
     parts = context.relative_path.split("/")
+    # This example matches only direct project notes and preserves non-null values.
     if (
         len(parts) == 3
         and parts[0] == "projects"

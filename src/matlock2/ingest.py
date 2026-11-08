@@ -50,6 +50,7 @@ def _load_hooks(specifications: tuple[str, ...]) -> tuple[_LoadedHook, ...]:
             raise ValueError(
                 f"Hook must accept (document_context, metadata): {specification}"
             ) from exc
+        # Hook changes invalidate the processing fingerprint even if notes are unchanged.
         source_file = inspect.getsourcefile(callback) or getattr(module, "__file__", None)
         if source_file:
             source_digest = hashlib.sha256(Path(source_file).read_bytes()).hexdigest()
@@ -114,6 +115,7 @@ class IngestionEngine:
                 self.embedder, "runtime_version", "injected"
             ),
         }
+        # Canonical serialization makes the fingerprint independent of dict ordering.
         serialized = json.dumps(properties, sort_keys=True, separators=(",", ":"))
         return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
@@ -121,6 +123,7 @@ class IngestionEngine:
         stage = "read"
         source_hash = ""
         try:
+            # Resolve symlinks before checking containment, not just the lexical path.
             candidate = (self.config.vault_path / relative_path).resolve(strict=True)
             candidate.relative_to(self.config.vault_path.resolve())
             if candidate.suffix.lower() != ".md" or not candidate.is_file():
@@ -149,6 +152,7 @@ class IngestionEngine:
                 result = hook.callback(context, metadata)
                 if result is not None:
                     raise TypeError(f"Hook must mutate metadata and return None: {hook.name}")
+                # Attribute invalid metadata to the hook stage before persistence.
                 json.dumps(metadata, ensure_ascii=False, allow_nan=False)
 
             stage = "chunk"
@@ -217,6 +221,7 @@ class IngestionEngine:
                 relative_path, "", "discover", failure.error
             )
 
+        # Mutating directories in place prevents os.walk from visiting symlinked trees.
         for root, directories, filenames in os.walk(
             self.config.vault_path, onerror=on_error, followlinks=False
         ):

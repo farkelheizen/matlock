@@ -21,6 +21,7 @@ def main() -> None:
         help="Path to the populated example database",
     )
     args = parser.parse_args()
+    # URI read-only mode prevents a typo from creating an empty database.
     uri = args.database.resolve().as_uri() + "?mode=ro"
     with closing(sqlite3.connect(uri, uri=True)) as db:
         db.enable_load_extension(True)
@@ -54,7 +55,8 @@ def main() -> None:
         ):
             print(f"  {path} (bm25={score:.6f}): {content}")
 
-        # This example is only valid for a database using one compatible model.
+        # A partial reindex may leave incompatible models in the same database.
+        # Matching names and package versions still cannot prove identical model artifacts.
         models = db.execute(
             "SELECT DISTINCT embedding_model, embedding_version FROM source_documents"
         ).fetchall()

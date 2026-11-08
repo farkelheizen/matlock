@@ -30,6 +30,7 @@ class WordTokenizer:
 
 
 class TestEmbedder(WordTokenizer):
+    # Deterministic two-dimensional vectors avoid model downloads in unit tests.
     version = "test-embedder-v1"
 
     def embed(self, texts: list[str]) -> list[list[float]]:
@@ -204,6 +205,7 @@ def test_content_hash_not_mtime_or_size_detects_changes(tmp_path: Path) -> None:
         original_stat = path.stat()
         original_hash = db.get_source("note.md")["sha256"]
 
+        # An mtime-only change must not cause reingestion.
         os.utime(
             path,
             ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns + 1_000_000_000),
@@ -211,6 +213,7 @@ def test_content_hash_not_mtime_or_size_detects_changes(tmp_path: Path) -> None:
         report = engine.scan()
         assert report.skipped == 1
 
+        # Same size and restored mtime must not hide a content change.
         path.write_text("# Note\nbravo\n", encoding="utf-8")
         os.utime(
             path,
@@ -549,6 +552,7 @@ def test_watcher_ingests_created_file_and_stops_cleanly(tmp_path: Path) -> None:
     thread_errors: list[BaseException] = []
 
     def run_watcher() -> None:
+        # SQLite connections are created and used in their owning thread.
         db = Database(config.database_path, config)
         try:
             engine = IngestionEngine(config, db, TestEmbedder())

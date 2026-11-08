@@ -30,6 +30,7 @@ class Database:
                 path, timeout=config.busy_timeout_ms / 1000, isolation_level=None
             )
             self.connection.row_factory = sqlite3.Row
+            # WAL allows independent readers to continue while ingestion writes.
             journal_mode = self.connection.execute("PRAGMA journal_mode=WAL").fetchone()[0]
             if str(journal_mode).lower() != "wal":
                 raise DatabaseError(
@@ -59,6 +60,7 @@ class Database:
 
     @contextmanager
     def _transaction(self) -> Iterator[None]:
+        # Acquire the writer reservation before changing any part of an index.
         self.connection.execute("BEGIN IMMEDIATE")
         try:
             yield
@@ -123,6 +125,7 @@ class Database:
         except sqlite3.Error as exc:
             raise DatabaseError(f"Could not initialize SQLite schema: {exc}") from exc
 
+        # Existing vectors cannot safely be reused at another configured dimension.
         row = connection.execute(
             "SELECT value FROM database_metadata WHERE key='vector_dimensions'"
         ).fetchone()
@@ -268,6 +271,8 @@ class Database:
                 "WHERE source_path=? AND source_hash<>? AND status='unresolved'",
                 (now, relative_path, source_hash),
             )
+            # A different stage was reached, so an earlier failure for these bytes
+            # no longer describes the current attempt.
             self.connection.execute(
                 "UPDATE ingestion_errors SET status='resolved', last_attempt_at=? "
                 "WHERE source_path=? AND source_hash=? AND stage<>? "
@@ -373,6 +378,7 @@ class Database:
 
     def distinct_metadata_values(self, field: str) -> list[Any]:
         parts = field.split(".")
+        # Restrict paths to identifiers instead of accepting arbitrary JSON path syntax.
         if not parts or any(
             re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", part) is None for part in parts
         ):

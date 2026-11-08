@@ -38,6 +38,7 @@ class Chunk:
 class ParsedDocument:
     relative_path: str
     body: str
+    # The frozen record still contains mutable metadata for in-place hooks.
     metadata: dict[str, Any]
 
 

@@ -29,6 +29,7 @@ class FastEmbedder:
         )
 
     def count(self, text: str) -> int:
+        # Reserve space for the model's special tokens in chunk size checks.
         return len(self._tokenizer.encode(text, add_special_tokens=True).ids)
 
     def embed(self, texts: list[str]) -> list[list[float]]:

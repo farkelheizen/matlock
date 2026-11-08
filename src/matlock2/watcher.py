@@ -31,6 +31,7 @@ class _VaultEventHandler(FileSystemEventHandler):
         if event.event_type not in {"created", "modified", "deleted", "moved"}:
             return
         if event.is_directory:
+            # A directory event may affect many notes; reconcile rather than guess.
             self.events.put(_FULL_SCAN)
             return
         if event.event_type == "moved":
@@ -73,6 +74,7 @@ class VaultWatcher:
         observer.schedule(
             handler, str(self.engine.config.vault_path), recursive=True
         )
+        # Start observing before the initial scan so changes during it are queued.
         observer.start()
         try:
             self._report(self.engine.scan(self.on_progress))

@@ -40,6 +40,7 @@ def load_config(path: Path) -> IngestConfig:
     if not isinstance(hooks, list) or not all(isinstance(item, str) for item in hooks):
         raise ConfigurationError("hooks must be an array of module:function strings")
 
+    # Relative vault and database paths follow the config file, not the shell cwd.
     base = config_path.parent
     try:
         result = IngestConfig(

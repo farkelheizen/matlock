@@ -75,6 +75,7 @@ def _sections(markdown: str) -> list[_Section]:
 
 
 def _best_boundary(text: str, start: int, tentative: int) -> int:
+    # Prefer structural boundaries without leaving a chunk mostly empty.
     lower_bound = start + max(1, (tentative - start) // 2)
     for separator in ("\n", ". ", "! ", "? ", "; ", ", ", " "):
         boundary = text.rfind(separator, lower_bound, tentative + 1)
@@ -98,6 +99,7 @@ def _split_text(
     while start < len(text):
         low, high = start + 1, len(text)
         best = start
+        # Search character offsets while measuring the budget with the tokenizer.
         while low <= high:
             middle = (low + high) // 2
             if tokenizer.count(prefix + text[start:middle]) <= max_tokens:
@@ -126,6 +128,7 @@ def _split_text(
             while overlap_start > start and not text[overlap_start - 1].isspace():
                 overlap_start -= 1
             if overlap_start == start:
+                # Avoid repeating an entire unbroken span indefinitely.
                 overlap_start = end
         start = max(start + 1, overlap_start)
     return [piece for piece in result if piece]
@@ -153,6 +156,7 @@ def chunk_markdown(
         if tokenizer.count(prefix) >= target_tokens:
             raise ValueError("Heading breadcrumb exceeds the chunk token budget")
 
+        # Keep paragraph separators so packing does not join adjacent paragraphs.
         paragraphs = re.split(r"(\n[ \t]*\n+)", section.body)
         blocks: list[str] = []
         pending = ""

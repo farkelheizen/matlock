@@ -36,6 +36,7 @@ def test_query_example_against_fictional_vault(
             assert dimensions == 2
             assert max_input_tokens == 512
 
+    # Exercise the actual script while using the same deterministic test embedder.
     namespace = runpy.run_path(str(EXAMPLE / "query.py"))
     main = namespace["main"]
     monkeypatch.setitem(main.__globals__, "FastEmbedder", QueryEmbedder)
