@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "matlock2"
 version = "0.1.0"
-description = "Local Markdown ingestion engine backed by SQLite"
+description = "Local Markdown indexing and modular SQLite search tools"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -18,6 +18,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8,<9"]
+mcp = ["fastmcp>=2.14,<3"]
 
 [project.scripts]
 matlock2 = "matlock2.cli:main"

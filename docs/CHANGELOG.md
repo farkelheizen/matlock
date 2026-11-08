@@ -7,6 +7,7 @@ not necessarily been published as a release.
 
 ### Added
 
+- Optional modular FastMCP search tools and a separate example stdio host.
 - Database schema, Python internals, and runnable metadata, FTS, and vector
   query examples.
 - Expanded setup, configuration, operations, and example documentation.
