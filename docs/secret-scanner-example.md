@@ -43,8 +43,10 @@ matlock2-scanner --config matlock2.toml scan --no-llm
 ```
 
 `--no-llm` needs no model download. For the LLM layer too, install
-`".[scanner-llm]"` and omit the flag; the first run downloads the model (a gated
-Llama model needs Hugging Face access, so you can set another `model_id`).
+`".[scanner-llm]"` and omit the flag; the first run downloads the ungated
+`Qwen/Qwen2.5-1.5B-Instruct` (about 3 GB). The scanner's built-in default,
+`meta-llama/Llama-3.2-1B-Instruct`, is gated: it needs approved Hugging Face
+access and `huggingface-cli login`, otherwise loading fails with a 401 error.
 
 Expected output of the heuristic-only pass is a line like
 `Scan complete: scanned=..., skipped=..., flagged=..., errors=0`. A second run

@@ -118,7 +118,7 @@ follow the configuration file.
 | `max_chunk_chars` | `4000` | Largest chunk scanned as-is |
 | `max_document_chars` | `50000` | Largest document body scanned as-is |
 | `[heuristics] plugins` | all defaults | `detect-secrets` plugin class names, such as `AWSKeyDetector` |
-| `[llm] model_id` | `meta-llama/Llama-3.2-1B-Instruct` | Hugging Face model |
+| `[llm] model_id` | `meta-llama/Llama-3.2-1B-Instruct` | Hugging Face model; the default is gated and needs approved access and login, so set an ungated model such as `Qwen/Qwen2.5-1.5B-Instruct` otherwise |
 | `[llm] device` | `"auto"` | `auto`, `cpu`, `cuda`, or `mps` |
 | `[llm] max_new_tokens` | `256` | Generation limit |
 | `[llm] prompt_file` | built-in | Prompt template path |
