@@ -17,11 +17,14 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8,<9"]
+dev = ["pytest>=8,<9", "detect-secrets>=1.5,<2", "pydantic>=2,<3"]
 mcp = ["fastmcp>=2.14,<3"]
+scanner = ["detect-secrets>=1.5,<2", "pydantic>=2,<3"]
+scanner-llm = ["detect-secrets>=1.5,<2", "pydantic>=2,<3", "transformers>=4.56", "torch>=2.2"]
 
 [project.scripts]
 matlock2 = "matlock2.cli:main"
+matlock2-scanner = "matlock2_scanner.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
