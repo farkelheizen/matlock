@@ -47,3 +47,9 @@ model artifact. See [database structure](database.md) for those limitations.
 
 These direct SQL examples are exploratory, not MCP tools or a stable search
 API.
+
+## Secret scanner findings
+
+Queries for `secret_scan` results are in the
+[secret scanner guide](secret-scanner.md#reading-findings) and the
+[example](secret-scanner-example.md).

@@ -56,5 +56,7 @@ test.
   and [Python internals](docs/python-internals.md)
 - [Complete example](docs/example.md), with a small fictional vault in
   [`examples/second-brain/`](examples/second-brain/)
+- [Secret scanner](docs/secret-scanner.md) and its [example](docs/secret-scanner-example.md),
+  with a vault in [`examples/secret-scanner/`](examples/secret-scanner/)
 - [Modular MCP search tools and example host](docs/mcp.md)
 - [Changelog](docs/CHANGELOG.md)

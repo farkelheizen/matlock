@@ -60,3 +60,9 @@ empty hash because the bytes were not available.
 The application currently provides ingestion commands, not an MCP server or
 search CLI. The [example](example.md) shows how to inspect indexed data
 directly.
+
+## Running the secret scanner
+
+After a scan, `matlock2-scanner scan` (or `run`) evaluates content that has no
+attribute row yet and records findings. It can run beside `watch`. See the
+[secret scanner guide](secret-scanner.md) and its [example](secret-scanner-example.md).

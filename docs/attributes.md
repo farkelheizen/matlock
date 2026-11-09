@@ -109,3 +109,10 @@ vector rows are not rebuilt. Migrated entries have no attribute records.
 Upgrade ingestion and MCP readers together: schema-2 readers reject schema 1,
 and older readers and writers do not support schema 2. Restore the backup
 with matching old software if rollback to the old version is needed.
+
+## The `secret_scan` key
+
+`matlock2-scanner` records its findings under the top-level key `secret_scan`
+(configurable). It only inserts rows for content that has none, so a row from
+another writer prevents scanning. See the [secret scanner guide](secret-scanner.md)
+for the stored fields, the one-scan-per-hash rule, and size limits.

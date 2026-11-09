@@ -1,0 +1,37 @@
+# Run every command from this directory so relative paths resolve as documented.
+[hooks]
+configured = ["secret_scan_hooks:sensitivity_from_path"]
+
+[ingest]
+vault_path = "./vault"
+database_path = "./.matlock2/index.sqlite3"
+
+[chunking]
+target_tokens = 400
+overlap_tokens = 50
+
+[embedding]
+model = "BAAI/bge-small-en-v1.5"
+dimensions = 384
+max_input_tokens = 512
+
+[secret_scanner]
+enabled_layers = ["heuristic", "llm"]
+interval_seconds = 60
+batch_size = 25
+domains = ["chunk", "document"]
+# Deliberately low so the oversize hook has something to do in this small vault.
+max_chunk_chars = 1200
+max_document_chars = 4000
+
+[secret_scanner.llm]
+model_id = "meta-llama/Llama-3.2-1B-Instruct"
+prompt_file = "./prompt.txt"
+
+[secret_scanner.hooks]
+pre_scan = "secret_scan_hooks:skip_public"
+heuristic_rules = "secret_scan_hooks:internal_hostnames"
+prompt_context = "secret_scan_hooks:add_sensitivity_context"
+risk_policy = "secret_scan_hooks:weight_by_sensitivity"
+on_oversize = "secret_scan_hooks:head_and_tail"
+post_scan = "secret_scan_hooks:write_report"

@@ -47,3 +47,5 @@ options and behavior.
 
 To try this without pointing at your own notes, follow the
 [fictional second-brain example](example.md).
+
+To scan indexed content for secrets, see the [secret scanner](secret-scanner.md).

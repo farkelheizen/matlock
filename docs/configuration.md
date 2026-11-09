@@ -64,3 +64,11 @@ def enrich(context: DocumentContext, metadata: dict[str, object]) -> None:
 If a hook raises an exception or leaves invalid metadata, that note fails
 ingestion. Hook and embedding error details are intentionally redacted in the
 recorded error message. See [operations](operations.md).
+
+## Secret scanner settings
+
+The optional `[secret_scanner]` table configures `matlock2-scanner`, which reads
+the same `[ingest]` settings (database path and busy timeout). Its keys, prompt
+template, and the six scanner hook slots are described in the
+[secret scanner guide](secret-scanner.md). These are separate from the ingest
+metadata hooks above, and `matlock2` itself ignores the table.
