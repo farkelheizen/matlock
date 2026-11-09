@@ -37,7 +37,7 @@ def _call(stage: str, function: Callable[..., Any], *args: Any) -> Any:
 class ScanEngine:
     def __init__(
         self,
-        store: ScanStore,
+        store: ScanStore | None,
         config: ScannerConfig,
         hooks: Hooks,
         *,
@@ -179,6 +179,7 @@ class ScanEngine:
         should_stop: Callable[[], bool] = lambda: False,
         on_item: Callable[[ScanItem, ScanResult], None] | None = None,
     ) -> PassReport:
+        assert self.store is not None, "run_pass requires a database store"
         report = PassReport(dry_run=dry_run)
         remaining = limit
         for domain in self.config.domains:

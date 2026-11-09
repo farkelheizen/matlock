@@ -72,6 +72,11 @@ matlock2-scanner --config matlock2.toml scan    # one pass, then exit
 matlock2-scanner --config matlock2.toml run     # loop every interval_seconds
 ```
 
+```bash
+matlock2-scanner --config matlock2.toml scan-file notes/draft.md --no-llm
+cat draft.md | matlock2-scanner --config matlock2.toml scan-file -
+```
+
 `python -m matlock2_scanner` is equivalent. Options for `scan` and `run`
 (also accepted by `check-config` to check a given mode):
 
@@ -81,6 +86,16 @@ matlock2-scanner --config matlock2.toml run     # loop every interval_seconds
 | `--limit N` | Scan at most N items per pass |
 | `--dry-run` | Evaluate and report without writing or calling `post_scan` |
 | `--max-passes N` (`run`) | Stop after N passes |
+
+`scan-file PATH` scans one UTF-8 file (or `-` for standard input) as a whole
+document and prints a single JSON object to standard output:
+`{"path": ..., "domain": "document", "sha256": ..., "result": {...}}`, where
+`result` has the fields described under [Stored result](#stored-result). It
+accepts `--no-llm` and `--no-heuristics`, uses the configured layers, prompt,
+size limit, and hooks (`document_metadata` is empty, so metadata-dependent
+hooks see no labels), and never opens the database or writes anything. It does
+not call `post_scan`. Errors go to standard error with exit code 2; a risky file
+still exits 0, so check `result.risk_score` in the caller.
 
 `run` stops cleanly on SIGINT or SIGTERM after finishing the current batch.
 A pass prints `scanned`, `skipped`, `flagged` (heuristic match or risk of 5 or

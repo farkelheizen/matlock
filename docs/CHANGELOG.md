@@ -9,6 +9,7 @@ not necessarily been published as a release.
 
 - `matlock2-scanner`: a local two-layer (detect-secrets and local LLM) secret scanner that records
   findings in `content_attributes`, with a configurable prompt, size limits, and six hooks.
+- `matlock2-scanner scan-file` scans one file or standard input and prints the result as JSON.
 - A secret scanner example that uses every scanner hook and a custom prompt.
 - Content-addressed document bodies, chunk hashes, and a JSON attribute store.
 - Optional MCP attribute filtering and host-provided query and visibility policies.

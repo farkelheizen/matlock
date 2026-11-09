@@ -83,3 +83,41 @@ def test_run_loop_exits_immediately_when_stopped(tmp_path: Path) -> None:
     stop = threading.Event()
     stop.set()
     assert run_loop(engine, 60, stop) == 0
+
+
+def test_scan_file_prints_json_without_touching_the_database(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import json
+
+    config = build_index(tmp_path)
+    target = tmp_path / "candidate.md"
+    target.write_text("# Note\nkey = AKIAIOSFODNN7EXAMPLE\n", encoding="utf-8")
+    assert main(["--config", str(config), "scan-file", str(target), "--no-llm"]) == 0
+    output = json.loads(capsys.readouterr().out)
+    assert output["domain"] == "document" and output["path"] == str(target)
+    assert output["result"]["regex_matches_found"] and output["result"]["risk_score"] >= 8
+    assert "AKIAIOSFODNN7EXAMPLE" not in json.dumps(output)
+    assert attributes(config) == {}
+
+
+def test_scan_file_reads_stdin_and_works_without_a_database(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import io
+    import json
+
+    (tmp_path / "vault").mkdir()
+    config = tmp_path / "matlock2.toml"
+    config.write_text('[ingest]\nvault_path = "./vault"\ndatabase_path = "./none.sqlite3"\n')
+    monkeypatch.setattr("sys.stdin", io.StringIO("nothing here\n"))
+    assert main(["--config", str(config), "scan-file", "-", "--no-llm"]) == 0
+    assert json.loads(capsys.readouterr().out)["result"]["risk_score"] == 0
+    assert not (tmp_path / "none.sqlite3").exists()
+
+
+@pytest.mark.parametrize("name", ["missing.md", "binary.bin"])
+def test_scan_file_errors_exit_2(tmp_path: Path, name: str) -> None:
+    config = build_index(tmp_path)
+    (tmp_path / "binary.bin").write_bytes(b"\xff\xfe\x00bad")
+    assert main(["--config", str(config), "scan-file", str(tmp_path / name), "--no-llm"]) == 2

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import signal
 import sqlite3
 import sys
@@ -35,6 +37,15 @@ def _parser() -> argparse.ArgumentParser:
         "check-config", parents=[common], help="Validate the scanner configuration"
     )
     commands.add_parser("scan", parents=[common], help="Scan unscanned content once")
+    scan_file = commands.add_parser(
+        "scan-file",
+        help="Scan one file and print the result as JSON (no database access or writes)",
+    )
+    scan_file.add_argument("path", help="File to scan, or - to read standard input")
+    scan_file.add_argument("--no-llm", action="store_true", help="Disable the LLM layer")
+    scan_file.add_argument(
+        "--no-heuristics", action="store_true", help="Disable the heuristic layer"
+    )
     run = commands.add_parser("run", parents=[common], help="Scan repeatedly until stopped")
     run.add_argument("--max-passes", type=int, help="Stop after this many passes")
     return parser
@@ -75,7 +86,7 @@ def _check_dependencies(config: ScannerConfig, layers: tuple[str, ...]) -> None:
         )
 
 
-def build_engine(store: ScanStore, config: ScannerConfig, layers: tuple[str, ...]) -> ScanEngine:
+def build_engine(store: ScanStore | None, config: ScannerConfig, layers: tuple[str, ...]) -> ScanEngine:
     hooks = load_hooks(config)
     return ScanEngine(
         store,
@@ -88,6 +99,20 @@ def build_engine(store: ScanStore, config: ScannerConfig, layers: tuple[str, ...
             else None
         ),
     )
+
+
+def scan_file(engine: ScanEngine, path: str, text: str) -> dict[str, object]:
+    """Evaluate text as a whole document without touching the database."""
+    from .models import ScanItem
+
+    sha256 = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    item = ScanItem("document", sha256, text, (path,), (), {path: {}})
+    return {
+        "path": path,
+        "domain": "document",
+        "sha256": sha256,
+        "result": engine.to_json(engine.evaluate(item)),
+    }
 
 
 def run_loop(
@@ -128,6 +153,16 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Database: {ingest_config.database_path}")
             print(f"Layers: {', '.join(layers) or 'none'}")
             return 0
+        if args.command == "scan-file":
+            if not layers:
+                raise ConfigurationError("No scanner layers are enabled")
+            if args.path == "-":
+                text = sys.stdin.read()
+            else:
+                text = Path(args.path).read_text(encoding="utf-8")
+            output = scan_file(build_engine(None, config, layers), args.path, text)
+            print(json.dumps(output, ensure_ascii=False, indent=2))
+            return 0
         if args.limit is not None and args.limit < 1:
             raise ConfigurationError("--limit must be positive")
         if getattr(args, "max_passes", None) is not None and args.max_passes < 1:
@@ -136,7 +171,9 @@ def main(argv: list[str] | None = None) -> int:
             raise ConfigurationError("No scanner layers are enabled")
         store = ScanStore(ingest_config.database_path, ingest_config.busy_timeout_ms)
         engine = build_engine(store, config, layers)
-    except (ConfigurationError, ScannerDatabaseError, ImportError, OSError, ValueError) as exc:
+    except (
+        ConfigurationError, ScannerDatabaseError, ImportError, OSError, ValueError
+    ) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         if store is not None:
             store.close()
