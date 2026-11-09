@@ -31,25 +31,38 @@ def register_tools(
     if selected & {"semantic_search", "hybrid_knowledge_search"} and service.embedder is None:
         raise ValueError("Semantic tools require a query embedding provider")
 
-    def metadata_search(metadata_filters: dict[str, Any] | None = None, limit: int = 10, offset: int = 0) -> dict[str, Any]:
+    def metadata_search(metadata_filters: dict[str, Any] | None = None, limit: int = 10, offset: int = 0,
+                        document_attribute_filters: dict[str, Any] | None = None) -> dict[str, Any]:
         """Find documents with AND-ed metadata filters; empty filters browse."""
-        return service.metadata_search(metadata_filters, limit, offset)
+        return service.metadata_search(metadata_filters, limit, offset, document_attribute_filters)
 
-    def full_text_search(keyword_query: str, metadata_filters: dict[str, Any] | None = None, limit: int = 10) -> dict[str, Any]:
+    def full_text_search(keyword_query: str, metadata_filters: dict[str, Any] | None = None, limit: int = 10,
+                         document_attribute_filters: dict[str, Any] | None = None,
+                         chunk_attribute_filters: dict[str, Any] | None = None) -> dict[str, Any]:
         """Find chunks matching a literal phrase; lower FTS score is better."""
-        return service.full_text_search(keyword_query, metadata_filters, limit)
+        return service.full_text_search(keyword_query, metadata_filters, limit,
+                                        document_attribute_filters, chunk_attribute_filters)
 
-    def vector_search(vector: list[float], embedding_space: str, metadata_filters: dict[str, Any] | None = None, limit: int = 10) -> dict[str, Any]:
+    def vector_search(vector: list[float], embedding_space: str, metadata_filters: dict[str, Any] | None = None, limit: int = 10,
+                      document_attribute_filters: dict[str, Any] | None = None,
+                      chunk_attribute_filters: dict[str, Any] | None = None) -> dict[str, Any]:
         """Find chunks by a compatible vector; lower cosine distance is better."""
-        return service.vector_search(vector, embedding_space, metadata_filters, limit)
+        return service.vector_search(vector, embedding_space, metadata_filters, limit,
+                                     document_attribute_filters, chunk_attribute_filters)
 
-    def semantic_search(semantic_query: str, metadata_filters: dict[str, Any] | None = None, limit: int = 10) -> dict[str, Any]:
+    def semantic_search(semantic_query: str, metadata_filters: dict[str, Any] | None = None, limit: int = 10,
+                        document_attribute_filters: dict[str, Any] | None = None,
+                        chunk_attribute_filters: dict[str, Any] | None = None) -> dict[str, Any]:
         """Embed a query and find chunks by cosine distance."""
-        return service.semantic_search(semantic_query, metadata_filters, limit)
+        return service.semantic_search(semantic_query, metadata_filters, limit,
+                                       document_attribute_filters, chunk_attribute_filters)
 
-    def hybrid_knowledge_search(semantic_query: str, keyword_query: str, metadata_filters: dict[str, Any] | None = None, limit: int = 10) -> dict[str, Any]:
+    def hybrid_knowledge_search(semantic_query: str, keyword_query: str, metadata_filters: dict[str, Any] | None = None, limit: int = 10,
+                                document_attribute_filters: dict[str, Any] | None = None,
+                                chunk_attribute_filters: dict[str, Any] | None = None) -> dict[str, Any]:
         """Combine literal phrase and semantic results with reciprocal-rank fusion."""
-        return service.hybrid_knowledge_search(semantic_query, keyword_query, metadata_filters, limit)
+        return service.hybrid_knowledge_search(semantic_query, keyword_query, metadata_filters, limit,
+                                               document_attribute_filters, chunk_attribute_filters)
 
     def get_distinct_metadata(field: str, limit: int = 10, offset: int = 0) -> dict[str, Any]:
         """List distinct scalar metadata values, including explicit null."""

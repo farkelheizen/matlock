@@ -82,6 +82,80 @@ within a metadata array. `exists` distinguishes a missing field from an
 explicit null. Array and object values are not searchable by these operators.
 Queries, filters, limits and offsets are bounded and values are SQL parameters.
 
+## Attributes and policies
+
+See [content attributes](attributes.md) for indexing, migration, and the
+separate writer workflow. Configure `SearchConfig.document_attribute_keys`
+and `chunk_attribute_keys` as tuples of top-level keys permitted in responses
+and filters. Both default to empty tuples; other keys remain available to
+trusted policy code but are not returned. A missing attribute row is returned
+as `null`, an existing row as an object containing only permitted keys.
+Document results add `document_attributes`; chunk results add that field and
+`chunk_attributes`.
+
+The document search tool accepts `document_attribute_filters`; chunk searches
+accept that parameter and `chunk_attribute_filters`. Each uses the same
+operators and type rules as metadata filters. Filters are AND-ed, are applied
+before limits and ranking, and reject paths whose first component is not an
+exposed key. Discovery continues to expose metadata, not attribute values.
+The host's rewrite hook can add filters on unexposed keys; these filters are
+trusted policy constraints, not client-accessible fields. A host must not
+derive such constraints from untrusted input in ways that reveal private data.
+
+Hosts may pass a trusted `SearchPolicy` object as `policy` to `SearchService`.
+Its `rewrite(tool, arguments)` method receives the tool name and a dictionary
+of arguments and returns a dictionary with the same keys; validation runs
+afterward. Its `document(record)` and `chunk(record)` methods return a
+`PolicyDecision`. Records contain the exact indexed content, its `sha256`,
+source identity, metadata, and complete attributes (or `None` when absent);
+chunk records also contain `document_attributes`. The policy receives no
+automatic per-request authentication context: a host needing such context
+must supply an appropriately scoped policy/service and avoid sharing mutable
+request state across concurrent clients.
+
+```python
+from matlock2_mcp import PolicyDecision, SearchConfig, SearchService
+
+class ReviewedOnly:
+    def rewrite(self, tool, arguments):
+        return arguments
+
+    def document(self, record):
+        attributes = record["attributes"] or {}
+        return PolicyDecision("allow" if attributes.get("reviewed") is True else "hide")
+
+    def chunk(self, record):
+        attributes = record["attributes"] or {}
+        return PolicyDecision("allow" if attributes.get("reviewed") is True else "hide")
+
+search = SearchService(SearchConfig(database_path=database_path), policy=ReviewedOnly())
+```
+
+This example shows a fail-closed policy but performs no evaluation. A policy
+can return `allow`, `hide`, or `null` for content; a document decision
+applies to all its chunks. `PolicyDecision` also accepts `disclose_metadata`,
+`disclose_source`, and `disclose_attributes` booleans. A false value emits
+the corresponding field as `null`; hidden metadata and attributes cannot be
+used by client filters for that result. Metadata discovery excludes documents
+whose policy hides metadata. Hidden documents are absent from discovery and
+search; a hidden chunk lookup returns the same `null` as an absent chunk.
+Document-only browsing uses the document decision even when all its chunks
+are hidden. A visible document or chunk may still expose its identifier,
+score, or other fields unless the host chooses an appropriate policy.
+
+Decisions run against a consistent database snapshot, before candidate
+limits and pagination. With any policy configured, full-text ordering uses
+path and chunk ordinal instead of BM25 and returns a null FTS score: BM25's
+corpus statistics would otherwise include hidden documents. Hybrid search
+uses that ordering for its FTS rank. Policy exceptions and invalid decisions
+fail the request, rather than allowing results. With no policy, existing
+visibility and BM25 behavior remain unchanged; this is **not** a privacy
+screen. A `null` content decision is also not a complete secrecy boundary:
+search matches, rankings, IDs, paths, metadata, and other fields can reveal
+information about content unless the policy hides the result instead. Policies
+are trusted code, not a sandbox or a replacement for host authentication
+and authorization.
+
 FTS input is treated as a literal phrase, not raw FTS syntax. `score` is
 SQLite BM25; vector `distance` is cosine distance, with smaller values
 indicating closer matches. Filters are applied before ranking. Vector search

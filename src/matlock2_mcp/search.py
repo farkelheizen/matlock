@@ -6,11 +6,13 @@ import re
 import sqlite3
 import struct
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Iterator, Protocol
+from typing import Any, Callable, Iterator, Protocol
 
 import sqlite_vec
+
+from .policy import PolicyDecision, SearchPolicy
 
 
 class SearchError(RuntimeError):
@@ -36,6 +38,8 @@ class SearchConfig:
     embedding_model: str | None = None
     embedding_version: str | None = None
     embedding_dimensions: int | None = None
+    document_attribute_keys: tuple[str, ...] = ()
+    chunk_attribute_keys: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not 1 <= self.busy_timeout_ms <= 60000:
@@ -48,16 +52,120 @@ class SearchConfig:
         if any(value is not None for value in values):
             if not all(values) or not isinstance(self.embedding_dimensions, int) or self.embedding_dimensions < 1:
                 raise ValueError("A vector configuration requires space, model, version and dimensions")
+        for keys in (self.document_attribute_keys, self.chunk_attribute_keys):
+            if not isinstance(keys, tuple) or any(
+                not isinstance(key, str) or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key)
+                for key in keys
+            ):
+                raise ValueError("Attribute keys must be tuples of identifiers")
 
 
 class SearchService:
-    def __init__(self, config: SearchConfig, embedder: QueryEmbedder | None = None) -> None:
+    _DOC_JOIN = (
+        " LEFT JOIN content_attributes da ON da.domain='document' AND da.sha256=d.body_sha256 "
+    )
+    _CHUNK_JOIN = (
+        " LEFT JOIN content_attributes ca ON ca.domain='chunk' AND ca.sha256=c.content_sha256 "
+    )
+    _DOC_POLICY = "matlock_document_policy(d.path,d.body,d.body_sha256,d.metadata_json,da.attributes_json)"
+    _CHUNK_POLICY = (
+        "matlock_chunk_policy(c.chunk_id,c.source_path,c.content,c.content_sha256,"
+        "ca.attributes_json,d.metadata_json,da.attributes_json)"
+    )
+    _DOC_FIELDS = (
+        "d.path AS source_path, d.metadata_json, da.attributes_json AS document_attributes, "
+        + _DOC_POLICY + " AS document_policy"
+    )
+    _CHUNK_FIELDS = (
+        "c.chunk_id, c.ordinal, c.content, ca.attributes_json AS chunk_attributes, "
+        + _CHUNK_POLICY + " AS chunk_policy, " + _DOC_FIELDS
+    )
+
+    def __init__(
+        self, config: SearchConfig, embedder: QueryEmbedder | None = None,
+        policy: SearchPolicy | None = None,
+    ) -> None:
         self.config = config
         self.embedder = embedder
+        self.policy = policy
+
+    def _rewrite(self, tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        for name, keys in (
+            ("document_attribute_filters", self.config.document_attribute_keys),
+            ("chunk_attribute_filters", self.config.chunk_attribute_keys),
+        ):
+            if name in arguments:
+                self._validate_attribute_filters(arguments[name], keys, allow_private=False)
+        if self.policy is None:
+            return arguments
+        try:
+            result = self.policy.rewrite(tool, dict(arguments))
+        except Exception as exc:
+            raise SearchError("Search policy query rewrite failed") from exc
+        if not isinstance(result, dict) or set(result) != set(arguments):
+            raise SearchError("Search policy returned invalid query arguments")
+        return result
+
+    def _install_policy(self, db: sqlite3.Connection, policy_failed: list[bool]) -> None:
+        documents: dict[str, str] = {}
+        chunks: dict[str, str] = {}
+
+        def decision(value: PolicyDecision) -> str:
+            if not isinstance(value, PolicyDecision) or value.action not in ("allow", "hide", "null"):
+                raise ValueError("Invalid policy decision")
+            if any(type(flag) is not bool for flag in (
+                value.disclose_metadata, value.disclose_source, value.disclose_attributes
+            )):
+                raise ValueError("Invalid policy disclosure decision")
+            return json.dumps(asdict(value))
+
+        def evaluate(callback: Callable[[dict[str, Any]], PolicyDecision], record: dict[str, Any]) -> str:
+            try:
+                return decision(callback(record))
+            except Exception:
+                policy_failed[0] = True
+                raise
+
+        def document(path: str, body: str, digest: str, metadata: str, attributes: str | None) -> str:
+            if path not in documents:
+                record = {
+                    "source_file": path, "content": body, "sha256": digest,
+                    "metadata": json.loads(metadata),
+                    "attributes": json.loads(attributes) if attributes is not None else None,
+                }
+                documents[path] = (
+                    evaluate(self.policy.document, record) if self.policy is not None
+                    else decision(PolicyDecision())
+                )
+            return documents[path]
+
+        def chunk(
+            chunk_id: str, path: str, content: str, digest: str, attributes: str | None,
+            metadata: str, document_attributes: str | None,
+        ) -> str:
+            if chunk_id not in chunks:
+                record = {
+                    "chunk_id": chunk_id, "source_file": path, "content": content,
+                    "sha256": digest,
+                    "attributes": json.loads(attributes) if attributes is not None else None,
+                    "metadata": json.loads(metadata),
+                    "document_attributes": (
+                        json.loads(document_attributes) if document_attributes is not None else None
+                    ),
+                }
+                chunks[chunk_id] = (
+                    evaluate(self.policy.chunk, record) if self.policy is not None
+                    else decision(PolicyDecision())
+                )
+            return chunks[chunk_id]
+
+        db.create_function("matlock_document_policy", 5, document)
+        db.create_function("matlock_chunk_policy", 7, chunk)
 
     @contextmanager
     def _connection(self, vectors: bool = False) -> Iterator[sqlite3.Connection]:
         db: sqlite3.Connection | None = None
+        policy_failed = [False]
         try:
             db = sqlite3.connect(
                 self.config.database_path.resolve().as_uri() + "?mode=ro",
@@ -79,8 +187,11 @@ class SearchService:
                 raise SearchError("Unsupported database schema version")
             if vectors and metadata.get("vector_dimensions") != str(self.config.embedding_dimensions):
                 raise SearchError("Database vector dimensions do not match configuration")
+            self._install_policy(db, policy_failed)
             yield db
         except sqlite3.Error as exc:
+            if policy_failed[0]:
+                raise SearchError("Search policy evaluation failed") from exc
             raise SearchError("Database search failed; check the index and SQLite configuration") from exc
         finally:
             if db is not None:
@@ -106,7 +217,7 @@ class SearchService:
         return "$." + field
 
     @classmethod
-    def _filters(cls, filters: dict[str, Any] | None) -> tuple[str, list[Any]]:
+    def _filters(cls, filters: dict[str, Any] | None, column: str = "d.metadata_json") -> tuple[str, list[Any]]:
         if filters is None:
             return "", []
         if not isinstance(filters, dict) or len(filters) > 20:
@@ -123,13 +234,13 @@ class SearchService:
             if operation == "exists":
                 if not isinstance(value, bool):
                     raise ValueError("exists requires a boolean value")
-                clauses.append(f"json_type(d.metadata_json, ?) IS {'NOT ' if value else ''}NULL")
+                clauses.append(f"json_type({column}, ?) IS {'NOT ' if value else ''}NULL")
                 params.append(path)
                 continue
             if operation == "is_null":
                 if value is not True:
                     raise ValueError("is_null requires true")
-                clauses.append("json_type(d.metadata_json, ?) = 'null'")
+                clauses.append(f"json_type({column}, ?) = 'null'")
                 params.append(path)
                 continue
             if operation not in ("eq", "in", "lt", "lte", "gt", "gte"):
@@ -153,7 +264,7 @@ class SearchService:
                     "text" if isinstance(item, str) else "integer" if isinstance(item, int) else "real"
                 )
                 operator = {"eq": "=", "in": "=", "lt": "<", "lte": "<=", "gt": ">", "gte": ">="}[operation]
-                alternatives.append(f"(json_type(d.metadata_json, ?) = ? AND json_extract(d.metadata_json, ?) {operator} ?)")
+                alternatives.append(f"(json_type({column}, ?) = ? AND json_extract({column}, ?) {operator} ?)")
                 params.extend((path, kind, path, item))
             clauses.append("(" + " OR ".join(alternatives) + ")")
         return (" AND " + " AND ".join(clauses)) if clauses else "", params
@@ -164,53 +275,175 @@ class SearchService:
             raise ValueError("query must contain 1 to 1000 characters")
         return text.strip()
 
-    def _result(self, row: sqlite3.Row) -> dict[str, Any]:
-        content = row["content"]
+    @classmethod
+    def _validate_attribute_filters(
+        cls, filters: dict[str, Any] | None, allowed: tuple[str, ...], *, allow_private: bool,
+    ) -> None:
+        if filters is None:
+            return
+        if not isinstance(filters, dict):
+            raise ValueError("attribute filters must be objects")
+        for field in filters:
+            cls._field(field)
+            if not allow_private and field.split(".")[0] not in allowed:
+                raise ValueError("attribute filter field is not exposed")
+
+    def _where(
+        self, metadata: dict[str, Any] | None,
+        document: dict[str, Any] | None, chunk: dict[str, Any] | None,
+        *, chunks: bool,
+    ) -> tuple[str, list[Any]]:
+        if not chunks and chunk:
+            raise ValueError("chunk attribute filters require chunk results")
+        for filters, allowed in (
+            (document, self.config.document_attribute_keys),
+            (chunk, self.config.chunk_attribute_keys),
+        ):
+            self._validate_attribute_filters(filters, allowed, allow_private=self.policy is not None)
+        terms = [f"json_extract({self._DOC_POLICY}, '$.action') <> 'hide'"]
+        if chunks:
+            terms.append(f"json_extract({self._CHUNK_POLICY}, '$.action') <> 'hide'")
+        if metadata:
+            terms.append(f"json_extract({self._DOC_POLICY}, '$.disclose_metadata') = 1")
+            if chunks:
+                terms.append(f"json_extract({self._CHUNK_POLICY}, '$.disclose_metadata') = 1")
+        exposed_document_filter = document and any(
+            field.split(".")[0] in self.config.document_attribute_keys for field in document
+        )
+        exposed_chunk_filter = chunk and any(
+            field.split(".")[0] in self.config.chunk_attribute_keys for field in chunk
+        )
+        if exposed_document_filter:
+            terms.append(f"json_extract({self._DOC_POLICY}, '$.disclose_attributes') = 1")
+            if chunks:
+                terms.append(f"json_extract({self._CHUNK_POLICY}, '$.disclose_attributes') = 1")
+        if exposed_chunk_filter:
+            terms.append(f"json_extract({self._DOC_POLICY}, '$.disclose_attributes') = 1")
+            terms.append(f"json_extract({self._CHUNK_POLICY}, '$.disclose_attributes') = 1")
+        params: list[Any] = []
+        for filters, column in (
+            (metadata, "d.metadata_json"), (document, "da.attributes_json"),
+            (chunk, "ca.attributes_json"),
+        ):
+            if not chunks and column == "ca.attributes_json":
+                continue
+            clause, values = self._filters(filters, column)
+            if clause:
+                terms.append(clause[5:])
+                params.extend(values)
+        return " AND " + " AND ".join(terms), params
+
+    @staticmethod
+    def _attributes(raw: str | None, keys: tuple[str, ...], disclose: bool) -> dict[str, Any] | None:
+        if raw is None or not disclose:
+            return None
+        attributes = json.loads(raw)
+        return {key: attributes[key] for key in keys if key in attributes}
+
+    def _document_result(self, row: sqlite3.Row, chunk_policy: dict[str, Any] | None = None) -> dict[str, Any]:
+        document_policy = json.loads(row["document_policy"])
+        policies = [document_policy] + ([chunk_policy] if chunk_policy is not None else [])
         return {
-            "chunk_id": row["chunk_id"],
-            "source_file": row["source_path"],
-            "metadata": json.loads(row["metadata_json"]),
-            "content": content[: self.config.max_content_chars],
-            "content_truncated": len(content) > self.config.max_content_chars,
+            "source_file": row["source_path"] if all(p["disclose_source"] for p in policies) else None,
+            "metadata": json.loads(row["metadata_json"]) if all(p["disclose_metadata"] for p in policies) else None,
+            "document_attributes": self._attributes(
+                row["document_attributes"], self.config.document_attribute_keys,
+                all(p["disclose_attributes"] for p in policies),
+            ),
         }
 
-    def metadata_search(self, metadata_filters: dict[str, Any] | None = None, limit: int = 10, offset: int = 0) -> dict[str, Any]:
-        limit, offset = self._limit(limit), self._offset(offset)
-        where, params = self._filters(metadata_filters)
+    def _result(self, row: sqlite3.Row) -> dict[str, Any]:
+        content = row["content"]
+        document_policy = json.loads(row["document_policy"])
+        chunk_policy = json.loads(row["chunk_policy"])
+        hidden_content = "null" in (document_policy["action"], chunk_policy["action"])
+        return {
+            "chunk_id": row["chunk_id"],
+            **self._document_result(row, chunk_policy),
+            "chunk_attributes": self._attributes(
+                row["chunk_attributes"], self.config.chunk_attribute_keys,
+                document_policy["disclose_attributes"] and chunk_policy["disclose_attributes"],
+            ),
+            "content": None if hidden_content else content[: self.config.max_content_chars],
+            "content_truncated": False if hidden_content else len(content) > self.config.max_content_chars,
+        }
+
+    def metadata_search(
+        self, metadata_filters: dict[str, Any] | None = None, limit: int = 10, offset: int = 0,
+        document_attribute_filters: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        args = self._rewrite("metadata_search", {
+            "metadata_filters": metadata_filters, "limit": limit, "offset": offset,
+            "document_attribute_filters": document_attribute_filters,
+        })
+        limit, offset = self._limit(args["limit"]), self._offset(args["offset"])
+        where, params = self._where(args["metadata_filters"], args["document_attribute_filters"], None, chunks=False)
         with self._connection() as db:
             rows = db.execute(
-                "SELECT d.path, d.metadata_json FROM source_documents d WHERE 1=1" + where
+                "SELECT " + self._DOC_FIELDS + " FROM source_documents d " + self._DOC_JOIN + " WHERE 1=1" + where
                 + " ORDER BY d.path LIMIT ? OFFSET ?", (*params, limit + 1, offset)
             ).fetchall()
         has_more = len(rows) > limit
         next_offset = offset + limit if has_more and offset + limit <= 10000 else None
-        return {"results": [{"source_file": r["path"], "metadata": json.loads(r["metadata_json"])} for r in rows[:limit]],
+        return {"results": [self._document_result(r) for r in rows[:limit]],
                 "next_offset": next_offset, "pagination_truncated": has_more and next_offset is None}
 
-    def _fts(self, db: sqlite3.Connection, query: str, filters: dict[str, Any] | None, limit: int) -> list[sqlite3.Row]:
-        where, params = self._filters(filters)
+    def _fts(
+        self, db: sqlite3.Connection, query: str, filters: dict[str, Any] | None,
+        document_filters: dict[str, Any] | None, chunk_filters: dict[str, Any] | None,
+        limit: int,
+    ) -> list[sqlite3.Row]:
+        where, params = self._where(filters, document_filters, chunk_filters, chunks=True)
         # A quoted FTS phrase treats input literally, not as FTS operators.
         literal = '"' + self._text(query).replace('"', '""') + '"'
+        score = "NULL" if self.policy is not None else "bm25(chunks_fts)"
+        order = "c.source_path, c.ordinal, c.chunk_id" if self.policy is not None else (
+            "score, c.source_path, c.ordinal, c.chunk_id"
+        )
         return db.execute(
-            "SELECT c.chunk_id, c.source_path, c.ordinal, c.content, d.metadata_json, "
-            "bm25(chunks_fts) AS score FROM chunks_fts JOIN chunks c ON c.id=chunks_fts.rowid "
-            "JOIN source_documents d ON d.path=c.source_path WHERE chunks_fts MATCH ?" + where
-            + " ORDER BY score, c.source_path, c.ordinal, c.chunk_id LIMIT ?",
+            "SELECT " + self._CHUNK_FIELDS + ", "
+            + score + " AS score FROM chunks_fts JOIN chunks c ON c.id=chunks_fts.rowid "
+            "JOIN source_documents d ON d.path=c.source_path " + self._DOC_JOIN + self._CHUNK_JOIN
+            + " WHERE chunks_fts MATCH ?" + where
+            + " ORDER BY " + order + " LIMIT ?",
             (literal, *params, limit),
         ).fetchall()
 
-    def full_text_search(self, keyword_query: str, metadata_filters: dict[str, Any] | None = None, limit: int = 10) -> dict[str, Any]:
-        limit = self._limit(limit)
+    def full_text_search(
+        self, keyword_query: str, metadata_filters: dict[str, Any] | None = None, limit: int = 10,
+        document_attribute_filters: dict[str, Any] | None = None,
+        chunk_attribute_filters: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        args = self._rewrite("full_text_search", {
+            "keyword_query": keyword_query, "metadata_filters": metadata_filters, "limit": limit,
+            "document_attribute_filters": document_attribute_filters,
+            "chunk_attribute_filters": chunk_attribute_filters,
+        })
+        limit = self._limit(args["limit"])
         with self._connection() as db:
-            rows = self._fts(db, keyword_query, metadata_filters, limit + 1)
+            rows = self._fts(
+                db, args["keyword_query"], args["metadata_filters"], args["document_attribute_filters"],
+                args["chunk_attribute_filters"], limit + 1,
+            )
         return {"results": [{**self._result(row), "score": row["score"]} for row in rows[:limit]],
                 "truncated": len(rows) > limit}
 
-    def _check_space(self, db: sqlite3.Connection, space: str) -> None:
+    def _check_space(
+        self, db: sqlite3.Connection, space: str, where: str, params: list[Any]
+    ) -> None:
         cfg = self.config
         if not cfg.embedding_space or space != cfg.embedding_space:
             raise SearchError("Embedding space is not configured or does not match")
-        pairs = db.execute("SELECT DISTINCT embedding_model, embedding_version FROM source_documents").fetchall()
+        if self.policy is None:
+            pairs = db.execute(
+                "SELECT DISTINCT embedding_model, embedding_version FROM source_documents"
+            ).fetchall()
+        else:
+            pairs = db.execute(
+                "SELECT DISTINCT d.embedding_model, d.embedding_version FROM chunks c "
+                "JOIN source_documents d ON d.path=c.source_path " + self._DOC_JOIN + self._CHUNK_JOIN
+                + " WHERE 1=1" + where, params,
+            ).fetchall()
         if any((row[0], row[1]) != (cfg.embedding_model, cfg.embedding_version) for row in pairs):
             raise SearchError("Index contains incompatible embedding models or versions")
 
@@ -232,13 +465,16 @@ class SearchService:
             raise SearchError("Query provider returned an invalid vector count")
         return vectors[0]
 
-    def _vectors(self, db: sqlite3.Connection, vector: list[float], space: str, filters: dict[str, Any] | None, limit: int) -> list[sqlite3.Row]:
-        self._check_space(db, space)
+    def _vectors(
+        self, db: sqlite3.Connection, vector: list[float], space: str, filters: dict[str, Any] | None,
+        document_filters: dict[str, Any] | None, chunk_filters: dict[str, Any] | None, limit: int,
+    ) -> list[sqlite3.Row]:
+        where, params = self._where(filters, document_filters, chunk_filters, chunks=True)
+        self._check_space(db, space, where, params)
         if not isinstance(vector, list) or len(vector) != self.config.embedding_dimensions or any(
             isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in vector
         ) or not any(vector):
             raise ValueError("vector must have the configured dimension, finite values and nonzero norm")
-        where, params = self._filters(filters)
         try:
             packed = sqlite_vec.serialize_float32(vector)
             float32_values = struct.unpack(f"{len(vector)}f", packed)
@@ -247,9 +483,10 @@ class SearchService:
         if not all(math.isfinite(v) for v in float32_values) or not any(float32_values):
             raise ValueError("vector must remain finite and nonzero in float32")
         rows = db.execute(
-            "SELECT c.chunk_id, c.source_path, c.ordinal, c.content, d.metadata_json, "
+            "SELECT " + self._CHUNK_FIELDS + ", "
             "vec_distance_cosine(v.embedding, ?) AS distance FROM vec_chunks v "
             "JOIN chunks c ON c.id=v.rowid JOIN source_documents d ON d.path=c.source_path "
+            + self._DOC_JOIN + self._CHUNK_JOIN +
             "WHERE 1=1" + where + " ORDER BY distance, c.source_path, c.ordinal, c.chunk_id LIMIT ?",
             (packed, *params, limit),
         ).fetchall()
@@ -257,55 +494,106 @@ class SearchService:
             raise SearchError("Index contains an invalid cosine distance")
         return rows
 
-    def vector_search(self, vector: list[float], embedding_space: str, metadata_filters: dict[str, Any] | None = None, limit: int = 10) -> dict[str, Any]:
-        limit = self._limit(limit)
+    def vector_search(
+        self, vector: list[float], embedding_space: str,
+        metadata_filters: dict[str, Any] | None = None, limit: int = 10,
+        document_attribute_filters: dict[str, Any] | None = None,
+        chunk_attribute_filters: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        args = self._rewrite("vector_search", {
+            "vector": vector, "embedding_space": embedding_space, "metadata_filters": metadata_filters,
+            "limit": limit, "document_attribute_filters": document_attribute_filters,
+            "chunk_attribute_filters": chunk_attribute_filters,
+        })
+        limit = self._limit(args["limit"])
         with self._connection(vectors=True) as db:
-            rows = self._vectors(db, vector, embedding_space, metadata_filters, limit + 1)
+            rows = self._vectors(
+                db, args["vector"], args["embedding_space"], args["metadata_filters"],
+                args["document_attribute_filters"], args["chunk_attribute_filters"], limit + 1,
+            )
         return {"results": [{**self._result(row), "distance": row["distance"]} for row in rows[:limit]],
                 "truncated": len(rows) > limit}
 
-    def semantic_search(self, semantic_query: str, metadata_filters: dict[str, Any] | None = None, limit: int = 10) -> dict[str, Any]:
-        limit = self._limit(limit)
-        vector = self._query_vector(semantic_query)
-        return self.vector_search(vector, self.config.embedding_space or "", metadata_filters, limit)
+    def semantic_search(
+        self, semantic_query: str, metadata_filters: dict[str, Any] | None = None, limit: int = 10,
+        document_attribute_filters: dict[str, Any] | None = None,
+        chunk_attribute_filters: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        args = self._rewrite("semantic_search", {
+            "semantic_query": semantic_query, "metadata_filters": metadata_filters, "limit": limit,
+            "document_attribute_filters": document_attribute_filters,
+            "chunk_attribute_filters": chunk_attribute_filters,
+        })
+        limit = self._limit(args["limit"])
+        vector = self._query_vector(args["semantic_query"])
+        with self._connection(vectors=True) as db:
+            rows = self._vectors(
+                db, vector, self.config.embedding_space or "", args["metadata_filters"],
+                args["document_attribute_filters"], args["chunk_attribute_filters"], limit + 1,
+            )
+        return {"results": [{**self._result(row), "distance": row["distance"]} for row in rows[:limit]],
+                "truncated": len(rows) > limit}
 
-    def hybrid_knowledge_search(self, semantic_query: str, keyword_query: str, metadata_filters: dict[str, Any] | None = None, limit: int = 10) -> dict[str, Any]:
-        limit = self._limit(limit)
-        vector = self._query_vector(semantic_query)
+    def hybrid_knowledge_search(
+        self, semantic_query: str, keyword_query: str,
+        metadata_filters: dict[str, Any] | None = None, limit: int = 10,
+        document_attribute_filters: dict[str, Any] | None = None,
+        chunk_attribute_filters: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        args = self._rewrite("hybrid_knowledge_search", {
+            "semantic_query": semantic_query, "keyword_query": keyword_query,
+            "metadata_filters": metadata_filters, "limit": limit,
+            "document_attribute_filters": document_attribute_filters,
+            "chunk_attribute_filters": chunk_attribute_filters,
+        })
+        limit = self._limit(args["limit"])
+        vector = self._query_vector(args["semantic_query"])
         window = self.config.candidate_limit
         with self._connection(vectors=True) as db:
-            fts = self._fts(db, keyword_query, metadata_filters, window + 1)
-            vectors = self._vectors(db, vector, self.config.embedding_space or "", metadata_filters, window + 1)
+            fts = self._fts(db, args["keyword_query"], args["metadata_filters"],
+                            args["document_attribute_filters"], args["chunk_attribute_filters"], window + 1)
+            vectors = self._vectors(db, vector, self.config.embedding_space or "", args["metadata_filters"],
+                                    args["document_attribute_filters"], args["chunk_attribute_filters"], window + 1)
         combined: dict[str, dict[str, Any]] = {}
         for name, rows in (("fts", fts[:window]), ("vector", vectors[:window])):
             for rank, row in enumerate(rows, 1):
-                result = combined.setdefault(row["chunk_id"], {**self._result(row), "relevance_score": 0.0, "_ordinal": row["ordinal"]})
+                result = combined.setdefault(row["chunk_id"], {**self._result(row), "relevance_score": 0.0,
+                                                               "_ordinal": row["ordinal"], "_path": row["source_path"]})
                 result["relevance_score"] += 1 / (60 + rank)
                 result[name + "_rank"] = rank
                 result["fts_score" if name == "fts" else "distance"] = row["score" if name == "fts" else "distance"]
-        ranked = sorted(combined.values(), key=lambda r: (-r["relevance_score"], r["source_file"], r["_ordinal"], r["chunk_id"]))
+        ranked = sorted(combined.values(), key=lambda r: (-r["relevance_score"], r["_path"], r["_ordinal"], r["chunk_id"]))
         for result in ranked:
             del result["_ordinal"]
+            del result["_path"]
         return {"results": ranked[:limit], "truncated": len(ranked) > limit or len(fts) > window or len(vectors) > window,
                 "candidate_window": window}
 
     def get_chunk(self, chunk_id: str) -> dict[str, Any]:
+        chunk_id = self._rewrite("get_chunk", {"chunk_id": chunk_id})["chunk_id"]
         if not isinstance(chunk_id, str) or not re.fullmatch(r"[a-f0-9]{24}", chunk_id):
             raise ValueError("chunk_id must be a 24-character hexadecimal identifier")
+        where, params = self._where(None, None, None, chunks=True)
         with self._connection() as db:
             row = db.execute(
-                "SELECT c.chunk_id, c.source_path, c.content, d.metadata_json FROM chunks c "
-                "JOIN source_documents d ON d.path=c.source_path WHERE c.chunk_id=?", (chunk_id,)
+                "SELECT " + self._CHUNK_FIELDS + " FROM chunks c "
+                "JOIN source_documents d ON d.path=c.source_path " + self._DOC_JOIN + self._CHUNK_JOIN
+                + " WHERE c.chunk_id=?" + where, (chunk_id, *params)
             ).fetchone()
         return {"result": self._result(row) if row is not None else None}
 
     def get_distinct_metadata(self, field: str, limit: int = 10, offset: int = 0) -> dict[str, Any]:
-        path, limit, offset = self._field(field), self._limit(limit), self._offset(offset)
+        args = self._rewrite("get_distinct_metadata", {"field": field, "limit": limit, "offset": offset})
+        field = args["field"]
+        path, limit, offset = self._field(field), self._limit(args["limit"]), self._offset(args["offset"])
+        where, params = self._where(None, None, None, chunks=False)
         with self._connection() as db:
             rows = db.execute(
-                "SELECT DISTINCT json_type(metadata_json, ?) AS kind, json_extract(metadata_json, ?) AS value "
-                "FROM source_documents WHERE json_type(metadata_json, ?) IN ('text','integer','real','true','false','null') "
-                "ORDER BY kind, value LIMIT ? OFFSET ?", (path, path, path, limit + 1, offset)
+                "SELECT DISTINCT json_type(d.metadata_json, ?) AS kind, json_extract(d.metadata_json, ?) AS value "
+                "FROM source_documents d " + self._DOC_JOIN +
+                " WHERE json_type(d.metadata_json, ?) IN ('text','integer','real','true','false','null') "
+                + where + f" AND json_extract({self._DOC_POLICY}, '$.disclose_metadata') = 1 "
+                "ORDER BY kind, value LIMIT ? OFFSET ?", (path, path, path, *params, limit + 1, offset)
             ).fetchall()
         values = [True if r["kind"] == "true" else False if r["kind"] == "false" else r["value"] for r in rows[:limit]]
         has_more = len(rows) > limit
