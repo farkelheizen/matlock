@@ -147,8 +147,7 @@ the same artifact and preprocessing available to the host. A model download
 may be required. `--database` selects a different index; do not make that
 attestation for an index whose embedding provenance is unknown. FastMCP's
 Python client and stdio transport are covered by integration tests; Gemini
-GUI integration and its particular transport configuration have not been
-verified.
+GUI integration with this stdio host has not been verified.
 
 ## Google-authenticated HTTP example
 
@@ -157,8 +156,9 @@ is a separate, read-only HTTP host for the example index. It uses FastMCP's
 Google OAuth provider and accepts only explicitly allowed, Google-verified
 email addresses. All allowed accounts have access to the same index and its
 registered tools; this is not per-document authorization. Authentication and
-discovery were tested with FastMCP 2.14.7; an actual Gemini connection has not
-yet been verified.
+discovery were tested with FastMCP 2.14.7, and a user has reported connecting
+this host to the Gemini GUI. Other Gemini or FastMCP versions may behave
+differently.
 
 1. Follow the [fictional vault scan](example.md) and install the optional MCP
    dependencies with `python -m pip install -e '.[mcp]'`.
@@ -220,19 +220,63 @@ yet been verified.
    `--database /path/to/index.sqlite3` selects another existing index. The
    example exposes metadata and full-text tools, not semantic tools.
 
-5. Connect an MCP client to `https://mcp.example.com/mcp`. An unauthenticated
-   MCP request should receive HTTP 401 with OAuth discovery information. The
-   server listens only on `127.0.0.1:8081`; keep it and `cloudflared` running.
-   Sign in with an allowed Google account. An unlisted or unverified account
-   is denied when it tries to use the MCP endpoint, even if Google sign-in
-   succeeds. Restart after changing the allowlist.
+5. In Gemini's custom connected app dialog, enter
+   `https://mcp.example.com/mcp` as the MCP Server URL, using your own
+   hostname. Try leaving the optional client ID and client secret blank so
+   Gemini can register with FastMCP. Follow the consent and Google sign-in
+   prompts, using an allowed Google account. Keep the server and `cloudflared`
+   running: the server listens only on `127.0.0.1:8081`. An unlisted or
+   unverified account is denied when it tries to use the MCP endpoint, even
+   if Google sign-in succeeds. Restart after changing the allowlist.
 
-The Google client ID and secret above identify **this server to Google**. They
-are not automatically the credentials requested by a downstream MCP client's
-GUI. FastMCP's OAuth proxy supports dynamic client registration; whether the
-Gemini GUI uses a compatible registration flow or requires separately
-pre-registered credentials remains to be verified. Do not paste the Google
-client secret into Gemini's client-secret field as a substitute.
+The Google client ID and secret in `.env` identify **FastMCP to Google**.
+They are not the credentials for Gemini as an MCP client of FastMCP. Do not
+paste the Google credentials into Gemini's optional client fields. If Gemini
+displays its own redirect URL, that is the callback from FastMCP to Gemini;
+the Google Cloud OAuth client's redirect URI remains the FastMCP
+`/auth/callback` URL from step 2.
+
+### Connection troubleshooting
+
+If Gemini says the server is invalid, make sure the server URL ends in `/mcp`:
+the example does not serve MCP at the domain root. With the server running, run
+these checks in another terminal, replacing `mcp.example.com` with your
+hostname:
+
+```sh
+curl -i -X POST -H 'Accept: application/json, text/event-stream' \
+  http://127.0.0.1:8081/mcp
+curl -i -X POST -H 'Accept: application/json, text/event-stream' \
+  https://mcp.example.com/mcp
+curl -i https://mcp.example.com/.well-known/oauth-protected-resource/mcp
+curl -i https://mcp.example.com/.well-known/oauth-authorization-server
+```
+
+Both POST requests should return **401** with a `WWW-Authenticate` header
+containing a resource metadata URL; this is expected before authentication.
+Both discovery requests should return **200** and JSON. If the local request
+works but the public requests do not, check the tunnel's hostname, routing,
+and any Cloudflare Access policies or path rewrites. The server disables HTTP
+access logs to avoid logging OAuth query parameters.
+
+If the consent page says **Client Not Registered**, remove the failed
+connection in Gemini and retry with the client ID and secret fields blank.
+FastMCP's OAuth proxy maintains a separate registry for MCP clients; the
+upstream Google Cloud client ID is not a registered MCP client ID. If this
+still fails, check whether your Gemini client supports dynamic registration
+with this FastMCP version. Do not share client secrets, tokens, authorization
+codes, or full OAuth URLs when troubleshooting.
+
+### Semantic search in the Google example
+
+The Google example currently registers only the non-semantic tools and has no
+`--enable-semantic` option. The separate stdio example demonstrates the
+necessary setup: configure `SearchConfig` with an attested embedding space,
+model, version, and dimensions, and pass a compatible `FastEmbedder` to
+`SearchService` before calling `register_tools`. This would also register
+vector and hybrid search. See [Semantic compatibility](#semantic-compatibility)
+before adapting it: the query model artifact and preprocessing must match the
+index, and matching model names and dimensions alone cannot establish that.
 
 The public endpoint remains sensitive even with authentication. Only authorize
 MCP clients you trust, keep the host and OAuth dependencies updated, and
@@ -245,4 +289,5 @@ The database, WAL, SHM, queries, returned content and metadata can contain
 private information. Restrict filesystem and transport access. Do not expose
 the host over a network without appropriate authentication and authorization,
 and do not log payloads or send text to a remote embedding provider without
-the operator's consent. The example uses a local model and stdio.
+the operator's consent. The stdio example uses a local model when semantic
+search is enabled.
