@@ -7,6 +7,7 @@ not necessarily been published as a release.
 
 ### Added
 
+- Optional semantic, vector, and hybrid search in the Google-authenticated MCP example.
 - Google-authenticated HTTP MCP example with an explicit email allowlist.
 - Optional modular FastMCP search tools and a separate example stdio host.
 - Database schema, Python internals, and runnable metadata, FTS, and vector

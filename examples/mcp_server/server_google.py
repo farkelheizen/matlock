@@ -12,8 +12,12 @@ from fastmcp import FastMCP
 from fastmcp.server.auth.auth import AccessToken
 from fastmcp.server.auth.providers.google import GoogleProvider
 
-from matlock2_mcp import SearchConfig, SearchService
 from matlock2_mcp.registration import register_tools
+
+if __package__:
+    from .example_search import create_search_service
+else:
+    from example_search import create_search_service
 
 
 class AllowedGoogleAccount(GoogleProvider):
@@ -50,7 +54,7 @@ def required_env(name: str) -> str:
     return value
 
 
-def create_server(database: Path) -> FastMCP:
+def create_server(database: Path, *, enable_semantic: bool = False) -> FastMCP:
     base_url = required_env("MATLOCK2_MCP_BASE_URL")
     parsed = urlsplit(base_url)
     if (
@@ -87,7 +91,7 @@ def create_server(database: Path) -> FastMCP:
         jwt_signing_key=signing_key,
     )
     server = FastMCP("Matlock2 Google example", auth=auth)
-    register_tools(server, SearchService(SearchConfig(database_path=database)))
+    register_tools(server, create_search_service(database, enable_semantic))
     return server
 
 
@@ -98,10 +102,14 @@ def main() -> None:
         type=Path,
         default=Path(__file__).resolve().parents[1] / "second-brain" / ".matlock2" / "index.sqlite3",
     )
+    parser.add_argument(
+        "--enable-semantic", action="store_true",
+        help="Attest the example index uses the configured default model and preprocessing",
+    )
     args = parser.parse_args()
     # Google's token verification sends the access token in a URL query.
     logging.getLogger("httpx").setLevel(logging.WARNING)
-    server = create_server(args.database)
+    server = create_server(args.database, enable_semantic=args.enable_semantic)
     server.run(
         transport="http",
         host="127.0.0.1",

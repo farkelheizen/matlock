@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 from pathlib import Path
 from unittest.mock import AsyncMock
 
@@ -9,12 +10,16 @@ import pytest
 pytest.importorskip("fastmcp")
 
 import httpx
+from fastmcp import Client
 from fastmcp.server.auth.auth import AccessToken
 from fastmcp.server.auth import oauth_proxy
 from fastmcp.server.auth.providers.google import GoogleProvider, GoogleTokenVerifier
 from starlette.testclient import TestClient
 
 from examples.mcp_server.server_google import AllowedGoogleAccount, create_server
+from examples.mcp_server import example_search, server_google
+from matlock2_mcp import SearchService
+from tests.test_mcp import service
 
 
 @pytest.fixture
@@ -64,6 +69,73 @@ def test_unauthenticated_http_and_discovery(configured: Path) -> None:
         metadata = client.get(metadata_url)
         assert metadata.status_code == 200
         assert metadata.json()["authorization_servers"] == ["https://mcp.example.com/"]
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_search_tools_and_semantic_query(
+    configured: Path, service: SearchService, monkeypatch: pytest.MonkeyPatch, enabled: bool
+) -> None:
+    class FakeEmbedder:
+        model_name = "test-model"
+        dimensions = 2
+        version = "test-embedder-v1"
+
+        def __init__(self, model: str, dimensions: int, tokens: int) -> None:
+            assert (model, dimensions, tokens) == ("BAAI/bge-small-en-v1.5", 384, 512)
+
+        def embed(self, texts: list[str]) -> list[list[float]]:
+            return [[float(len(text.split())), 1.0] for text in texts]
+
+    monkeypatch.setattr(example_search, "FastEmbedder", FakeEmbedder)
+    server = create_server(service.config.database_path, enable_semantic=enabled)
+
+    async def exercise() -> None:
+        async with Client(server) as client:
+            names = {tool.name for tool in await client.list_tools()}
+            assert names == (
+                {"metadata_search", "full_text_search", "get_distinct_metadata", "get_chunk"}
+                | ({"semantic_search", "vector_search", "hybrid_knowledge_search"} if enabled else set())
+            )
+            if enabled:
+                result = await client.call_tool(
+                    "semantic_search", {"semantic_query": "database"}
+                )
+                assert result.structured_content["results"]
+                result = await client.call_tool(
+                    "hybrid_knowledge_search",
+                    {"semantic_query": "database", "keyword_query": "migration"},
+                )
+                assert result.structured_content["results"]
+                result = await client.call_tool(
+                    "vector_search",
+                    {"vector": [1.0, 1.0], "embedding_space": "example-bge-small-en-v1.5"},
+                )
+                assert result.structured_content["results"]
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_cli_passes_semantic_flag(
+    configured: Path, monkeypatch: pytest.MonkeyPatch, enabled: bool
+) -> None:
+    class FakeServer:
+        def run(self, **kwargs: object) -> None:
+            assert kwargs["transport"] == "http"
+            assert kwargs["port"] == 8081
+
+    def fake_create_server(database: Path, *, enable_semantic: bool = False) -> FakeServer:
+        assert database == configured
+        assert enable_semantic is enabled
+        return FakeServer()
+
+    monkeypatch.setattr(server_google, "create_server", fake_create_server)
+    monkeypatch.setattr(
+        sys, "argv",
+        ["server_google.py", "--database", str(configured)]
+        + (["--enable-semantic"] if enabled else []),
+    )
+    server_google.main()
 
 
 def test_google_verifier_claims_support_allowlist(

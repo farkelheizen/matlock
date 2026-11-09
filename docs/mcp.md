@@ -218,7 +218,7 @@ differently.
    the signing key invalidates existing tokens and can make stored OAuth state
    unreadable, requiring clients to reconnect and state to be reset deliberately.
    `--database /path/to/index.sqlite3` selects another existing index. The
-   example exposes metadata and full-text tools, not semantic tools.
+   example exposes metadata and full-text tools by default.
 
 5. In Gemini's custom connected app dialog, enter
    `https://mcp.example.com/mcp` as the MCP Server URL, using your own
@@ -269,14 +269,23 @@ codes, or full OAuth URLs when troubleshooting.
 
 ### Semantic search in the Google example
 
-The Google example currently registers only the non-semantic tools and has no
-`--enable-semantic` option. The separate stdio example demonstrates the
-necessary setup: configure `SearchConfig` with an attested embedding space,
-model, version, and dimensions, and pass a compatible `FastEmbedder` to
-`SearchService` before calling `register_tools`. This would also register
-vector and hybrid search. See [Semantic compatibility](#semantic-compatibility)
-before adapting it: the query model artifact and preprocessing must match the
-index, and matching model names and dimensions alone cannot establish that.
+To enable semantic, vector, and hybrid search, stop the server, load `.env` as
+described above, and restart it with:
+
+```sh
+python examples/mcp_server/server_google.py --enable-semantic
+```
+
+The flag attests the index was built with the default
+`BAAI/bge-small-en-v1.5` model and the same model artifact and preprocessing
+available to this host, as in the stdio example. A model download may be
+required on first use. With `--database`, enable the flag only if you have
+verified that the selected index has compatible embedding provenance.
+See [Semantic compatibility](#semantic-compatibility): matching model names,
+versions and dimensions alone cannot establish compatibility. The embedding
+model runs locally; queries and tool results are still sent to the connected
+client. If Gemini does not show the additional tools after restart, reconnect
+the app to refresh its tool list.
 
 The public endpoint remains sensitive even with authentication. Only authorize
 MCP clients you trust, keep the host and OAuth dependencies updated, and
