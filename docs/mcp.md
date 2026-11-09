@@ -35,7 +35,7 @@ Requesting unavailable or unknown tools at registration raises an error.
 
 The standalone service methods may also be used without importing FastMCP.
 Each request opens an existing database in read-only mode with a bounded busy
-timeout and a short read transaction. Schema version 1 is required. Vector
+timeout and a short read transaction. Schema version 2 is required. Vector
 requests load sqlite-vec per connection; searches never create or migrate a
 database. Readers see a consistent snapshot during each request. Errors are
 reported rather than silently converted into empty results.

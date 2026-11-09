@@ -229,6 +229,26 @@ def test_content_hash_not_mtime_or_size_detects_changes(tmp_path: Path) -> None:
         db.close()
 
 
+def test_body_and_chunk_hashes_track_indexed_text(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    path = config.vault_path / "note.md"
+    path.write_bytes("---\r\nkey: one\r\n---\r\n# Héading\r\nbody\r\n".encode())
+    db, engine = _engine(config)
+    try:
+        assert engine.ingest_path("note.md") == "ingested"
+        row = db.get_source("note.md")
+        assert row["body"] == "# Héading\r\nbody\r\n"
+        assert row["body_sha256"] == hashlib.sha256(row["body"].encode()).hexdigest()
+        chunk = db.get_chunks("note.md")[0]
+        assert chunk["content_sha256"] == hashlib.sha256(chunk["content"].encode()).hexdigest()
+        original = row["body_sha256"]
+        path.write_bytes("---\r\nkey: two\r\n---\r\n# Héading\r\nbody\r\n".encode())
+        assert engine.ingest_path("note.md") == "ingested"
+        assert db.get_source("note.md")["body_sha256"] == original
+    finally:
+        db.close()
+
+
 def test_processing_fingerprint_reingests_unchanged_source(tmp_path: Path) -> None:
     config = _config(tmp_path)
     (config.vault_path / "note.md").write_text("# Note\nsame content", encoding="utf-8")
@@ -465,6 +485,7 @@ def test_database_update_rolls_back_after_invalid_vector(tmp_path: Path) -> None
                 "test-version",
                 [Chunk("replacement-id", 0, "replacement text")],
                 [[1.0]],
+                body="replacement text",
             )
         assert [row["content"] for row in db.get_chunks("note.md")] == original
         assert db.fts_search("stable")

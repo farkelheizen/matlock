@@ -75,7 +75,7 @@ class SearchService:
                     db.enable_load_extension(False)
             db.execute("BEGIN")
             metadata = dict(db.execute("SELECT key, value FROM database_metadata").fetchall())
-            if metadata.get("schema_version") != "1":
+            if metadata.get("schema_version") != "2":
                 raise SearchError("Unsupported database schema version")
             if vectors and metadata.get("vector_dimensions") != str(self.config.embedding_dimensions):
                 raise SearchError("Database vector dimensions do not match configuration")

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import sqlite3
@@ -11,6 +12,7 @@ from typing import Any, Iterator
 import sqlite_vec
 
 from .models import Chunk, IngestConfig
+from .markdown import parse_markdown
 
 
 class DatabaseError(RuntimeError):
@@ -19,6 +21,10 @@ class DatabaseError(RuntimeError):
 
 def _now() -> str:
     return datetime.now(UTC).isoformat()
+
+
+def _content_hash(content: str) -> str:
+    return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
 
 class Database:
@@ -53,7 +59,7 @@ class Database:
                 "Check the sqlite-vec installation for this platform."
             ) from exc
         try:
-            self._initialize(config.embedding_dimensions)
+            self._initialize(config.embedding_dimensions, config.vault_path)
         except Exception:
             self.connection.close()
             raise
@@ -69,7 +75,7 @@ class Database:
             self.connection.rollback()
             raise
 
-    def _initialize(self, dimensions: int) -> None:
+    def _initialize(self, dimensions: int, vault_path: Path) -> None:
         connection = self.connection
         try:
             connection.executescript(
@@ -138,7 +144,7 @@ class Database:
         schema_row = connection.execute(
             "SELECT value FROM database_metadata WHERE key='schema_version'"
         ).fetchone()
-        if schema_row is not None and schema_row["value"] != "1":
+        if schema_row is not None and schema_row["value"] not in {"1", "2"}:
             raise DatabaseError(
                 f"Unsupported database schema version: {schema_row['value']}"
             )
@@ -150,6 +156,65 @@ class Database:
             "VALUES('vector_dimensions', ?)",
             (str(dimensions),),
         )
+        if schema_row is None or schema_row["value"] == "1":
+            self._migrate_attributes(vault_path)
+
+    def _migrate_attributes(self, vault_path: Path) -> None:
+        try:
+            with self._transaction():
+                # Another ingestion process may have migrated while we waited.
+                version = self.connection.execute(
+                    "SELECT value FROM database_metadata WHERE key='schema_version'"
+                ).fetchone()["value"]
+                if version == "2":
+                    return
+                if version != "1":
+                    raise DatabaseError("Unsupported database schema version")
+                self.connection.execute("ALTER TABLE source_documents ADD COLUMN body TEXT")
+                self.connection.execute("ALTER TABLE source_documents ADD COLUMN body_sha256 TEXT")
+                self.connection.execute("ALTER TABLE chunks ADD COLUMN content_sha256 TEXT")
+                self.connection.execute(
+                    """CREATE TABLE content_attributes (
+                        domain TEXT NOT NULL CHECK(domain IN ('document', 'chunk')),
+                        sha256 TEXT NOT NULL CHECK(length(sha256)=64 AND sha256 NOT GLOB '*[^0-9a-f]*'),
+                        attributes_json TEXT NOT NULL CHECK(json_valid(attributes_json) AND json_type(attributes_json)='object'),
+                        updated_at TEXT NOT NULL,
+                        PRIMARY KEY(domain, sha256)
+                    )"""
+                )
+                for row in self.connection.execute("SELECT path, sha256 FROM source_documents"):
+                    try:
+                        source = (vault_path / row["path"]).resolve(strict=True)
+                        source.relative_to(vault_path.resolve())
+                        raw = source.read_bytes()
+                        if hashlib.sha256(raw).hexdigest() != row["sha256"]:
+                            raise ValueError("source differs from indexed version")
+                        body = parse_markdown(row["path"], raw.decode("utf-8-sig")).body
+                    except (OSError, ValueError, UnicodeError) as exc:
+                        raise DatabaseError(
+                            f"Cannot migrate indexed source {row['path']}: "
+                            "restore the indexed file version and retry"
+                        ) from exc
+                    self.connection.execute(
+                        "UPDATE source_documents SET body=?, body_sha256=? WHERE path=?",
+                        (body, _content_hash(body), row["path"]),
+                    )
+                for row in self.connection.execute("SELECT id, content FROM chunks"):
+                    self.connection.execute(
+                        "UPDATE chunks SET content_sha256=? WHERE id=?",
+                        (_content_hash(row["content"]), row["id"]),
+                    )
+                self.connection.execute(
+                    "CREATE INDEX source_documents_body_sha256_idx ON source_documents(body_sha256)"
+                )
+                self.connection.execute(
+                    "CREATE INDEX chunks_content_sha256_idx ON chunks(content_sha256)"
+                )
+                self.connection.execute(
+                    "UPDATE database_metadata SET value='2' WHERE key='schema_version'"
+                )
+        except sqlite3.Error as exc:
+            raise DatabaseError("Could not migrate content attributes schema") from exc
 
     def close(self) -> None:
         self.connection.close()
@@ -175,6 +240,8 @@ class Database:
         embedding_version: str,
         chunks: list[Chunk],
         vectors: list[list[float]],
+        *,
+        body: str,
     ) -> None:
         if len(chunks) != len(vectors):
             raise ValueError("Each chunk must have exactly one embedding vector")
@@ -186,15 +253,17 @@ class Database:
                     """
                     INSERT INTO source_documents(
                         path, sha256, processing_fingerprint, metadata_json,
-                        embedding_model, embedding_version, ingested_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                        embedding_model, embedding_version, ingested_at, body, body_sha256
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(path) DO UPDATE SET
                         sha256=excluded.sha256,
                         processing_fingerprint=excluded.processing_fingerprint,
                         metadata_json=excluded.metadata_json,
                         embedding_model=excluded.embedding_model,
                         embedding_version=excluded.embedding_version,
-                        ingested_at=excluded.ingested_at
+                        ingested_at=excluded.ingested_at,
+                        body=excluded.body,
+                        body_sha256=excluded.body_sha256
                     """,
                     (
                         relative_path,
@@ -204,6 +273,8 @@ class Database:
                         embedding_model,
                         embedding_version,
                         now,
+                        body,
+                        _content_hash(body),
                     ),
                 )
                 previous = self.connection.execute(
@@ -222,9 +293,10 @@ class Database:
                 self.connection.execute("DELETE FROM chunks WHERE source_path=?", (relative_path,))
                 for chunk, vector in zip(chunks, vectors, strict=True):
                     cursor = self.connection.execute(
-                        "INSERT INTO chunks(chunk_id, source_path, ordinal, content) "
-                        "VALUES (?, ?, ?, ?)",
-                        (chunk.chunk_id, relative_path, chunk.ordinal, chunk.content),
+                        "INSERT INTO chunks(chunk_id, source_path, ordinal, content, content_sha256) "
+                        "VALUES (?, ?, ?, ?, ?)",
+                        (chunk.chunk_id, relative_path, chunk.ordinal, chunk.content,
+                         _content_hash(chunk.content)),
                     )
                     row_id = cursor.lastrowid
                     if row_id is None:

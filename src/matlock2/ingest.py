@@ -183,6 +183,7 @@ class IngestionEngine:
                 str(getattr(self.embedder, "version", "injected")),
                 chunks,
                 vectors,
+                body=parsed.body,
             )
             return "ingested"
         except Exception as exc:
