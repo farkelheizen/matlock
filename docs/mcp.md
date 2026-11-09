@@ -150,6 +150,97 @@ Python client and stdio transport are covered by integration tests; Gemini
 GUI integration and its particular transport configuration have not been
 verified.
 
+## Google-authenticated HTTP example
+
+[`examples/mcp_server/server_google.py`](../examples/mcp_server/server_google.py)
+is a separate, read-only HTTP host for the example index. It uses FastMCP's
+Google OAuth provider and accepts only explicitly allowed, Google-verified
+email addresses. All allowed accounts have access to the same index and its
+registered tools; this is not per-document authorization. Authentication and
+discovery were tested with FastMCP 2.14.7; an actual Gemini connection has not
+yet been verified.
+
+1. Follow the [fictional vault scan](example.md) and install the optional MCP
+   dependencies with `python -m pip install -e '.[mcp]'`.
+2. In Google Cloud, configure a Web application OAuth client and add the exact
+   authorized redirect URI `https://mcp.example.com/auth/callback`, replacing
+   the hostname with your public hostname. Configure the Google consent screen;
+   if the app is in testing mode, add each allowed Google account as a test user.
+3. Configure Cloudflare Tunnel to route the entire hostname, including
+   `/.well-known/`, OAuth routes, and `/mcp`, to `http://localhost:8081`.
+   Do not rely on Tunnel alone for authentication. A browser-oriented
+   Cloudflare Access login in front of these routes may interfere with MCP
+   discovery and bearer-token requests.
+4. On macOS, create a private `.env` file in the repository root. If you already
+   have a `.env` file there, back it up and add the settings below instead of
+   replacing it. The repository ignores `.env`, but it still contains secrets:
+   don't commit or share it.
+
+   ```sh
+   touch .env
+   chmod 600 .env
+   open -e .env
+   ```
+
+   Add these shell-compatible settings in TextEdit, replacing the placeholders
+   with your own values. Use the public HTTPS origin without `/mcp`, and list
+   allowed Google email addresses separated by commas; wildcards are not
+   supported.
+
+   ```sh
+   MATLOCK2_MCP_BASE_URL='https://mcp.example.com'
+   MATLOCK2_GOOGLE_ALLOWED_EMAILS='you@example.com,another@example.com'
+   MATLOCK2_GOOGLE_CLIENT_ID='your-google-client-id'
+   MATLOCK2_GOOGLE_CLIENT_SECRET='your-google-client-secret'
+   MATLOCK2_MCP_SIGNING_KEY='your-generated-signing-key'
+   FASTMCP_HOME="$HOME/.local/share/matlock2-google-mcp"
+   ```
+
+   Generate the signing key with `openssl rand -base64 32`, paste the output
+   into the file, and save it. The key must be at least 32 characters and
+   generated from high-entropy randomness. Reuse it across restarts. Store
+   backups of the file securely.
+
+   From the repository root, activate the virtual environment and load the
+   file before starting the server:
+
+   ```sh
+   . .venv/bin/activate
+   set -a
+   . ./.env
+   set +a
+   python examples/mcp_server/server_google.py
+   ```
+
+   Sourcing `.env` executes shell syntax, so only source a file you trust.
+   Reload it after changing settings and restart the server. FastMCP stores encrypted
+   OAuth state under `FASTMCP_HOME`; restrict access to that directory. Rotating
+   the signing key invalidates existing tokens and can make stored OAuth state
+   unreadable, requiring clients to reconnect and state to be reset deliberately.
+   `--database /path/to/index.sqlite3` selects another existing index. The
+   example exposes metadata and full-text tools, not semantic tools.
+
+5. Connect an MCP client to `https://mcp.example.com/mcp`. An unauthenticated
+   MCP request should receive HTTP 401 with OAuth discovery information. The
+   server listens only on `127.0.0.1:8081`; keep it and `cloudflared` running.
+   Sign in with an allowed Google account. An unlisted or unverified account
+   is denied when it tries to use the MCP endpoint, even if Google sign-in
+   succeeds. Restart after changing the allowlist.
+
+The Google client ID and secret above identify **this server to Google**. They
+are not automatically the credentials requested by a downstream MCP client's
+GUI. FastMCP's OAuth proxy supports dynamic client registration; whether the
+Gemini GUI uses a compatible registration flow or requires separately
+pre-registered credentials remains to be verified. Do not paste the Google
+client secret into Gemini's client-secret field as a substitute.
+
+The public endpoint remains sensitive even with authentication. Only authorize
+MCP clients you trust, keep the host and OAuth dependencies updated, and
+restrict who can access the local machine and OAuth state. The example disables
+HTTP access logs and HTTPX informational logs to avoid logging OAuth query
+parameters; review logging at Cloudflare and any other proxies separately.
+Queries, metadata, and returned content are sent to the connected client.
+
 The database, WAL, SHM, queries, returned content and metadata can contain
 private information. Restrict filesystem and transport access. Do not expose
 the host over a network without appropriate authentication and authorization,
