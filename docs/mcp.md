@@ -267,6 +267,20 @@ still fails, check whether your Gemini client supports dynamic registration
 with this FastMCP version. Do not share client secrets, tokens, authorization
 codes, or full OAuth URLs when troubleshooting.
 
+For more detailed FastMCP logs, stop the server, load `.env` as described above,
+and start it with:
+
+```sh
+FASTMCP_LOG_LEVEL=DEBUG python examples/mcp_server/server_google.py --enable-semantic
+```
+
+Omit `--enable-semantic` if semantic search is not enabled. Debug output can
+contain sensitive OAuth details, client identifiers, authorization codes, or
+tool-related data. Review and redact it before sharing. Restart without
+`FASTMCP_LOG_LEVEL=DEBUG` to return to the default log level. This setting does
+not enable HTTP access logs or HTTPX informational logs; the example disables
+those to reduce the risk of logging OAuth credentials.
+
 ### Semantic search in the Google example
 
 To enable semantic, vector, and hybrid search, stop the server, load `.env` as
