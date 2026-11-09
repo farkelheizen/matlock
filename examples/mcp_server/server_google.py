@@ -11,6 +11,8 @@ from urllib.parse import urlsplit
 from fastmcp import FastMCP
 from fastmcp.server.auth.auth import AccessToken
 from fastmcp.server.auth.providers.google import GoogleProvider
+from starlette.middleware import Middleware
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from matlock2_mcp.registration import register_tools
 
@@ -18,6 +20,37 @@ if __package__:
     from .example_search import create_search_service
 else:
     from example_search import create_search_service
+
+
+class HttpDiagnostics:
+    """Log only fixed route names, methods, and response statuses."""
+
+    ROUTES = frozenset({
+        "/mcp", "/authorize", "/token", "/register", "/auth/callback",
+        "/.well-known/oauth-authorization-server",
+        "/.well-known/oauth-protected-resource/mcp",
+    })
+    METHODS = frozenset({"GET", "HEAD", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"})
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        method = scope["method"] if scope["method"] in self.METHODS else "OTHER"
+        path = scope["path"] if scope["path"] in self.ROUTES else "<other>"
+
+        async def log_response(message: Message) -> None:
+            if message["type"] == "http.response.start":
+                logging.getLogger("uvicorn.error").info(
+                    "MCP HTTP %s %s status=%s", method, path, message["status"]
+                )
+            await send(message)
+
+        await self.app(scope, receive, log_response)
 
 
 class AllowedGoogleAccount(GoogleProvider):
@@ -106,6 +139,10 @@ def main() -> None:
         "--enable-semantic", action="store_true",
         help="Attest the example index uses the configured default model and preprocessing",
     )
+    parser.add_argument(
+        "--http-diagnostics", action="store_true",
+        help="Log sanitized HTTP methods, known routes, and response statuses",
+    )
     args = parser.parse_args()
     # Google's token verification sends the access token in a URL query.
     logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -117,6 +154,7 @@ def main() -> None:
         path="/mcp",
         show_banner=False,
         uvicorn_config={"access_log": False},
+        middleware=[Middleware(HttpDiagnostics)] if args.http_diagnostics else None,
     )
 
 

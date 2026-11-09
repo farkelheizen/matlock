@@ -281,6 +281,21 @@ tool-related data. Review and redact it before sharing. Restart without
 not enable HTTP access logs or HTTPX informational logs; the example disables
 those to reduce the risk of logging OAuth credentials.
 
+For HTTP routing diagnostics without full access logs, start the server with:
+
+```sh
+python examples/mcp_server/server_google.py --enable-semantic --http-diagnostics
+```
+
+Omit `--enable-semantic` if not needed. This opt-in logs the HTTP method,
+response status and a fixed known route name (unknown paths appear as
+`<other>`). It does not log query strings, headers, request or response bodies,
+or client addresses. Response statuses are logged when headers are sent, not
+when a streaming response finishes. Other components' logs, including
+FastMCP debug logs if enabled separately, may still contain sensitive data;
+review logs before sharing. Stop and restart without the flag to turn these
+diagnostics off.
+
 ### Semantic search in the Google example
 
 To enable semantic, vector, and hybrid search, stop the server, load `.env` as

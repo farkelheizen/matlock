@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import sys
 from pathlib import Path
 from unittest.mock import AsyncMock
@@ -14,9 +15,10 @@ from fastmcp import Client
 from fastmcp.server.auth.auth import AccessToken
 from fastmcp.server.auth import oauth_proxy
 from fastmcp.server.auth.providers.google import GoogleProvider, GoogleTokenVerifier
+from starlette.middleware import Middleware
 from starlette.testclient import TestClient
 
-from examples.mcp_server.server_google import AllowedGoogleAccount, create_server
+from examples.mcp_server.server_google import AllowedGoogleAccount, HttpDiagnostics, create_server
 from examples.mcp_server import example_search, server_google
 from matlock2_mcp import SearchService
 from tests.test_mcp import service
@@ -71,6 +73,33 @@ def test_unauthenticated_http_and_discovery(configured: Path) -> None:
         assert metadata.json()["authorization_servers"] == ["https://mcp.example.com/"]
 
 
+def test_http_diagnostics_log_status_without_request_data(
+    configured: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    server = create_server(configured)
+    with caplog.at_level(logging.INFO, logger="uvicorn.error"):
+        with TestClient(server.http_app(path="/mcp", middleware=[Middleware(HttpDiagnostics)])) as client:
+            response = client.post(
+                "/mcp?secret=query-value",
+                headers={"Authorization": "Bearer header-value"},
+                content="body-value",
+            )
+            assert response.status_code == 401
+            assert client.get("/secret-path?secret=another-value").status_code == 404
+            assert client.get("/.well-known/oauth-authorization-server").status_code == 200
+    messages = [record.getMessage() for record in caplog.records if record.name == "uvicorn.error"]
+    assert messages == [
+        "MCP HTTP POST /mcp status=401",
+        "MCP HTTP GET <other> status=404",
+        "MCP HTTP GET /.well-known/oauth-authorization-server status=200",
+    ]
+    assert all(
+        secret not in message
+        for secret in ("query-value", "header-value", "body-value", "secret-path", "another-value")
+        for message in messages
+    )
+
+
 @pytest.mark.parametrize("enabled", [False, True])
 def test_search_tools_and_semantic_query(
     configured: Path, service: SearchService, monkeypatch: pytest.MonkeyPatch, enabled: bool
@@ -123,6 +152,7 @@ def test_cli_passes_semantic_flag(
         def run(self, **kwargs: object) -> None:
             assert kwargs["transport"] == "http"
             assert kwargs["port"] == 8081
+            assert kwargs["middleware"] is None
 
     def fake_create_server(database: Path, *, enable_semantic: bool = False) -> FakeServer:
         assert database == configured
@@ -135,6 +165,19 @@ def test_cli_passes_semantic_flag(
         ["server_google.py", "--database", str(configured)]
         + (["--enable-semantic"] if enabled else []),
     )
+    server_google.main()
+
+
+def test_cli_enables_http_diagnostics(configured: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeServer:
+        def run(self, **kwargs: object) -> None:
+            middleware = kwargs["middleware"]
+            assert isinstance(middleware, list) and len(middleware) == 1
+            assert isinstance(middleware[0], Middleware)
+            assert middleware[0].cls is HttpDiagnostics
+
+    monkeypatch.setattr(server_google, "create_server", lambda *args, **kwargs: FakeServer())
+    monkeypatch.setattr(sys, "argv", ["server_google.py", "--http-diagnostics"])
     server_google.main()
 
 

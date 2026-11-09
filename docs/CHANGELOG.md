@@ -7,6 +7,7 @@ not necessarily been published as a release.
 
 ### Added
 
+- Opt-in sanitized HTTP routing diagnostics for the Google MCP example.
 - Optional semantic, vector, and hybrid search in the Google-authenticated MCP example.
 - Google-authenticated HTTP MCP example with an explicit email allowlist.
 - Optional modular FastMCP search tools and a separate example stdio host.
