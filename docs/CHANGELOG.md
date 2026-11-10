@@ -17,7 +17,8 @@ not necessarily been published as a release.
 - Renamed the import packages to `matlock_ingest`, `matlock_audit`,
   `matlock_mcp`, and `matlock_index`.
 - Constrained MCP support to optional host-composable tools and policies, with
-  one minimal local stdio example and no Matlock-operated HTTP host.
+  minimal local stdio and Google-authenticated HTTP examples, not a
+  Matlock-operated service.
 
 ### Fixed
 
@@ -44,6 +45,8 @@ not necessarily been published as a release.
 - Content-addressed document bodies, chunk hashes, and a JSON attribute store.
 - Optional MCP attribute filtering and host-provided query and visibility policies.
 - Optional modular FastMCP search tools and a minimal embedded example host.
+- A Google OIDC HTTP example host that demonstrates allowlisting and search
+  policy hooks.
 - Database schema, Python internals, and runnable metadata, FTS, and vector
   query examples.
 - Expanded setup, configuration, operations, and example documentation.

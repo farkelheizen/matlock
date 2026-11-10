@@ -1,11 +1,10 @@
 # MCP integration
 
 Matlock provides optional, importable search tools for a host-owned MCP
-application. It does not ship or operate a Matlock MCP server, server command,
-authentication service, or supported transport lifecycle. The embedding host
-owns server creation, transport, authentication and authorization, logging,
-configuration, and lifecycle. The only runnable host is a minimal local
-example for demonstrating tool registration.
+application, not a supported Matlock MCP service. The runnable examples are
+minimal local stdio and Google-authenticated HTTP hosts; neither is a supported
+deployment target. An embedding application owns server creation, transport,
+authentication and authorization, logging, configuration, and lifecycle.
 
 ## Install and register
 
@@ -119,7 +118,7 @@ Metadata and full-text tools remain independently available.
 
 ## Minimal local example
 
-The one example creates a tiny FastMCP application only to demonstrate
+The local stdio example creates a tiny FastMCP application only to demonstrate
 registration. It is not a supported Matlock server or a separately deployable
 service. Run the [fictional vault example](example.md) first, then:
 
@@ -140,3 +139,47 @@ and preprocessing used by the example. A model download may be required.
 `--database` selects another existing index; do not enable semantic tools
 unless its embedding provenance is verified. For real applications, import
 `register_tools` into the host that owns the application's MCP lifecycle.
+
+## Google-authenticated HTTP example
+
+The optional HTTP example restores the former Google OIDC demonstration. It
+binds to `127.0.0.1:8081/mcp` and is intended to sit behind a TLS-terminating
+reverse proxy or tunnel. Create the second-brain index first, then install the
+MCP extra:
+
+```sh
+python -m pip install -e '.[mcp]'
+```
+
+Provide these settings through the process environment or a secret manager;
+do not commit credentials:
+
+| Variable | Purpose |
+| --- | --- |
+| `MATLOCK2_MCP_BASE_URL` | Public HTTPS origin for the host, without a path, query, or fragment. |
+| `MATLOCK2_MCP_SIGNING_KEY` | Random signing key of at least 32 characters. |
+| `MATLOCK2_GOOGLE_CLIENT_ID` | Google OAuth client ID. |
+| `MATLOCK2_GOOGLE_CLIENT_SECRET` | Google OAuth client secret. |
+| `MATLOCK2_GOOGLE_ALLOWED_EMAILS` | Comma-separated allowlist of Google email addresses. |
+
+Configure the Google OAuth client with `https://<public-origin>/auth/callback`
+as an authorized redirect URI. Point a tunnel or reverse proxy at
+`http://127.0.0.1:8081`, and keep `MATLOCK2_MCP_BASE_URL` set to the HTTPS
+origin users access. Then start the host:
+
+```sh
+python examples/mcp/google_oidc_host.py
+```
+
+Use `--database /absolute/path/to/index.sqlite3` to select another existing
+index. Add `--enable-semantic` only when its embedding provenance is verified.
+
+The host authorizes only verified Google accounts in the configured allowlist.
+It registers an `ExampleSearchPolicy`: requests are capped at 25 results, and
+documents or chunks with the `mcp_example_hidden: true` metadata or attribute
+marker are hidden. Replace that policy with trusted application hooks as
+needed. Search policies do not receive authenticated user context and are not
+a substitute for authentication or per-user authorization. This remains an
+example deployment, not a supported Matlock service; review the proxy, tunnel,
+Google OAuth configuration, allowed accounts, host permissions, and index
+visibility before exposing it.
