@@ -701,3 +701,20 @@ def test_approved_fake_corpus_can_be_ingested_optionally(tmp_path: Path) -> None
         assert report.discovery_complete
     finally:
         db.close()
+
+
+def test_ingest_hook_module_next_to_config_is_importable(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    (tmp_path / "beside_config_hook.py").write_text(
+        "def tag(context, metadata):\n    metadata['tagged'] = True\n", encoding="utf-8"
+    )
+    config_path = tmp_path / "matlock.toml"
+    config_path.write_text(
+        '[ingest]\nvault_path = "vault"\n[ingest.hooks]\nconfigured = ["beside_config_hook:tag"]\n',
+        encoding="utf-8",
+    )
+    from matlock_ingest.ingest import _load_hooks
+
+    hooks = _load_hooks(load_config(config_path).hooks, load_config(config_path).config_dir)
+    assert [hook.name for hook in hooks] == ["beside_config_hook:tag"]

@@ -48,7 +48,8 @@ frontmatter did not already specify it, even as null. It does not write to the
 source file. For another example hook, see the
 [fictional vault example](example.md).
 
-To supply a hook, place an importable module on the Python path and configure
+To supply a hook, place a module next to the config file (its directory is added to
+the Python path) or anywhere else importable, and configure
 `your_module:your_function`. For example:
 
 ```python

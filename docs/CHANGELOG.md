@@ -19,6 +19,10 @@ not necessarily been published as a release.
 - Constrained MCP support to optional host-composable tools and policies, with
   one minimal local stdio example and no Matlock-operated HTTP host.
 
+### Fixed
+
+- Ingest hook modules placed next to the config file are now importable, matching audit hooks.
+
 ### Added
 
 - Shared `[ingest]` and `[audit]` configuration sections.

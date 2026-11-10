@@ -76,6 +76,7 @@ def load_config(path: Path) -> IngestConfig:
             embedding_dimensions=int(embedding.get("dimensions", 384)),
             max_input_tokens=int(embedding.get("max_input_tokens", 512)),
             hooks=tuple(hooks),
+            config_dir=base,
         )
     except (TypeError, ValueError) as exc:
         raise ConfigurationError(f"Invalid configuration value: {exc}") from exc

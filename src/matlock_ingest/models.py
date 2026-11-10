@@ -19,6 +19,7 @@ class IngestConfig:
     embedding_dimensions: int = 384
     max_input_tokens: int = 512
     hooks: tuple[str, ...] = ()
+    config_dir: Path = Path(".")
 
 
 @dataclass(frozen=True)

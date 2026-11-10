@@ -6,6 +6,7 @@ import inspect
 import json
 import math
 import os
+import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -36,7 +37,10 @@ class _LoadedHook:
     source_digest: str
 
 
-def _load_hooks(specifications: tuple[str, ...]) -> tuple[_LoadedHook, ...]:
+def _load_hooks(specifications: tuple[str, ...], config_dir: Path) -> tuple[_LoadedHook, ...]:
+    # Hook modules next to the config file (as in the examples) are importable.
+    if specifications and str(config_dir) not in sys.path:
+        sys.path.append(str(config_dir))
     loaded: list[_LoadedHook] = []
     for specification in specifications:
         module_name, callable_name = specification.split(":", maxsplit=1)
@@ -97,7 +101,7 @@ class IngestionEngine:
             self.tokenizer = cast(Tokenizer, embedder)
         else:
             raise TypeError("An explicit tokenizer is required for this embedder")
-        self.hooks = _load_hooks(config.hooks)
+        self.hooks = _load_hooks(config.hooks, config.config_dir)
         self.processing_fingerprint = self._processing_fingerprint()
 
     def _processing_fingerprint(self) -> str:
