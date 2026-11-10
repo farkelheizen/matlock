@@ -7,6 +7,8 @@ not necessarily been published as a release.
 
 ### Changed
 
+- Renamed the Google OIDC example environment variables to use the `MATLOCK_`
+  prefix.
 - Rebranded the distribution and application as Matlock 2.0.0, with one
   `matlock` command and `python -m matlock` entrypoint.
 - Consolidated ingestion and audit under `matlock ingest|watch` and

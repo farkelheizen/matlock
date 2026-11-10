@@ -59,7 +59,7 @@ def required_env(name: str) -> str:
 
 
 def create_server(database: Path, *, enable_semantic: bool = False) -> FastMCP:
-    base_url = required_env("MATLOCK2_MCP_BASE_URL")
+    base_url = required_env("MATLOCK_MCP_BASE_URL")
     parsed = urlsplit(base_url)
     if (
         parsed.scheme != "https"
@@ -70,15 +70,15 @@ def create_server(database: Path, *, enable_semantic: bool = False) -> FastMCP:
         or parsed.query
         or parsed.fragment
     ):
-        raise ValueError("MATLOCK2_MCP_BASE_URL must be an HTTPS origin without a path")
+        raise ValueError("MATLOCK_MCP_BASE_URL must be an HTTPS origin without a path")
 
-    signing_key = required_env("MATLOCK2_MCP_SIGNING_KEY")
+    signing_key = required_env("MATLOCK_MCP_SIGNING_KEY")
     if len(signing_key) < 32:
-        raise ValueError("MATLOCK2_MCP_SIGNING_KEY must be at least 32 characters")
+        raise ValueError("MATLOCK_MCP_SIGNING_KEY must be at least 32 characters")
 
     allowed_emails = frozenset(
         email.strip().casefold()
-        for email in required_env("MATLOCK2_GOOGLE_ALLOWED_EMAILS").split(",")
+        for email in required_env("MATLOCK_GOOGLE_ALLOWED_EMAILS").split(",")
     )
     if any(
         email.count("@") != 1
@@ -88,12 +88,12 @@ def create_server(database: Path, *, enable_semantic: bool = False) -> FastMCP:
         for email in allowed_emails
     ):
         raise ValueError(
-            "MATLOCK2_GOOGLE_ALLOWED_EMAILS must be a comma-separated list of email addresses"
+            "MATLOCK_GOOGLE_ALLOWED_EMAILS must be a comma-separated list of email addresses"
         )
 
     auth = AllowedGoogleAccount(
-        google_client_id=required_env("MATLOCK2_GOOGLE_CLIENT_ID"),
-        client_secret=required_env("MATLOCK2_GOOGLE_CLIENT_SECRET"),
+        google_client_id=required_env("MATLOCK_GOOGLE_CLIENT_ID"),
+        client_secret=required_env("MATLOCK_GOOGLE_CLIENT_SECRET"),
         allowed_emails=allowed_emails,
         base_url=base_url.rstrip("/"),
         jwt_signing_key=signing_key,

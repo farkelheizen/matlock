@@ -15,11 +15,11 @@ def configured(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     pytest.importorskip("fastmcp")
     from fastmcp.server.auth import oauth_proxy
 
-    monkeypatch.setenv("MATLOCK2_MCP_BASE_URL", "https://mcp.example.com")
-    monkeypatch.setenv("MATLOCK2_GOOGLE_CLIENT_ID", "google-client")
-    monkeypatch.setenv("MATLOCK2_GOOGLE_CLIENT_SECRET", "test-secret")
-    monkeypatch.setenv("MATLOCK2_GOOGLE_ALLOWED_EMAILS", "owner@example.com, second@example.com")
-    monkeypatch.setenv("MATLOCK2_MCP_SIGNING_KEY", "a" * 40)
+    monkeypatch.setenv("MATLOCK_MCP_BASE_URL", "https://mcp.example.com")
+    monkeypatch.setenv("MATLOCK_GOOGLE_CLIENT_ID", "google-client")
+    monkeypatch.setenv("MATLOCK_GOOGLE_CLIENT_SECRET", "test-secret")
+    monkeypatch.setenv("MATLOCK_GOOGLE_ALLOWED_EMAILS", "owner@example.com, second@example.com")
+    monkeypatch.setenv("MATLOCK_MCP_SIGNING_KEY", "a" * 40)
     monkeypatch.setattr(oauth_proxy.settings, "home", tmp_path / "fastmcp")
     return tmp_path / "index.sqlite3"
 
@@ -102,10 +102,10 @@ def test_http_host_wires_search_policy(configured, monkeypatch: pytest.MonkeyPat
 @pytest.mark.parametrize(
     ("name", "value"),
     [
-        ("MATLOCK2_MCP_BASE_URL", "http://mcp.example.com"),
-        ("MATLOCK2_MCP_BASE_URL", "https://mcp.example.com/mcp"),
-        ("MATLOCK2_MCP_SIGNING_KEY", "short"),
-        ("MATLOCK2_GOOGLE_ALLOWED_EMAILS", "*@example.com"),
+        ("MATLOCK_MCP_BASE_URL", "http://mcp.example.com"),
+        ("MATLOCK_MCP_BASE_URL", "https://mcp.example.com/mcp"),
+        ("MATLOCK_MCP_SIGNING_KEY", "short"),
+        ("MATLOCK_GOOGLE_ALLOWED_EMAILS", "*@example.com"),
     ],
 )
 def test_invalid_configuration_fails_closed(configured, monkeypatch, name: str, value: str) -> None:
