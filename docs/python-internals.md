@@ -42,7 +42,7 @@ The ingestion engine is responsible for closing its database through the CLI;
 independent callers using `Database` should use its context manager or close
 it explicitly.
 
-The ingestion package is `matlock2_ingest`. `matlock2` remains the console
-command; its old hook import path is retained as a compatibility shim.
+The ingestion package is `matlock2_ingest`; its console command is
+`matlock-ingest`. The old hook import path is retained as a compatibility shim.
 `matlock2_index` defines the SQLite schema-version and connection contract
 shared with the scanner and MCP consumer. See the [index contract](index-contract.md).

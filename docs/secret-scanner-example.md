@@ -38,7 +38,7 @@ relative to it):
 ```bash
 pip install -e ".[scanner]"
 cd examples/secret-scanner
-matlock2 --config matlock2.toml ingest
+matlock-ingest --config matlock2.toml ingest
 matlock2-scanner --config matlock2.toml scan --no-llm
 ```
 

@@ -75,6 +75,6 @@ The optional `[secret_scanner]` table configures `matlock2-scanner`, which reads
 the same `[ingest]` settings (database path and busy timeout). Its keys, prompt
 template, and the six scanner hook slots are described in the
 [secret scanner guide](secret-scanner.md). These are separate from the ingest
-metadata hooks above, and `matlock2` itself ignores the table.
+metadata hooks above, and the ingestion command ignores the table.
 The shared SQLite schema and connection boundary is documented in the
 [index contract](index-contract.md).

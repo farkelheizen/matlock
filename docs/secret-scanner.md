@@ -1,9 +1,9 @@
 # Secret scanner
 
 `matlock2-scanner` is an internal sub-app that looks for secrets and private
-data in content that `matlock2` has already indexed, and records its findings in
-the [`content_attributes`](attributes.md) table. It is a separate process: it
-reads the index database configured in `matlock2.toml` and never reads or
+data in content already indexed by `matlock-ingest`, and records its findings
+in the [`content_attributes`](attributes.md) table. It is a separate process:
+it reads the index database configured in `matlock2.toml` and never reads or
 changes the vault.
 
 The scanner only **records findings**. Nothing in the index or the MCP tools is
@@ -41,7 +41,7 @@ so it is scanned. To re-evaluate content on purpose, use `matlock2-scanner reset
 
 The scanner only ever inserts rows (`INSERT ... ON CONFLICT DO NOTHING`), so it
 cannot overwrite attributes from other writers and is safe to run next to
-`matlock2 watch`. Ingestion does not delete rows for unchanged content.
+`matlock-ingest watch`. Ingestion does not delete rows for unchanged content.
 
 ### Size limits
 
@@ -65,7 +65,7 @@ The heuristic layer works without `torch`. Use `--no-llm` or
 ## Commands
 
 ```bash
-matlock2 --config matlock2.toml ingest            # index first; the scanner needs the database
+matlock-ingest --config matlock2.toml ingest      # index first; the scanner needs the database
 matlock2-scanner --config matlock2.toml check-config
 matlock2-scanner --config matlock2.toml scan    # one pass, then exit
 matlock2-scanner --config matlock2.toml run     # loop every interval_seconds
@@ -259,9 +259,9 @@ scanner has not yet reached.
 
 ## Operating notes
 
-- Run `matlock2 ingest` or `watch` first; the scanner reports an error if the
+- Run `matlock-ingest ingest` or `watch` first; the scanner reports an error if the
   index database is missing or predates content attributes.
-- Run `matlock2-scanner run` beside `matlock2 watch`. Writes are short
+- Run `matlock2-scanner run` beside `matlock-ingest watch`. Writes are short
   `BEGIN IMMEDIATE` transactions that honor `busy_timeout_ms`.
 - A model that cannot be loaded aborts the pass with exit code 2 and nothing is
   stored, so fix the cause and rerun.

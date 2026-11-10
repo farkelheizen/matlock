@@ -32,7 +32,7 @@ class ScanStore:
     def __init__(self, path: Path, busy_timeout_ms: int) -> None:
         if not path.is_file():
             raise ScannerDatabaseError(
-                f"Database not found: {path}. Run `matlock2 ingest` to build the index first."
+                f"Database not found: {path}. Run `matlock-ingest ingest` to build the index first."
             )
         try:
             self.connection = connect_index(

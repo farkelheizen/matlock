@@ -32,13 +32,13 @@ for your environment. Hook callables are listed under `[hooks]` using
 ## Run
 
 ```sh
-matlock2 --config matlock2.toml check-config
-matlock2 --config matlock2.toml ingest
-matlock2 --config matlock2.toml watch
+matlock-ingest --config matlock2.toml check-config
+matlock-ingest --config matlock2.toml ingest
+matlock-ingest --config matlock2.toml watch
 ```
 
-`ingest` performs one pass (`scan` remains a compatibility alias). `watch` runs
-continuously until interrupted.
+`ingest` performs one pass (`scan` remains a compatibility alias). `watch`
+runs continuously until interrupted.
 
 ## Tests
 

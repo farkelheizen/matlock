@@ -40,9 +40,9 @@ Markdown and `database_path` to the desired SQLite file. The root
 secrets in tracked examples.
 
 ```sh
-matlock2 --config matlock2.toml check-config
-matlock2 --config matlock2.toml ingest
-matlock2 --config matlock2.toml watch
+matlock-ingest --config matlock2.toml check-config
+matlock-ingest --config matlock2.toml ingest
+matlock-ingest --config matlock2.toml watch
 ```
 
 Run `ingest` for one pass (`scan` remains an alias), or `watch` to keep the

@@ -13,7 +13,7 @@ from .watcher import VaultWatcher
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="matlock2")
+    parser = argparse.ArgumentParser(prog="matlock-ingest")
     parser.add_argument(
         "--config",
         type=Path,

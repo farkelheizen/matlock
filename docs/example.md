@@ -27,8 +27,8 @@ default embedding model. The first scan may download the model.
 ## 2. Scan
 
 ```sh
-matlock2 --config examples/second-brain/matlock2.toml check-config
-matlock2 --config examples/second-brain/matlock2.toml ingest
+matlock-ingest --config examples/second-brain/matlock2.toml check-config
+matlock-ingest --config examples/second-brain/matlock2.toml ingest
 ```
 
 On a fresh example database the scan should report five discovered and five
@@ -87,7 +87,7 @@ For metadata, full-text, and vector query examples, see
 ## 4. Try watching
 
 ```sh
-matlock2 --config examples/second-brain/matlock2.toml watch
+matlock-ingest --config examples/second-brain/matlock2.toml watch
 ```
 
 The watcher runs an initial scan and waits for file events. Stop it with

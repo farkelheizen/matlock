@@ -7,9 +7,9 @@ not necessarily been published as a release.
 
 ### Changed
 
-- Renamed the ingestion import package to `matlock2_ingest`; `matlock2` remains
-  the CLI command, legacy hook imports remain available, and `matlock2 ingest`
-  is the preferred one-pass command (`scan` remains an alias).
+- Renamed the ingestion import package to `matlock2_ingest` and its executable
+  to `matlock-ingest`; legacy hook imports remain available, and `ingest` is
+  the preferred one-pass command (`scan` remains an alias).
 
 ### Added
 
