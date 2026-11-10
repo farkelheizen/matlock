@@ -43,7 +43,7 @@ class ScannerConfig:
     max_chunk_chars: int = 4000
     max_document_chars: int = 50000
     heuristic_plugins: tuple[str, ...] = ()
-    llm_model_id: str = "meta-llama/Llama-3.2-1B-Instruct"
+    llm_model_id: str = "Qwen/Qwen2.5-1.5B-Instruct"
     llm_device: str = "auto"
     llm_max_new_tokens: int = 256
     prompt: str = DEFAULT_PROMPT

@@ -121,3 +121,58 @@ class ScanStore:
             self.connection.execute("ROLLBACK")
             raise
         return inserted
+
+    def reset(
+        self,
+        key: str,
+        *,
+        domain: str | None = None,
+        llm_statuses: tuple[str, ...] = (),
+        min_risk: int | None = None,
+        sha256: str | None = None,
+        dry_run: bool = False,
+    ) -> int:
+        """Remove scanner results so the content is scanned again.
+
+        Only rows that contain the scanner key are touched. A row holding nothing
+        else is deleted, because any remaining row would block rescanning; other
+        keys are preserved.
+        """
+        path = f"$.{key}"
+        conditions = ["json_type(attributes_json, ?) IS NOT NULL"]
+        params: list[Any] = [path]
+        if domain is not None:
+            conditions.append("domain = ?")
+            params.append(domain)
+        if sha256 is not None:
+            conditions.append("sha256 = ?")
+            params.append(sha256)
+        if llm_statuses:
+            marks = ",".join("?" for _ in llm_statuses)
+            conditions.append(f"json_extract(attributes_json, ? || '.llm_status') IN ({marks})")
+            params.extend([path, *llm_statuses])
+        if min_risk is not None:
+            conditions.append("json_extract(attributes_json, ? || '.risk_score') >= ?")
+            params.extend([path, min_risk])
+        where = " AND ".join(conditions)
+        self.connection.execute("BEGIN IMMEDIATE")
+        try:
+            count = self.connection.execute(
+                f"SELECT COUNT(*) FROM content_attributes WHERE {where}", params
+            ).fetchone()[0]
+            if not dry_run and count:
+                self.connection.execute(
+                    f"DELETE FROM content_attributes WHERE {where} "
+                    "AND json_remove(attributes_json, ?) = '{}'",
+                    [*params, path],
+                )
+                self.connection.execute(
+                    "UPDATE content_attributes SET attributes_json = "
+                    f"json_remove(attributes_json, ?), updated_at = ? WHERE {where}",
+                    [path, utc_now(), *params],
+                )
+            self.connection.execute("COMMIT")
+        except BaseException:
+            self.connection.execute("ROLLBACK")
+            raise
+        return count

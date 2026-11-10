@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import signal
 import sqlite3
 import sys
@@ -17,7 +18,9 @@ from .engine import ScanEngine
 from .heuristics import HeuristicScanner, detect_secrets_available, validate_plugins
 from .hooks import load_hooks
 from .llm import LocalLLMAuditor, llm_available
-from .models import PassReport, ScannerConfig
+from .models import DOMAINS, PassReport, ScannerConfig
+
+LLM_STATUSES = ("ok", "disabled", "skipped", "parse_error", "error")
 from .store import ScanStore, ScannerDatabaseError
 
 
@@ -46,6 +49,23 @@ def _parser() -> argparse.ArgumentParser:
     scan_file.add_argument(
         "--no-heuristics", action="store_true", help="Disable the heuristic layer"
     )
+    scan_file.add_argument(
+        "--fail-above", type=int, metavar="N",
+        help="Exit with status 1 when the risk score is greater than N",
+    )
+    reset = commands.add_parser(
+        "reset",
+        help="Remove stored results so content is scanned again (select what to remove)",
+    )
+    reset.add_argument("--all", action="store_true", help="Select every stored result")
+    reset.add_argument("--domain", choices=DOMAINS, help="Only this content level")
+    reset.add_argument(
+        "--status", action="append", choices=LLM_STATUSES, dest="statuses",
+        help="Only results with this llm_status (repeatable)",
+    )
+    reset.add_argument("--min-risk", type=int, help="Only results with risk_score >= N")
+    reset.add_argument("--sha256", help="Only the content with this hash")
+    reset.add_argument("--dry-run", action="store_true", help="Count without deleting")
     run = commands.add_parser("run", parents=[common], help="Scan repeatedly until stopped")
     run.add_argument("--max-passes", type=int, help="Stop after this many passes")
     return parser
@@ -146,12 +166,38 @@ def main(argv: list[str] | None = None) -> int:
     try:
         ingest_config, config = load_scanner_config(args.config)
         layers = _effective_layers(config, args)
-        _check_dependencies(config, layers)
-        load_hooks(config)
+        if args.command != "reset":
+            _check_dependencies(config, layers)
+            load_hooks(config)
         if args.command == "check-config":
             print(f"Scanner configuration valid: {args.config.resolve()}")
             print(f"Database: {ingest_config.database_path}")
             print(f"Layers: {', '.join(layers) or 'none'}")
+            return 0
+        if args.command == "reset":
+            selected = (
+                args.all or args.domain or args.statuses or args.sha256
+                or args.min_risk is not None
+            )
+            if not selected:
+                raise ConfigurationError("reset needs a selection: --all or a filter")
+            if args.all and (args.domain or args.statuses or args.sha256
+                             or args.min_risk is not None):
+                raise ConfigurationError("--all cannot be combined with filters")
+            if args.sha256 and not re.fullmatch(r"[0-9a-f]{64}", args.sha256):
+                raise ConfigurationError("--sha256 must be 64 lowercase hex characters")
+            store = ScanStore(ingest_config.database_path, ingest_config.busy_timeout_ms)
+            count = store.reset(
+                config.attribute_key,
+                domain=args.domain,
+                llm_statuses=tuple(args.statuses or ()),
+                min_risk=args.min_risk,
+                sha256=args.sha256,
+                dry_run=args.dry_run,
+            )
+            store.close()
+            verb = "Would remove" if args.dry_run else "Removed"
+            print(f"{verb} {count} scan result(s); the content will be scanned again.")
             return 0
         if args.command == "scan-file":
             if not layers:
@@ -162,6 +208,9 @@ def main(argv: list[str] | None = None) -> int:
                 text = Path(args.path).read_text(encoding="utf-8")
             output = scan_file(build_engine(None, config, layers), args.path, text)
             print(json.dumps(output, ensure_ascii=False, indent=2))
+            risk = output["result"]["risk_score"]  # type: ignore[index]
+            if args.fail_above is not None and risk > args.fail_above:
+                return 1
             return 0
         if args.limit is not None and args.limit < 1:
             raise ConfigurationError("--limit must be positive")
