@@ -16,6 +16,11 @@ If you already created the repository's `.venv`, activate it instead of
 creating it again. The local `docs_local` link is a separate documentation
 directory, not the repository root.
 
+Optional extras are installed the same way, for example
+`python -m pip install -e ".[mcp]"` for the [MCP search tools](mcp.md),
+`".[scanner]"` for the heuristic [secret scanner](secret-scanner.md), and
+`".[scanner-llm]"` to add its local LLM layer.
+
 Python 3.11 or later is required. The first run that initializes the configured
 embedding model may need network access to download model files. Embedding
 inference runs locally. SQLite must support loading the required `sqlite-vec`

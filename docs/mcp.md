@@ -156,6 +156,9 @@ information about content unless the policy hides the result instead. Policies
 are trusted code, not a sandbox or a replacement for host authentication
 and authorization.
 
+`matlock2_mcp.SecretScanPolicy` is a ready-made policy that hides content
+flagged by the [secret scanner](secret-scanner.md#hiding-risky-content-from-mcp-search).
+
 FTS input is treated as a literal phrase, not raw FTS syntax. `score` is
 SQLite BM25; vector `distance` is cosine distance, with smaller values
 indicating closer matches. Filters are applied before ranking. Vector search

@@ -15,6 +15,11 @@ python -m pip install -e .
 ```
 
 The configured embedding model is downloaded on first use.
+
+Optional extras: `.[mcp]` for the MCP search tools, `.[scanner]` for the
+[secret scanner](docs/secret-scanner.md)'s heuristic layer, and
+`.[scanner-llm]` to add its local LLM layer (`transformers` and `torch`, with a
+model download on first use).
 The `docs_local` link points to a separate local notes directory; it is not the
 Python project directory.
 
@@ -39,7 +44,7 @@ matlock2 --config matlock2.toml watch
 Run the self-contained suite with:
 
 ```sh
-python -m pip install -e '.[dev]'
+python -m pip install -e '.[dev,mcp]'
 pytest
 ```
 

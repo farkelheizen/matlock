@@ -20,7 +20,7 @@ Two layers evaluate each unit of content:
    `pragma: allowlist secret` comments are ignored on purpose. Nothing is
    written to disk and no baseline file is used.
 2. **LLM layer.** A small open-weights model (default
-   `meta-llama/Llama-3.2-1B-Instruct`) is loaded into the scanner process with
+   `Qwen/Qwen2.5-1.5B-Instruct`, about 3 GB) is loaded into the scanner process with
    `transformers`; no daemon or network service is involved apart from the
    one-time model download (set `HF_HUB_OFFLINE=1` once the model is cached).
    It receives a configurable prompt and answers with a JSON object that is
@@ -37,8 +37,7 @@ An item is scanned only if `content_attributes` has **no row at all** for its
 `(domain, sha256)`. If any row exists, even `{}` or one written by another
 tool, the item is not scanned. Results are valid forever: changing the prompt,
 model, rules, or hooks does not trigger a rescan. Edited content has a new hash,
-so it is scanned. To re-evaluate content on purpose, delete its row (or only the
-scanner key) in a write transaction.
+so it is scanned. To re-evaluate content on purpose, use `matlock2-scanner reset`.
 
 The scanner only ever inserts rows (`INSERT ... ON CONFLICT DO NOTHING`), so it
 cannot overwrite attributes from other writers and is safe to run next to
@@ -94,8 +93,26 @@ document and prints a single JSON object to standard output:
 accepts `--no-llm` and `--no-heuristics`, uses the configured layers, prompt,
 size limit, and hooks (`document_metadata` is empty, so metadata-dependent
 hooks see no labels), and never opens the database or writes anything. It does
-not call `post_scan`. Errors go to standard error with exit code 2; a risky file
-still exits 0, so check `result.risk_score` in the caller.
+not call `post_scan`. Errors go to standard error with exit code 2. A risky file
+exits 0 unless you pass `--fail-above N`, which exits 1 when `risk_score` is
+greater than N (the JSON is still printed), for use in pre-commit hooks or CI:
+
+```bash
+matlock2-scanner --config matlock2.toml scan-file draft.md --no-llm --fail-above 4
+```
+
+`reset` removes stored results so the content is scanned again, for example
+after changing the prompt or model. It needs an explicit selection: `--all`, or
+filters that combine with AND (`--domain`, `--status` (repeatable),
+`--min-risk N`, `--sha256 HASH`). `--dry-run` only counts. Only the scanner key
+is removed: other keys in a row are kept, and a row that holds nothing else is
+deleted (a leftover row would block rescanning). It does not need
+`detect-secrets` or the LLM extras, and it does not scan; run `scan` afterwards.
+
+```bash
+matlock2-scanner --config matlock2.toml reset --status error --status parse_error
+matlock2-scanner --config matlock2.toml reset --all --dry-run
+```
 
 `run` stops cleanly on SIGINT or SIGTERM after finishing the current batch.
 A pass prints `scanned`, `skipped`, `flagged` (heuristic match or risk of 5 or
@@ -118,7 +135,7 @@ follow the configuration file.
 | `max_chunk_chars` | `4000` | Largest chunk scanned as-is |
 | `max_document_chars` | `50000` | Largest document body scanned as-is |
 | `[heuristics] plugins` | all defaults | `detect-secrets` plugin class names, such as `AWSKeyDetector` |
-| `[llm] model_id` | `meta-llama/Llama-3.2-1B-Instruct` | Hugging Face model; the default is gated and needs approved access and login, so set an ungated model such as `Qwen/Qwen2.5-1.5B-Instruct` otherwise |
+| `[llm] model_id` | `Qwen/Qwen2.5-1.5B-Instruct` | Hugging Face model. Gated models, such as `meta-llama/Llama-3.2-1B-Instruct`, need approved access and `huggingface-cli login` |
 | `[llm] device` | `"auto"` | `auto`, `cpu`, `cuda`, or `mps` |
 | `[llm] max_new_tokens` | `256` | Generation limit |
 | `[llm] prompt_file` | built-in | Prompt template path |
@@ -215,9 +232,30 @@ WHERE json_extract(a.attributes_json, '$.secret_scan.risk_score') >= 5
 ORDER BY risk DESC;
 ```
 
-The optional MCP attribute filtering in [mcp.md](mcp.md) can use the same
-fields. Content without a row has not been scanned, and a row with `skipped` or
-`error` status was not fully evaluated.
+Content without a row has not been scanned, and a row with `skipped` or `error`
+status was not fully evaluated.
+
+### Hiding risky content from MCP search
+
+`matlock2_mcp.SecretScanPolicy` is a ready-made [search policy](mcp.md) for the
+MCP tools. Pass it to `SearchService`:
+
+```python
+from matlock2_mcp import SearchConfig, SearchService, SecretScanPolicy
+
+service = SearchService(SearchConfig(database_path), policy=SecretScanPolicy(threshold=5))
+```
+
+It is fail-closed: content is hidden when its risk is at or above `threshold`
+(default 5), when it has no scan result (`hide_unscanned=False` allows it), when
+the result is malformed, or when it was skipped as `oversize`
+(`hide_skipped_reasons`). Skips from a `pre_scan` hook are allowed. A
+document's own whole-body result hides the document and all its chunks; pass
+`use_document_results=False` to decide per chunk so the clean parts of a
+document stay searchable. Policies make full-text ranking use path order instead
+of BM25 (see [mcp.md](mcp.md)), and hiding is not a complete secrecy boundary.
+The policy only reads the stored results, so it cannot protect content the
+scanner has not yet reached.
 
 ## Operating notes
 
