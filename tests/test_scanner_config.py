@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from matlock2.config import ConfigurationError
+from matlock2_ingest.config import ConfigurationError
 from matlock2_scanner.config import load_scanner_config
 from matlock2_scanner.models import DEFAULT_PROMPT
 from tests.scanner_helpers import build_index

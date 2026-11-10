@@ -12,15 +12,16 @@ from unittest.mock import patch
 
 import pytest
 
-from matlock2.chunking import chunk_markdown
-from matlock2.cli import main
-from matlock2.config import ConfigurationError, load_config
-from matlock2.database import Database, DatabaseError
-from matlock2.ingest import IngestionEngine
-from matlock2.markdown import MarkdownParseError, parse_markdown
-from matlock2.models import Chunk, IngestConfig
-from matlock2.watcher import _PendingEvent, _VaultEventHandler
-from matlock2.watcher import VaultWatcher
+from matlock2_ingest.chunking import chunk_markdown
+from matlock2_ingest import cli
+from matlock2_ingest.cli import main
+from matlock2_ingest.config import ConfigurationError, load_config
+from matlock2_ingest.database import Database, DatabaseError
+from matlock2_ingest.ingest import IngestionEngine
+from matlock2_ingest.markdown import MarkdownParseError, parse_markdown
+from matlock2_ingest.models import Chunk, IngestConfig, ScanReport
+from matlock2_ingest.watcher import _PendingEvent, _VaultEventHandler
+from matlock2_ingest.watcher import VaultWatcher
 from watchdog.events import FileMovedEvent, FileModifiedEvent
 
 
@@ -162,7 +163,7 @@ def test_unbroken_oversized_text_does_not_create_pathological_overlap() -> None:
 
 
 def test_scan_hashes_idempotency_fts_and_vector_persistence(tmp_path: Path) -> None:
-    config = _config(tmp_path, hooks=("matlock2.hooks:project_id_from_path",))
+    config = _config(tmp_path, hooks=("matlock2_ingest.hooks:project_id_from_path",))
     path = config.vault_path / "projects" / "alpha" / "decision.md"
     path.parent.mkdir(parents=True)
     path.write_text(
@@ -342,7 +343,10 @@ def test_later_stage_failure_resolves_obsolete_same_hash_error(tmp_path: Path) -
     (config.vault_path / "note.md").write_text("# Note\nbody", encoding="utf-8")
     db, engine = _engine(config)
     try:
-        with patch("matlock2.ingest.parse_markdown", side_effect=ValueError("temporary")):
+        with patch(
+            "matlock2_ingest.ingest.parse_markdown",
+            side_effect=ValueError("temporary"),
+        ):
             parse_failure = engine.ingest_path("note.md")
         assert not isinstance(parse_failure, str)
         assert parse_failure.stage == "parse"
@@ -455,7 +459,7 @@ def test_incomplete_discovery_does_not_prune_indexed_sources(
             )
             return iter(())
 
-        with patch("matlock2.ingest.os.walk", failing_walk):
+        with patch("matlock2_ingest.ingest.os.walk", failing_walk):
             report = engine.scan()
         assert not report.discovery_complete
         assert report.failures[0].stage == "discover"
@@ -537,11 +541,43 @@ def test_cli_validates_sample_configuration_without_loading_model(
     config_path = tmp_path / "matlock2.toml"
     config_path.write_text(
         '[ingest]\nvault_path = "vault"\n[hooks]\n'
-        'configured = ["matlock2.hooks:project_id_from_path"]\n',
+        'configured = ["matlock2_ingest.hooks:project_id_from_path"]\n',
         encoding="utf-8",
     )
     assert main(["--config", str(config_path), "check-config"]) == 0
     assert "Configuration valid" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("command", ["ingest", "scan"])
+def test_ingest_command_and_scan_alias(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    command: str,
+) -> None:
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    config_path = tmp_path / "matlock2.toml"
+    config_path.write_text('[ingest]\nvault_path = "vault"\n', encoding="utf-8")
+
+    class DatabaseStub:
+        def close(self) -> None:
+            pass
+
+    class EngineStub:
+        def scan(self, progress: object = None) -> ScanReport:
+            return ScanReport(1, 1, 0, 0, (), 0)
+
+    monkeypatch.setattr(cli, "_make_engine", lambda config: (DatabaseStub(), EngineStub()))
+    assert main(["--config", str(config_path), command]) == 0
+    assert "Ingest complete" in capsys.readouterr().out
+
+
+def test_legacy_hook_import_remains_available() -> None:
+    from matlock2.hooks import project_id_from_path as legacy_hook
+    from matlock2_ingest.hooks import project_id_from_path
+
+    assert legacy_hook is project_id_from_path
 
 
 def test_watcher_event_handler_filters_and_tracks_moves(tmp_path: Path) -> None:

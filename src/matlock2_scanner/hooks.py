@@ -7,7 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from matlock2.config import ConfigurationError
+from matlock2_ingest.config import ConfigurationError
 
 from .models import Finding, ScanItem, ScanResult, ScannerConfig
 

@@ -49,7 +49,7 @@ def test_missing_database_exits_2(tmp_path: Path, capsys: pytest.CaptureFixture[
     (tmp_path / "vault").mkdir()
     config.write_text('[ingest]\nvault_path = "./vault"\ndatabase_path = "./none.sqlite3"\n')
     assert main(["--config", str(config), "scan", "--no-llm"]) == 2
-    assert "matlock2 scan" in capsys.readouterr().err
+    assert "matlock2 ingest" in capsys.readouterr().err
 
 
 def test_missing_config_exits_2(tmp_path: Path) -> None:
@@ -168,7 +168,7 @@ def test_reset_filters_and_preserves_other_keys(
 ) -> None:
     import sqlite3
 
-    from matlock2.config import load_config
+    from matlock2_ingest.config import load_config
 
     config = _scanned(tmp_path)
     attrs = attributes(config)

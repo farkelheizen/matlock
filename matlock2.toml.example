@@ -1,5 +1,5 @@
 [hooks]
-configured = ["matlock2.hooks:project_id_from_path"]
+configured = ["matlock2_ingest.hooks:project_id_from_path"]
 
 [ingest]
 vault_path = "./my-markdown-vault"

@@ -33,11 +33,12 @@ for your environment. Hook callables are listed under `[hooks]` using
 
 ```sh
 matlock2 --config matlock2.toml check-config
-matlock2 --config matlock2.toml scan
+matlock2 --config matlock2.toml ingest
 matlock2 --config matlock2.toml watch
 ```
 
-`scan` performs one pass. `watch` runs continuously until interrupted.
+`ingest` performs one pass (`scan` remains a compatibility alias). `watch` runs
+continuously until interrupted.
 
 ## Tests
 
@@ -59,6 +60,7 @@ test.
 - [Database and troubleshooting](docs/operations.md)
 - [Database structure](docs/database.md), [query examples](docs/queries.md),
   and [Python internals](docs/python-internals.md)
+- [Shared SQLite index contract](docs/index-contract.md)
 - [Complete example](docs/example.md), with a small fictional vault in
   [`examples/second-brain/`](examples/second-brain/)
 - [Secret scanner](docs/secret-scanner.md) and its [example](docs/secret-scanner-example.md),

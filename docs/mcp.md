@@ -34,8 +34,9 @@ is configured, and semantic/hybrid tools if a matching embedder is supplied.
 Requesting unavailable or unknown tools at registration raises an error.
 
 The standalone service methods may also be used without importing FastMCP.
-Each request opens an existing database in read-only mode with a bounded busy
-timeout and a short read transaction. Schema version 2 is required. Vector
+Each request opens an existing database through the shared `matlock2_index`
+contract in read-only mode with a bounded busy timeout and a short read
+transaction. Schema version 2 is required. Vector
 requests load sqlite-vec per connection; searches never create or migrate a
 database. Readers see a consistent snapshot during each request. Errors are
 reported rather than silently converted into empty results.
@@ -186,7 +187,7 @@ The local FastEmbed adapter can be reused as a provider:
 
 ```python
 from pathlib import Path
-from matlock2.embedding import FastEmbedder
+from matlock2_ingest.embedding import FastEmbedder
 from matlock2_mcp import SearchConfig, SearchService
 
 provider = FastEmbedder("BAAI/bge-small-en-v1.5", 384, 512)

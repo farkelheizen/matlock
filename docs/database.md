@@ -1,9 +1,12 @@
 # SQLite database structure
 
-This describes the current schema version 2, not a guaranteed stable public
-API. The ingestion engine owns writes; external consumers should open the
-existing database read-only. The database contains the indexed note text and
-metadata, so protect it and its WAL files as private data.
+This describes the current schema version 2. Shared connection and schema
+validation are defined by `matlock2_index`; ingestion owns schema creation,
+migrations and indexed-document writes. External consumers should open the
+existing database read-only, except the scanner's writes to
+`content_attributes`. See the [index contract](index-contract.md). The database
+contains indexed note text and metadata, so protect it and its WAL files as
+private data.
 
 ## Relationships
 

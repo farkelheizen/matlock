@@ -5,9 +5,9 @@ import sqlite3
 from pathlib import Path
 from typing import Callable
 
-from matlock2.config import load_config
-from matlock2.database import Database
-from matlock2.ingest import IngestionEngine
+from matlock2_ingest.config import load_config
+from matlock2_ingest.database import Database
+from matlock2_ingest.ingest import IngestionEngine
 from matlock2_scanner.config import load_scanner_config
 from matlock2_scanner.engine import ScanEngine
 from matlock2_scanner.heuristics import HeuristicScanner

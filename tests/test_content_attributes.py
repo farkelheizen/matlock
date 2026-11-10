@@ -11,7 +11,7 @@ from typing import Any
 
 import pytest
 
-from matlock2.database import Database, DatabaseError
+from matlock2_ingest.database import Database, DatabaseError
 from matlock2_mcp import PolicyDecision, SearchService
 from matlock2_mcp.search import SearchError
 from tests.test_ingest import _config, _engine

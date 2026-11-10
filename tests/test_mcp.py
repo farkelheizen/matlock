@@ -8,9 +8,9 @@ from pathlib import Path
 
 import pytest
 
-from matlock2.config import load_config
-from matlock2.database import Database
-from matlock2.ingest import IngestionEngine
+from matlock2_ingest.config import load_config
+from matlock2_ingest.database import Database
+from matlock2_ingest.ingest import IngestionEngine
 from matlock2_mcp import SearchConfig, SearchService
 from matlock2_mcp.search import SearchError
 from tests.test_ingest import TestEmbedder

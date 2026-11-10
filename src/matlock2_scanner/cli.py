@@ -11,7 +11,7 @@ import threading
 from collections.abc import Callable
 from pathlib import Path
 
-from matlock2.config import ConfigurationError
+from matlock2_ingest.config import ConfigurationError
 
 from .config import load_scanner_config
 from .engine import ScanEngine

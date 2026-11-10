@@ -9,7 +9,7 @@ from pathlib import Path
 
 import sqlite_vec
 
-from matlock2.embedding import FastEmbedder
+from matlock2_ingest.embedding import FastEmbedder
 
 
 def main() -> None:

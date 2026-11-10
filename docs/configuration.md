@@ -27,7 +27,7 @@ Use the settings appropriate to the selected model; changing the model name
 alone does not automatically update `dimensions` or `max_input_tokens`. The
 database rejects a change in vector dimensions: use a new database or migrate
 the existing one. Changes to chunk settings, hooks or model configuration
-cause existing notes to be reprocessed on the next scan.
+cause existing notes to be reprocessed on the next ingest.
 
 ## Metadata hooks
 
@@ -41,8 +41,12 @@ The built-in hook can be enabled as follows:
 
 ```toml
 [hooks]
-configured = ["matlock2.hooks:project_id_from_path"]
+configured = ["matlock2_ingest.hooks:project_id_from_path"]
 ```
+
+Existing configuration using `matlock2.hooks:project_id_from_path` continues
+to work through a compatibility shim; use the `matlock2_ingest` path for new
+configurations.
 
 For `projects/orion/decision.md`, it sets `project_id` to `orion` if the
 frontmatter did not already specify it, even as null. It does not write to the
@@ -53,7 +57,7 @@ To supply your own, place an importable module on the Python import path and
 configure `your_module:your_function`. For example:
 
 ```python
-from matlock2.models import DocumentContext
+from matlock2_ingest.models import DocumentContext
 
 
 def enrich(context: DocumentContext, metadata: dict[str, object]) -> None:
@@ -72,3 +76,5 @@ the same `[ingest]` settings (database path and busy timeout). Its keys, prompt
 template, and the six scanner hook slots are described in the
 [secret scanner guide](secret-scanner.md). These are separate from the ingest
 metadata hooks above, and `matlock2` itself ignores the table.
+The shared SQLite schema and connection boundary is documented in the
+[index contract](index-contract.md).

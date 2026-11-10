@@ -6,6 +6,15 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from matlock2_index import (
+    CHUNKS,
+    CONTENT_ATTRIBUTES,
+    IndexSchemaError,
+    SOURCE_DOCUMENTS,
+    connect_index,
+    validate_index_schema,
+)
+
 from .models import ScanItem
 
 
@@ -23,31 +32,24 @@ class ScanStore:
     def __init__(self, path: Path, busy_timeout_ms: int) -> None:
         if not path.is_file():
             raise ScannerDatabaseError(
-                f"Database not found: {path}. Run `matlock2 scan` to build the index first."
+                f"Database not found: {path}. Run `matlock2 ingest` to build the index first."
             )
         try:
-            self.connection = sqlite3.connect(
-                path, timeout=busy_timeout_ms / 1000, isolation_level=None
+            self.connection = connect_index(
+                path,
+                busy_timeout_ms=busy_timeout_ms,
+                readonly=False,
             )
-            self.connection.row_factory = sqlite3.Row
-            self.connection.execute(f"PRAGMA busy_timeout={int(busy_timeout_ms)}")
-            self._check_schema()
+            validate_index_schema(self.connection)
         except sqlite3.Error as exc:
+            if hasattr(self, "connection"):
+                self.connection.close()
             raise ScannerDatabaseError(f"Cannot open database {path}: {exc}") from exc
-
-    def _check_schema(self) -> None:
-        tables = {
-            row[0]
-            for row in self.connection.execute("SELECT name FROM sqlite_master WHERE type='table'")
-        }
-        missing = {"source_documents", "chunks", "content_attributes"} - tables
-        columns = {row[1] for row in self.connection.execute("PRAGMA table_info(chunks)")}
-        if missing or "content_sha256" not in columns:
+        except IndexSchemaError as exc:
             self.connection.close()
             raise ScannerDatabaseError(
-                "The database has no content attribute support. "
-                "Run `matlock2 scan` with the current version first."
-            )
+                f"The database does not satisfy the current index contract: {exc}"
+            ) from exc
 
     def close(self) -> None:
         self.connection.close()
@@ -55,12 +57,12 @@ class ScanStore:
     def unscanned(self, domain: str, limit: int | None) -> list[ScanItem]:
         """Return content with no content_attributes row of any kind."""
         if domain == "chunk":
-            table, hash_column, order = "chunks", "content_sha256", "id"
+            table, hash_column, order = CHUNKS, "content_sha256", "id"
         else:
-            table, hash_column, order = "source_documents", "body_sha256", "rowid"
+            table, hash_column, order = SOURCE_DOCUMENTS, "body_sha256", "rowid"
         sql = (
             f"SELECT t.{hash_column} AS sha, MIN(t.{order}) AS first FROM {table} t "
-            "LEFT JOIN content_attributes a ON a.domain=? AND a.sha256=t."
+            f"LEFT JOIN {CONTENT_ATTRIBUTES} a ON a.domain=? AND a.sha256=t."
             f"{hash_column} WHERE a.sha256 IS NULL AND t.{hash_column} IS NOT NULL "
             f"GROUP BY t.{hash_column} ORDER BY first"
         )
@@ -74,7 +76,7 @@ class ScanStore:
     def _load_item(self, domain: str, sha: str) -> ScanItem:
         if domain == "chunk":
             rows = self.connection.execute(
-                "SELECT content, source_path, ordinal FROM chunks "
+                f"SELECT content, source_path, ordinal FROM {CHUNKS} "
                 "WHERE content_sha256=? ORDER BY id",
                 (sha,),
             ).fetchall()
@@ -83,7 +85,7 @@ class ScanStore:
             ordinals = tuple(row["ordinal"] for row in rows)
         else:
             rows = self.connection.execute(
-                "SELECT body AS content, path AS source_path FROM source_documents "
+                f"SELECT body AS content, path AS source_path FROM {SOURCE_DOCUMENTS} "
                 "WHERE body_sha256=? ORDER BY rowid",
                 (sha,),
             ).fetchall()
@@ -93,7 +95,7 @@ class ScanStore:
         metadata: dict[str, dict[str, Any]] = {}
         for path in paths:
             row = self.connection.execute(
-                "SELECT metadata_json FROM source_documents WHERE path=?", (path,)
+                f"SELECT metadata_json FROM {SOURCE_DOCUMENTS} WHERE path=?", (path,)
             ).fetchone()
             if row is not None:
                 metadata[path] = json.loads(row["metadata_json"])
@@ -106,7 +108,7 @@ class ScanStore:
         try:
             for domain, sha256, result in rows:
                 cursor = self.connection.execute(
-                    "INSERT INTO content_attributes(domain, sha256, attributes_json, updated_at) "
+                    f"INSERT INTO {CONTENT_ATTRIBUTES}(domain, sha256, attributes_json, updated_at) "
                     "VALUES (?, ?, ?, ?) ON CONFLICT(domain, sha256) DO NOTHING",
                     (
                         domain,
@@ -158,16 +160,16 @@ class ScanStore:
         self.connection.execute("BEGIN IMMEDIATE")
         try:
             count = self.connection.execute(
-                f"SELECT COUNT(*) FROM content_attributes WHERE {where}", params
+                f"SELECT COUNT(*) FROM {CONTENT_ATTRIBUTES} WHERE {where}", params
             ).fetchone()[0]
             if not dry_run and count:
                 self.connection.execute(
-                    f"DELETE FROM content_attributes WHERE {where} "
+                    f"DELETE FROM {CONTENT_ATTRIBUTES} WHERE {where} "
                     "AND json_remove(attributes_json, ?) = '{}'",
                     [*params, path],
                 )
                 self.connection.execute(
-                    "UPDATE content_attributes SET attributes_json = "
+                    f"UPDATE {CONTENT_ATTRIBUTES} SET attributes_json = "
                     f"json_remove(attributes_json, ?), updated_at = ? WHERE {where}",
                     [path, utc_now(), *params],
                 )

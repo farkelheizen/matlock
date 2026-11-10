@@ -65,7 +65,7 @@ The heuristic layer works without `torch`. Use `--no-llm` or
 ## Commands
 
 ```bash
-matlock2 --config matlock2.toml scan            # index first; the scanner needs the database
+matlock2 --config matlock2.toml ingest            # index first; the scanner needs the database
 matlock2-scanner --config matlock2.toml check-config
 matlock2-scanner --config matlock2.toml scan    # one pass, then exit
 matlock2-scanner --config matlock2.toml run     # loop every interval_seconds
@@ -259,7 +259,7 @@ scanner has not yet reached.
 
 ## Operating notes
 
-- Run `matlock2 scan` or `watch` first; the scanner reports an error if the
+- Run `matlock2 ingest` or `watch` first; the scanner reports an error if the
   index database is missing or predates content attributes.
 - Run `matlock2-scanner run` beside `matlock2 watch`. Writes are short
   `BEGIN IMMEDIATE` transactions that honor `busy_timeout_ms`.

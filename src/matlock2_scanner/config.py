@@ -5,8 +5,8 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
-from matlock2.config import ConfigurationError, load_config
-from matlock2.models import IngestConfig
+from matlock2_ingest.config import ConfigurationError, load_config
+from matlock2_ingest.models import IngestConfig
 
 from .models import DEFAULT_PROMPT, DOMAINS, HOOK_SLOTS, LAYERS, ScannerConfig
 

@@ -41,12 +41,13 @@ secrets in tracked examples.
 
 ```sh
 matlock2 --config matlock2.toml check-config
-matlock2 --config matlock2.toml scan
+matlock2 --config matlock2.toml ingest
 matlock2 --config matlock2.toml watch
 ```
 
-Run `scan` for one pass, or `watch` to keep the process running. Stop the
-watcher with Ctrl-C. A watcher starts with a scan and periodically repeats it.
+Run `ingest` for one pass (`scan` remains an alias), or `watch` to keep the
+process running. Stop the watcher with Ctrl-C. A watcher starts with an ingest
+pass and periodically repeats it.
 See [configuration](configuration.md) and [operations](operations.md) for
 options and behavior.
 

@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from matlock2.models import DocumentContext
+from matlock2_ingest.models import DocumentContext
 from matlock2_scanner.models import Finding, ScanItem, ScanResult
 
 REPORT_PATH = Path(".matlock2/secret-scan-report.jsonl")

@@ -6,7 +6,7 @@ import pytest
 
 pytest.importorskip("detect_secrets")
 
-from matlock2.config import ConfigurationError
+from matlock2_ingest.config import ConfigurationError
 from matlock2_scanner.config import load_scanner_config
 from matlock2_scanner.hooks import Hooks, load_hooks
 from matlock2_scanner.models import Finding

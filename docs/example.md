@@ -28,7 +28,7 @@ default embedding model. The first scan may download the model.
 
 ```sh
 matlock2 --config examples/second-brain/matlock2.toml check-config
-matlock2 --config examples/second-brain/matlock2.toml scan
+matlock2 --config examples/second-brain/matlock2.toml ingest
 ```
 
 On a fresh example database the scan should report five discovered and five

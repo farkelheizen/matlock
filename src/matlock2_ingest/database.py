@@ -11,6 +11,13 @@ from typing import Any, Iterator
 
 import sqlite_vec
 
+from matlock2_index import (
+    IndexSchemaError,
+    SCHEMA_VERSION,
+    connect_index,
+    validate_index_schema,
+)
+
 from .models import Chunk, IngestConfig
 from .markdown import parse_markdown
 
@@ -32,17 +39,17 @@ class Database:
         self.path = path
         self.path.parent.mkdir(parents=True, exist_ok=True)
         try:
-            self.connection = sqlite3.connect(
-                path, timeout=config.busy_timeout_ms / 1000, isolation_level=None
+            self.connection = connect_index(
+                path,
+                busy_timeout_ms=config.busy_timeout_ms,
+                readonly=False,
             )
-            self.connection.row_factory = sqlite3.Row
             # WAL allows independent readers to continue while ingestion writes.
             journal_mode = self.connection.execute("PRAGMA journal_mode=WAL").fetchone()[0]
             if str(journal_mode).lower() != "wal":
                 raise DatabaseError(
                     f"Could not enable SQLite WAL mode (received {journal_mode!r})"
                 )
-            self.connection.execute(f"PRAGMA busy_timeout={config.busy_timeout_ms}")
             self.connection.execute("PRAGMA foreign_keys=ON")
             self.connection.enable_load_extension(True)
             sqlite_vec.load(self.connection)
@@ -144,7 +151,7 @@ class Database:
         schema_row = connection.execute(
             "SELECT value FROM database_metadata WHERE key='schema_version'"
         ).fetchone()
-        if schema_row is not None and schema_row["value"] not in {"1", "2"}:
+        if schema_row is not None and schema_row["value"] not in {"1", SCHEMA_VERSION}:
             raise DatabaseError(
                 f"Unsupported database schema version: {schema_row['value']}"
             )
@@ -158,6 +165,10 @@ class Database:
         )
         if schema_row is None or schema_row["value"] == "1":
             self._migrate_attributes(vault_path)
+        try:
+            validate_index_schema(connection)
+        except IndexSchemaError as exc:
+            raise DatabaseError(f"Could not validate initialized index: {exc}") from exc
 
     def _migrate_attributes(self, vault_path: Path) -> None:
         try:
@@ -166,7 +177,7 @@ class Database:
                 version = self.connection.execute(
                     "SELECT value FROM database_metadata WHERE key='schema_version'"
                 ).fetchone()["value"]
-                if version == "2":
+                if version == SCHEMA_VERSION:
                     return
                 if version != "1":
                     raise DatabaseError("Unsupported database schema version")
@@ -211,7 +222,8 @@ class Database:
                     "CREATE INDEX chunks_content_sha256_idx ON chunks(content_sha256)"
                 )
                 self.connection.execute(
-                    "UPDATE database_metadata SET value='2' WHERE key='schema_version'"
+                    "UPDATE database_metadata SET value=? WHERE key='schema_version'",
+                    (SCHEMA_VERSION,),
                 )
         except sqlite3.Error as exc:
             raise DatabaseError("Could not migrate content attributes schema") from exc

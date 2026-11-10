@@ -8,10 +8,10 @@ from typing import Any
 
 import pytest
 
-from matlock2.config import load_config
-from matlock2.database import Database
-from matlock2.ingest import IngestionEngine
-from matlock2.models import DocumentContext
+from matlock2_ingest.config import load_config
+from matlock2_ingest.database import Database
+from matlock2_ingest.ingest import IngestionEngine
+from matlock2_ingest.models import DocumentContext
 from tests.test_ingest import TestEmbedder
 
 EXAMPLE = Path(__file__).resolve().parents[1] / "examples" / "second-brain"

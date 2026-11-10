@@ -12,6 +12,17 @@ from typing import Any, Callable, Iterator, Protocol
 
 import sqlite_vec
 
+from matlock2_index import (
+    CHUNKS,
+    CHUNKS_FTS,
+    CONTENT_ATTRIBUTES,
+    SOURCE_DOCUMENTS,
+    VECTOR_CHUNKS,
+    IndexSchemaError,
+    connect_index,
+    validate_index_schema,
+)
+
 from .policy import PolicyDecision, SearchPolicy
 
 
@@ -62,10 +73,12 @@ class SearchConfig:
 
 class SearchService:
     _DOC_JOIN = (
-        " LEFT JOIN content_attributes da ON da.domain='document' AND da.sha256=d.body_sha256 "
+        f" LEFT JOIN {CONTENT_ATTRIBUTES} da ON da.domain='document' "
+        "AND da.sha256=d.body_sha256 "
     )
     _CHUNK_JOIN = (
-        " LEFT JOIN content_attributes ca ON ca.domain='chunk' AND ca.sha256=c.content_sha256 "
+        f" LEFT JOIN {CONTENT_ATTRIBUTES} ca ON ca.domain='chunk' "
+        "AND ca.sha256=c.content_sha256 "
     )
     _DOC_POLICY = "matlock_document_policy(d.path,d.body,d.body_sha256,d.metadata_json,da.attributes_json)"
     _CHUNK_POLICY = (
@@ -167,14 +180,11 @@ class SearchService:
         db: sqlite3.Connection | None = None
         policy_failed = [False]
         try:
-            db = sqlite3.connect(
-                self.config.database_path.resolve().as_uri() + "?mode=ro",
-                uri=True,
-                timeout=self.config.busy_timeout_ms / 1000,
-                isolation_level=None,
+            db = connect_index(
+                self.config.database_path,
+                busy_timeout_ms=self.config.busy_timeout_ms,
+                readonly=True,
             )
-            db.row_factory = sqlite3.Row
-            db.execute("PRAGMA query_only=ON")
             if vectors:
                 db.enable_load_extension(True)
                 try:
@@ -182,13 +192,13 @@ class SearchService:
                 finally:
                     db.enable_load_extension(False)
             db.execute("BEGIN")
-            metadata = dict(db.execute("SELECT key, value FROM database_metadata").fetchall())
-            if metadata.get("schema_version") != "2":
-                raise SearchError("Unsupported database schema version")
+            metadata = validate_index_schema(db)
             if vectors and metadata.get("vector_dimensions") != str(self.config.embedding_dimensions):
                 raise SearchError("Database vector dimensions do not match configuration")
             self._install_policy(db, policy_failed)
             yield db
+        except IndexSchemaError as exc:
+            raise SearchError(str(exc)) from exc
         except sqlite3.Error as exc:
             if policy_failed[0]:
                 raise SearchError("Search policy evaluation failed") from exc
@@ -380,7 +390,8 @@ class SearchService:
         where, params = self._where(args["metadata_filters"], args["document_attribute_filters"], None, chunks=False)
         with self._connection() as db:
             rows = db.execute(
-                "SELECT " + self._DOC_FIELDS + " FROM source_documents d " + self._DOC_JOIN + " WHERE 1=1" + where
+                "SELECT " + self._DOC_FIELDS + f" FROM {SOURCE_DOCUMENTS} d "
+                + self._DOC_JOIN + " WHERE 1=1" + where
                 + " ORDER BY d.path LIMIT ? OFFSET ?", (*params, limit + 1, offset)
             ).fetchall()
         has_more = len(rows) > limit
@@ -396,15 +407,17 @@ class SearchService:
         where, params = self._where(filters, document_filters, chunk_filters, chunks=True)
         # A quoted FTS phrase treats input literally, not as FTS operators.
         literal = '"' + self._text(query).replace('"', '""') + '"'
-        score = "NULL" if self.policy is not None else "bm25(chunks_fts)"
+        score = "NULL" if self.policy is not None else f"bm25({CHUNKS_FTS})"
         order = "c.source_path, c.ordinal, c.chunk_id" if self.policy is not None else (
             "score, c.source_path, c.ordinal, c.chunk_id"
         )
         return db.execute(
             "SELECT " + self._CHUNK_FIELDS + ", "
-            + score + " AS score FROM chunks_fts JOIN chunks c ON c.id=chunks_fts.rowid "
-            "JOIN source_documents d ON d.path=c.source_path " + self._DOC_JOIN + self._CHUNK_JOIN
-            + " WHERE chunks_fts MATCH ?" + where
+            + score + f" AS score FROM {CHUNKS_FTS} "
+            + f"JOIN {CHUNKS} c ON c.id={CHUNKS_FTS}.rowid "
+            + f"JOIN {SOURCE_DOCUMENTS} d ON d.path=c.source_path "
+            + self._DOC_JOIN + self._CHUNK_JOIN
+            + f" WHERE {CHUNKS_FTS} MATCH ?" + where
             + " ORDER BY " + order + " LIMIT ?",
             (literal, *params, limit),
         ).fetchall()
@@ -436,12 +449,13 @@ class SearchService:
             raise SearchError("Embedding space is not configured or does not match")
         if self.policy is None:
             pairs = db.execute(
-                "SELECT DISTINCT embedding_model, embedding_version FROM source_documents"
+                f"SELECT DISTINCT embedding_model, embedding_version FROM {SOURCE_DOCUMENTS}"
             ).fetchall()
         else:
             pairs = db.execute(
-                "SELECT DISTINCT d.embedding_model, d.embedding_version FROM chunks c "
-                "JOIN source_documents d ON d.path=c.source_path " + self._DOC_JOIN + self._CHUNK_JOIN
+                f"SELECT DISTINCT d.embedding_model, d.embedding_version FROM {CHUNKS} c "
+                f"JOIN {SOURCE_DOCUMENTS} d ON d.path=c.source_path "
+                + self._DOC_JOIN + self._CHUNK_JOIN
                 + " WHERE 1=1" + where, params,
             ).fetchall()
         if any((row[0], row[1]) != (cfg.embedding_model, cfg.embedding_version) for row in pairs):
@@ -484,8 +498,9 @@ class SearchService:
             raise ValueError("vector must remain finite and nonzero in float32")
         rows = db.execute(
             "SELECT " + self._CHUNK_FIELDS + ", "
-            "vec_distance_cosine(v.embedding, ?) AS distance FROM vec_chunks v "
-            "JOIN chunks c ON c.id=v.rowid JOIN source_documents d ON d.path=c.source_path "
+            f"vec_distance_cosine(v.embedding, ?) AS distance FROM {VECTOR_CHUNKS} v "
+            f"JOIN {CHUNKS} c ON c.id=v.rowid "
+            f"JOIN {SOURCE_DOCUMENTS} d ON d.path=c.source_path "
             + self._DOC_JOIN + self._CHUNK_JOIN +
             "WHERE 1=1" + where + " ORDER BY distance, c.source_path, c.ordinal, c.chunk_id LIMIT ?",
             (packed, *params, limit),
@@ -576,8 +591,9 @@ class SearchService:
         where, params = self._where(None, None, None, chunks=True)
         with self._connection() as db:
             row = db.execute(
-                "SELECT " + self._CHUNK_FIELDS + " FROM chunks c "
-                "JOIN source_documents d ON d.path=c.source_path " + self._DOC_JOIN + self._CHUNK_JOIN
+                "SELECT " + self._CHUNK_FIELDS + f" FROM {CHUNKS} c "
+                + f"JOIN {SOURCE_DOCUMENTS} d ON d.path=c.source_path "
+                + self._DOC_JOIN + self._CHUNK_JOIN
                 + " WHERE c.chunk_id=?" + where, (chunk_id, *params)
             ).fetchone()
         return {"result": self._result(row) if row is not None else None}
@@ -590,7 +606,7 @@ class SearchService:
         with self._connection() as db:
             rows = db.execute(
                 "SELECT DISTINCT json_type(d.metadata_json, ?) AS kind, json_extract(d.metadata_json, ?) AS value "
-                "FROM source_documents d " + self._DOC_JOIN +
+                f"FROM {SOURCE_DOCUMENTS} d " + self._DOC_JOIN +
                 " WHERE json_type(d.metadata_json, ?) IN ('text','integer','real','true','false','null') "
                 + where + f" AND json_extract({self._DOC_POLICY}, '$.disclose_metadata') = 1 "
                 "ORDER BY kind, value LIMIT ? OFFSET ?", (path, path, path, *params, limit + 1, offset)

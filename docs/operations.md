@@ -1,6 +1,6 @@
 # Operation and troubleshooting
 
-## What a scan does
+## What ingestion does
 
 The engine walks the configured vault for `.md` files, reads their bytes and
 stores a SHA-256 digest. It skips a previously indexed file when its digest and
@@ -14,8 +14,9 @@ heading-aware chunks. Each chunk is stored alongside an FTS5 index and a
 fails, its previous successfully indexed representation remains in the
 database until a later successful ingestion.
 
-`scan` reports per-file status and returns a nonzero exit code when ingestion
-errors remain or discovery was incomplete. `watch` starts with a scan,
+`ingest` (with `scan` as an alias) reports per-file status and returns a
+nonzero exit code when ingestion errors remain or discovery was incomplete.
+`watch` starts with an ingest pass,
 processes filesystem events, and periodically reconciles the vault. Event
 retries use exponential delays capped at 30 seconds; later scans can retry
 again.
@@ -39,7 +40,7 @@ with sqlite3.connect("file:.matlock2/index.sqlite3?mode=ro", uri=True) as db:
 PY
 ```
 
-Fix the file or configuration and scan again. Error statuses are retained as
+Fix the file or configuration and ingest again. Error statuses are retained as
 `unresolved`, `resolved`, or `superseded`; a failure to read a file can have an
 empty hash because the bytes were not available.
 

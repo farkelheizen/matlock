@@ -5,8 +5,16 @@ not necessarily been published as a release.
 
 ## Unreleased
 
+### Changed
+
+- Renamed the ingestion import package to `matlock2_ingest`; `matlock2` remains
+  the CLI command, legacy hook imports remain available, and `matlock2 ingest`
+  is the preferred one-pass command (`scan` remains an alias).
+
 ### Added
 
+- A shared `matlock2_index` SQLite schema and connection contract for ingestion,
+  scanner, and read-only MCP consumers.
 - `matlock2-scanner`: a local two-layer (detect-secrets and local LLM) secret scanner that records
   findings in `content_attributes`, with a configurable prompt, size limits, and six hooks. The
   default LLM is the ungated `Qwen/Qwen2.5-1.5B-Instruct`.

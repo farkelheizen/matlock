@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from matlock2.embedding import FastEmbedder
+from matlock2_ingest.embedding import FastEmbedder
 from matlock2_mcp import SearchConfig, SearchService
 
 

@@ -22,14 +22,18 @@ def _parser() -> argparse.ArgumentParser:
     )
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("check-config", help="Validate the configuration file")
-    commands.add_parser("scan", help="Ingest the vault once and reconcile deletions")
+    commands.add_parser(
+        "ingest",
+        aliases=["scan"],
+        help="Ingest the vault once and reconcile deletions (scan is an alias)",
+    )
     commands.add_parser("watch", help="Watch the vault and periodically reconcile it")
     return parser
 
 
 def _print_report(report: ScanReport) -> None:
     print(
-        f"Scan complete: discovered={report.discovered}, ingested={report.ingested}, "
+        f"Ingest complete: discovered={report.discovered}, ingested={report.ingested}, "
         f"skipped={report.skipped}, removed={report.removed}, "
         f"unresolved_errors={report.unresolved_errors}"
     )
@@ -88,7 +92,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     try:
-        if args.command == "scan":
+        if args.command in {"ingest", "scan"}:
             report = engine.scan(_print_progress)
             _print_report(report)
             return 1 if report.unresolved_errors or not report.discovery_complete else 0

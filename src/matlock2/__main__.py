@@ -1,4 +1,3 @@
-from .cli import main
+from matlock2_ingest.cli import main
 
-if __name__ == "__main__":
-    raise SystemExit(main())
+raise SystemExit(main())

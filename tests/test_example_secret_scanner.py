@@ -9,9 +9,9 @@ import pytest
 
 pytest.importorskip("detect_secrets")
 
-from matlock2.config import load_config
-from matlock2.database import Database
-from matlock2.ingest import IngestionEngine
+from matlock2_ingest.config import load_config
+from matlock2_ingest.database import Database
+from matlock2_ingest.ingest import IngestionEngine
 from matlock2_scanner.cli import main
 from tests.scanner_helpers import FakeAuditor, make_engine
 from tests.test_ingest import TestEmbedder

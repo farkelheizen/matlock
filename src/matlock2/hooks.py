@@ -1,14 +1,5 @@
-from __future__ import annotations
+"""Compatibility exports for hook paths configured before the package rename."""
 
-from .models import DocumentContext
+from matlock2_ingest.hooks import project_id_from_path
 
-
-def project_id_from_path(context: DocumentContext, metadata: dict[str, object]) -> None:
-    """Set project_id from a path component below a `projects/` directory."""
-    parts = context.relative_path.split("/")
-    try:
-        projects_index = parts.index("projects")
-    except ValueError:
-        return
-    if projects_index + 1 < len(parts):
-        metadata.setdefault("project_id", parts[projects_index + 1])
+__all__ = ["project_id_from_path"]

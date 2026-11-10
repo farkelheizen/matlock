@@ -7,7 +7,7 @@ import pytest
 
 pytest.importorskip("detect_secrets")
 
-from matlock2.config import load_config
+from matlock2_ingest.config import load_config
 from matlock2_scanner.hooks import Hooks
 from tests.scanner_helpers import FAKE_AWS_KEY, VAULT, FakeAuditor, attributes, build_index, make_engine
 
@@ -76,8 +76,8 @@ def test_content_change_creates_new_hash_that_is_scanned(tmp_path: Path) -> None
     make_engine(config, auditor=None).run_pass()
     before = len(attributes(config))
     (tmp_path / "vault" / "notes" / "safe.md").write_text("# Safe\nCompletely new text.\n")
-    from matlock2.database import Database
-    from matlock2.ingest import IngestionEngine
+    from matlock2_ingest.database import Database
+    from matlock2_ingest.ingest import IngestionEngine
     from tests.test_ingest import TestEmbedder
 
     ingest = load_config(config)
