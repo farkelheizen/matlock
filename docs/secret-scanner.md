@@ -1,10 +1,9 @@
 # Secret scanner
 
-`matlock2-scanner` is an internal sub-app that looks for secrets and private
-data in content already indexed by `matlock-ingest`, and records its findings
-in the [`content_attributes`](attributes.md) table. It is a separate process:
-it reads the index database configured in `matlock2.toml` and never reads or
-changes the vault.
+`matlock audit` looks for secrets and private data in content already indexed
+by Matlock and records its findings in the
+[`content_attributes`](attributes.md) table. It reads the shared database
+configured in `matlock.toml` and never reads or changes the vault.
 
 The scanner only **records findings**. Nothing in the index or the MCP tools is
 hidden, redacted, or deleted because of them; a reader that wants to act on
@@ -37,11 +36,11 @@ An item is scanned only if `content_attributes` has **no row at all** for its
 `(domain, sha256)`. If any row exists, even `{}` or one written by another
 tool, the item is not scanned. Results are valid forever: changing the prompt,
 model, rules, or hooks does not trigger a rescan. Edited content has a new hash,
-so it is scanned. To re-evaluate content on purpose, use `matlock2-scanner reset`.
+so it is scanned. To re-evaluate content on purpose, use `matlock audit reset`.
 
 The scanner only ever inserts rows (`INSERT ... ON CONFLICT DO NOTHING`), so it
 cannot overwrite attributes from other writers and is safe to run next to
-`matlock-ingest watch`. Ingestion does not delete rows for unchanged content.
+`matlock watch`. Ingestion does not delete rows for unchanged content.
 
 ### Size limits
 
@@ -55,8 +54,8 @@ not retried every pass. Skipped content is therefore **not** evidence of safety.
 ## Install
 
 ```bash
-pip install -e ".[scanner]"       # heuristic layer (detect-secrets, pydantic)
-pip install -e ".[scanner-llm]"   # also transformers and torch for the LLM layer
+pip install -e ".[audit]"                 # heuristic layer (detect-secrets, pydantic)
+pip install -e ".[audit,audit-llm]"       # add the local LLM layer
 ```
 
 The heuristic layer works without `torch`. Use `--no-llm` or
@@ -65,18 +64,18 @@ The heuristic layer works without `torch`. Use `--no-llm` or
 ## Commands
 
 ```bash
-matlock-ingest --config matlock2.toml ingest      # index first; the scanner needs the database
-matlock2-scanner --config matlock2.toml check-config
-matlock2-scanner --config matlock2.toml scan    # one pass, then exit
-matlock2-scanner --config matlock2.toml run     # loop every interval_seconds
+matlock --config matlock.toml ingest      # index first; the scanner needs the database
+matlock --config matlock.toml audit check-config
+matlock --config matlock.toml audit scan    # one pass, then exit
+matlock --config matlock.toml audit run     # loop every interval_seconds
 ```
 
 ```bash
-matlock2-scanner --config matlock2.toml scan-file notes/draft.md --no-llm
-cat draft.md | matlock2-scanner --config matlock2.toml scan-file -
+matlock --config matlock.toml audit scan-file notes/draft.md --no-llm
+cat draft.md | matlock --config matlock.toml audit scan-file -
 ```
 
-`python -m matlock2_scanner` is equivalent. Options for `scan` and `run`
+`python -m matlock audit` is equivalent. Options for `scan` and `run`
 (also accepted by `check-config` to check a given mode):
 
 | Option | Effect |
@@ -98,7 +97,7 @@ exits 0 unless you pass `--fail-above N`, which exits 1 when `risk_score` is
 greater than N (the JSON is still printed), for use in pre-commit hooks or CI:
 
 ```bash
-matlock2-scanner --config matlock2.toml scan-file draft.md --no-llm --fail-above 4
+matlock --config matlock.toml audit scan-file draft.md --no-llm --fail-above 4
 ```
 
 `reset` removes stored results so the content is scanned again, for example
@@ -110,8 +109,8 @@ deleted (a leftover row would block rescanning). It does not need
 `detect-secrets` or the LLM extras, and it does not scan; run `scan` afterwards.
 
 ```bash
-matlock2-scanner --config matlock2.toml reset --status error --status parse_error
-matlock2-scanner --config matlock2.toml reset --all --dry-run
+matlock --config matlock.toml audit reset --status error --status parse_error
+matlock --config matlock.toml audit reset --all --dry-run
 ```
 
 `run` stops cleanly on SIGINT or SIGTERM after finishing the current batch.
@@ -122,7 +121,7 @@ or dependency error. Per-item failures do not fail a pass.
 ## Configuration
 
 The scanner reuses `[ingest]` (`database_path`, `busy_timeout_ms`) and reads an
-optional `[secret_scanner]` table. Unknown keys are rejected. Relative paths
+optional `[audit]` table. Unknown keys are rejected. Relative paths
 follow the configuration file.
 
 | Key | Default | Meaning |
@@ -134,13 +133,13 @@ follow the configuration file.
 | `attribute_key` | `"secret_scan"` | Top-level key in `attributes_json` |
 | `max_chunk_chars` | `4000` | Largest chunk scanned as-is |
 | `max_document_chars` | `50000` | Largest document body scanned as-is |
-| `[heuristics] plugins` | all defaults | `detect-secrets` plugin class names, such as `AWSKeyDetector` |
-| `[llm] model_id` | `Qwen/Qwen2.5-1.5B-Instruct` | Hugging Face model. Gated models, such as `meta-llama/Llama-3.2-1B-Instruct`, need approved access and `huggingface-cli login` |
-| `[llm] device` | `"auto"` | `auto`, `cpu`, `cuda`, or `mps` |
-| `[llm] max_new_tokens` | `256` | Generation limit |
-| `[llm] prompt_file` | built-in | Prompt template path |
-| `[llm] prompt` | built-in | Inline prompt (not with `prompt_file`) |
-| `[hooks]` | none | One `module:function` per hook slot |
+| `[audit.heuristics] plugins` | all defaults | `detect-secrets` plugin class names, such as `AWSKeyDetector` |
+| `[audit.llm] model_id` | `Qwen/Qwen2.5-1.5B-Instruct` | Hugging Face model. Gated models, such as `meta-llama/Llama-3.2-1B-Instruct`, need approved access and `huggingface-cli login` |
+| `[audit.llm] device` | `"auto"` | `auto`, `cpu`, `cuda`, or `mps` |
+| `[audit.llm] max_new_tokens` | `256` | Generation limit |
+| `[audit.llm] prompt_file` | built-in | Prompt template path |
+| `[audit.llm] prompt` | built-in | Inline prompt (not with `prompt_file`) |
+| `[audit.hooks]` | none | One `module:function` per hook slot |
 
 ### The prompt
 
@@ -156,7 +155,7 @@ object:
 
 Scores are clamped to 0-10. `regex_matches_found` is always taken from the
 heuristic layer, never from the model. See the
-[built-in prompt](../src/matlock2_scanner/models.py) and the
+[built-in prompt](../src/matlock_audit/models.py) and the
 [example prompt](../examples/secret-scanner/prompt.txt).
 
 ## Stored result
@@ -175,7 +174,7 @@ Written under `attributes_json -> secret_scan` (or your `attribute_key`):
   ],
   "layers": ["heuristic", "llm"],
   "llm_status": "ok",
-  "provenance": {"scanner_version": "0.1.0", "model_id": "...", "prompt_sha256": "..."},
+  "provenance": {"scanner_version": "2.0.0", "model_id": "...", "prompt_sha256": "..."},
   "scanned_at": "2026-01-01T00:00:00.000000Z"
 }
 ```
@@ -197,7 +196,7 @@ contain only stage and exception names, never content.
 
 ## Hooks
 
-Each slot takes exactly one `module:function` under `[secret_scanner.hooks]`.
+Each slot takes exactly one `module:function` under `[audit.hooks]`.
 Modules next to the configuration file are importable. Signatures are checked at
 load, so `check-config` finds mistakes. A hook that raises (or returns a bad
 value) makes that item an `error` result, except `post_scan`, whose failures
@@ -215,8 +214,8 @@ by path).
 | `post_scan` | `(ScanItem, ScanResult) -> None` | Side effects after the batch is committed (reports, alerts); not called on `--dry-run` |
 
 `Finding(type, line=0, preview="", source="rule")` and `ScanResult` are frozen
-dataclasses in `matlock2_scanner.models`. The existing ingest metadata hook
-(`[hooks] configured`) is separate; it can label documents so scanner hooks can
+dataclasses in `matlock_audit.models`. The existing ingest metadata hook
+(`[ingest.hooks] configured`) is separate; it can label documents so scanner hooks can
 use `document_metadata`. The [example](secret-scanner-example.md) uses all of
 them.
 
@@ -237,11 +236,11 @@ status was not fully evaluated.
 
 ### Hiding risky content from MCP search
 
-`matlock2_mcp.SecretScanPolicy` is a ready-made [search policy](mcp.md) for the
+`matlock_mcp.SecretScanPolicy` is a ready-made [search policy](mcp.md) for the
 MCP tools. Pass it to `SearchService`:
 
 ```python
-from matlock2_mcp import SearchConfig, SearchService, SecretScanPolicy
+from matlock_mcp import SearchConfig, SearchService, SecretScanPolicy
 
 service = SearchService(SearchConfig(database_path), policy=SecretScanPolicy(threshold=5))
 ```
@@ -259,9 +258,9 @@ scanner has not yet reached.
 
 ## Operating notes
 
-- Run `matlock-ingest ingest` or `watch` first; the scanner reports an error if the
+- Run `matlock ingest` or `watch` first; the scanner reports an error if the
   index database is missing or predates content attributes.
-- Run `matlock2-scanner run` beside `matlock-ingest watch`. Writes are short
+- Run `matlock audit run` beside `matlock watch`. Writes are short
   `BEGIN IMMEDIATE` transactions that honor `busy_timeout_ms`.
 - A model that cannot be loaded aborts the pass with exit code 2 and nothing is
   stored, so fix the cause and rerun.

@@ -8,11 +8,11 @@ from pathlib import Path
 
 import pytest
 
-from matlock2_ingest.config import load_config
-from matlock2_ingest.database import Database
-from matlock2_ingest.ingest import IngestionEngine
-from matlock2_mcp import SearchConfig, SearchService
-from matlock2_mcp.search import SearchError
+from matlock_ingest.config import load_config
+from matlock_ingest.database import Database
+from matlock_ingest.ingest import IngestionEngine
+from matlock_mcp import SearchConfig, SearchService
+from matlock_mcp.search import SearchError
 from tests.test_ingest import TestEmbedder
 
 EXAMPLE = Path(__file__).resolve().parents[1] / "examples" / "second-brain"
@@ -27,7 +27,7 @@ class Embedder(TestEmbedder):
 def service(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SearchService:
     monkeypatch.syspath_prepend(str(EXAMPLE))
     config = replace(
-        load_config(EXAMPLE / "matlock2.toml"),
+        load_config(EXAMPLE / "matlock.toml"),
         database_path=tmp_path / "index.sqlite3",
         embedding_model="test-model",
         embedding_dimensions=2,
@@ -136,7 +136,7 @@ def test_metadata_operators_and_snapshot(service: SearchService) -> None:
 
 def test_registration_and_mcp_client(service: SearchService) -> None:
     fastmcp = pytest.importorskip("fastmcp")
-    from matlock2_mcp.registration import register_tools
+    from matlock_mcp.registration import register_tools
 
     server = fastmcp.FastMCP("test")
     register_tools(server, service)
@@ -144,16 +144,37 @@ def test_registration_and_mcp_client(service: SearchService) -> None:
     async def exercise() -> None:
         async with fastmcp.Client(server) as client:
             names = {tool.name for tool in await client.list_tools()}
-            assert names == {"metadata_search", "full_text_search", "semantic_search", "vector_search",
-                             "hybrid_knowledge_search", "get_distinct_metadata", "get_chunk"}
+            assert names == {
+                "metadata_search", "full_text_search", "get_distinct_metadata", "get_chunk"
+            }
+            result = await client.call_tool(
+                "full_text_search", {"keyword_query": "migration", "limit": 5}
+            )
+            assert result.structured_content["results"]
+            values = await client.call_tool("get_distinct_metadata", {"field": "project_id"})
+            assert "atlas" in values.structured_content["values"]
+    asyncio.run(exercise())
+
+    extended = fastmcp.FastMCP("extended")
+    optional_tools = {
+        "semantic_search", "vector_search", "hybrid_knowledge_search"
+    }
+    register_tools(extended, service, optional_tools | {
+        "metadata_search", "full_text_search", "get_distinct_metadata", "get_chunk"
+    })
+
+    async def check_extended() -> None:
+        async with fastmcp.Client(extended) as client:
+            assert {tool.name for tool in await client.list_tools()} == {
+                "metadata_search", "full_text_search", "semantic_search", "vector_search",
+                "hybrid_knowledge_search", "get_distinct_metadata", "get_chunk",
+            }
             result = await client.call_tool("hybrid_knowledge_search", {
                 "semantic_query": "database", "keyword_query": "migration",
                 "metadata_filters": {"project_id": "atlas"}, "limit": 5,
             })
             assert result.structured_content["results"]
-            values = await client.call_tool("get_distinct_metadata", {"field": "project_id"})
-            assert "atlas" in values.structured_content["values"]
-    asyncio.run(exercise())
+    asyncio.run(check_extended())
 
     limited = fastmcp.FastMCP("limited")
     register_tools(limited, service, {"get_chunk"})
@@ -169,7 +190,7 @@ def test_example_stdio_host(service: SearchService) -> None:
     fastmcp = pytest.importorskip("fastmcp")
     from fastmcp.client.transports import StdioTransport
 
-    script = EXAMPLE.parent / "mcp_server" / "server.py"
+    script = EXAMPLE.parent / "mcp" / "embedded_host.py"
     transport = StdioTransport(command=sys.executable, args=[str(script), "--database", str(service.config.database_path)])
 
     async def exercise() -> None:

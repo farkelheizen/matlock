@@ -3,8 +3,8 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "matlock2"
-version = "0.1.0"
+name = "matlock"
+version = "2.0.0"
 description = "Local Markdown indexing and modular SQLite search tools"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -19,12 +19,11 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8,<9", "detect-secrets>=1.5,<2", "pydantic>=2,<3"]
 mcp = ["fastmcp>=2.14,<3"]
-scanner = ["detect-secrets>=1.5,<2", "pydantic>=2,<3"]
-scanner-llm = ["detect-secrets>=1.5,<2", "pydantic>=2,<3", "transformers>=4.56", "torch>=2.2"]
+audit = ["detect-secrets>=1.5,<2", "pydantic>=2,<3"]
+audit-llm = ["pydantic>=2,<3", "transformers>=4.56", "torch>=2.2"]
 
 [project.scripts]
-matlock-ingest = "matlock2_ingest.cli:main"
-matlock2-scanner = "matlock2_scanner.cli:main"
+matlock = "matlock.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

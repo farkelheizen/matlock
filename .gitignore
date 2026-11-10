@@ -55,8 +55,11 @@ Thumbs.db
 /docs_local
 
 # Local database and configuration
+/.matlock/
 /.matlock2/
+examples/*/.matlock/
 examples/*/.matlock2/
+/matlock.toml
 /matlock2.toml
 *.sqlite3
 *.sqlite3-shm

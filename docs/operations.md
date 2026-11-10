@@ -14,8 +14,8 @@ heading-aware chunks. Each chunk is stored alongside an FTS5 index and a
 fails, its previous successfully indexed representation remains in the
 database until a later successful ingestion.
 
-`ingest` (with `scan` as an alias) reports per-file status and returns a
-nonzero exit code when ingestion errors remain or discovery was incomplete.
+`ingest` reports per-file status and returns a nonzero exit code when
+ingestion errors remain or discovery was incomplete.
 `watch` starts with an ingest pass,
 processes filesystem events, and periodically reconciles the vault. Event
 retries use exponential delays capped at 30 seconds; later scans can retry
@@ -24,14 +24,14 @@ again.
 ## Inspect errors
 
 The database contains note content and metadata: treat it as private. For a
-database at `.matlock2/index.sqlite3`, this read-only inspection uses Python's
+database at `.matlock/index.sqlite3`, this read-only inspection uses Python's
 standard SQLite module:
 
 ```sh
 python - <<'PY'
 import sqlite3
 
-with sqlite3.connect("file:.matlock2/index.sqlite3?mode=ro", uri=True) as db:
+with sqlite3.connect("file:.matlock/index.sqlite3?mode=ro", uri=True) as db:
     for row in db.execute(
         "SELECT source_path, stage, attempt_count, status, error_details "
         "FROM ingestion_errors ORDER BY last_attempt_at DESC"
@@ -58,12 +58,12 @@ empty hash because the bytes were not available.
   migrate the existing one before switching to a model with a different
   embedding dimension.
 
-The application currently provides ingestion commands, not an MCP server or
-search CLI. The [example](example.md) shows how to inspect indexed data
-directly.
+The application provides ingestion and audit commands. MCP search tools are
+available as an optional embedding integration, not as a Matlock-operated
+server. The [example](example.md) shows how to inspect indexed data directly.
 
 ## Running the secret scanner
 
-After a scan, `matlock2-scanner scan` (or `run`) evaluates content that has no
+After a scan, `matlock audit scan` (or `run`) evaluates content that has no
 attribute row yet and records findings. It can run beside `watch`. See the
 [secret scanner guide](secret-scanner.md) and its [example](secret-scanner-example.md).

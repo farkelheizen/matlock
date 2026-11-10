@@ -8,9 +8,9 @@ from pathlib import Path
 
 import pytest
 
-from matlock2_ingest.config import load_config
-from matlock2_ingest.database import Database
-from matlock2_ingest.ingest import IngestionEngine
+from matlock_ingest.config import load_config
+from matlock_ingest.database import Database
+from matlock_ingest.ingest import IngestionEngine
 from tests.test_ingest import TestEmbedder
 
 EXAMPLE = Path(__file__).resolve().parents[1] / "examples" / "second-brain"
@@ -21,7 +21,7 @@ def test_query_example_against_fictional_vault(
 ) -> None:
     monkeypatch.syspath_prepend(str(EXAMPLE))
     config = replace(
-        load_config(EXAMPLE / "matlock2.toml"),
+        load_config(EXAMPLE / "matlock.toml"),
         database_path=tmp_path / "index.sqlite3",
         embedding_dimensions=2,
     )

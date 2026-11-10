@@ -7,10 +7,10 @@ import re
 from pathlib import Path
 from typing import Any
 
-from matlock2_ingest.models import DocumentContext
-from matlock2_scanner.models import Finding, ScanItem, ScanResult
+from matlock_ingest.models import DocumentContext
+from matlock_audit.models import Finding, ScanItem, ScanResult
 
-REPORT_PATH = Path(".matlock2/secret-scan-report.jsonl")
+REPORT_PATH = Path(".matlock/secret-scan-report.jsonl")
 _HOSTNAME = re.compile(r"\b[a-z0-9-]+\.corp\.example\b")
 
 

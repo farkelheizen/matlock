@@ -6,9 +6,9 @@ import pytest
 
 pytest.importorskip("detect_secrets")
 
-from matlock2_mcp import SearchConfig, SearchService, SecretScanPolicy
-from matlock2_ingest.config import load_config
-from tests.scanner_helpers import FAKE_AWS_KEY, build_index, make_engine
+from matlock_mcp import SearchConfig, SearchService, SecretScanPolicy
+from matlock_ingest.config import load_config
+from tests.audit_helpers import FAKE_AWS_KEY, build_index, make_engine
 
 
 def search(config_path: Path, policy: SecretScanPolicy | None) -> SearchService:

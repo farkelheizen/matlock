@@ -8,17 +8,17 @@ example configuration and generated database live under
 
 ## 1. Set up
 
-Open a terminal in the repository root and install Matlock2 as described in
+Open a terminal in the repository root and install Matlock as described in
 [getting started](getting-started.md). Then activate the repository's virtual
 environment:
 
 ```sh
-cd /path/to/matlock2
+cd /path/to/matlock
 . .venv/bin/activate
 export PYTHONPATH="$PWD/examples/second-brain${PYTHONPATH:+:$PYTHONPATH}"
 ```
 
-The example's [`matlock2.toml`](../examples/second-brain/matlock2.toml) uses
+The example's [`matlock.toml`](../examples/second-brain/matlock.toml) uses
 paths relative to its own directory. The `PYTHONPATH` setting makes the
 example's [`project_metadata.py`](../examples/second-brain/project_metadata.py)
 hook importable for the scan and watch commands below. The example uses the
@@ -27,8 +27,8 @@ default embedding model. The first scan may download the model.
 ## 2. Scan
 
 ```sh
-matlock-ingest --config examples/second-brain/matlock2.toml check-config
-matlock-ingest --config examples/second-brain/matlock2.toml ingest
+matlock --config examples/second-brain/matlock.toml check-config
+matlock --config examples/second-brain/matlock.toml ingest
 ```
 
 On a fresh example database the scan should report five discovered and five
@@ -39,7 +39,7 @@ The hook matches direct Markdown files at `projects/<project_id>/<file>.md`.
 It sets missing or YAML-null `project_id` values to the path's project ID,
 while preserving existing non-null values (including an empty string). It
 mutates only indexed metadata, not source Markdown. The example database is
-`examples/second-brain/.matlock2/index.sqlite3`.
+`examples/second-brain/.matlock/index.sqlite3`.
 
 ## 3. Inspect the database
 
@@ -49,7 +49,7 @@ From the repository root, query the synthetic data with Python:
 python - <<'PY'
 import sqlite3
 
-path = "examples/second-brain/.matlock2/index.sqlite3"
+path = "examples/second-brain/.matlock/index.sqlite3"
 with sqlite3.connect(f"file:{path}?mode=ro", uri=True) as db:
     print("Documents:")
     for row in db.execute(
@@ -87,7 +87,7 @@ For metadata, full-text, and vector query examples, see
 ## 4. Try watching
 
 ```sh
-matlock-ingest --config examples/second-brain/matlock2.toml watch
+matlock --config examples/second-brain/matlock.toml watch
 ```
 
 The watcher runs an initial scan and waits for file events. Stop it with

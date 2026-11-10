@@ -11,9 +11,9 @@ from typing import Any
 
 import pytest
 
-from matlock2_ingest.database import Database, DatabaseError
-from matlock2_mcp import PolicyDecision, SearchService
-from matlock2_mcp.search import SearchError
+from matlock_ingest.database import Database, DatabaseError
+from matlock_mcp import PolicyDecision, SearchService
+from matlock_mcp.search import SearchError
 from tests.test_ingest import _config, _engine
 from tests.test_mcp import service
 
@@ -320,7 +320,7 @@ def test_document_null_decision_inherits_and_missing_can_fail_closed(service: Se
 
 def test_mcp_registration_accepts_attribute_filters(service: SearchService) -> None:
     fastmcp = pytest.importorskip("fastmcp")
-    from matlock2_mcp.registration import register_tools
+    from matlock_mcp.registration import register_tools
 
     _add_attributes(service)
     search = SearchService(replace(service.config, chunk_attribute_keys=("scan",)), service.embedder)

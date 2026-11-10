@@ -1,69 +1,68 @@
-# Matlock2
+# Matlock
 
-Matlock2 is a Python command-line application for indexing Markdown files in
-SQLite.
+Matlock is a modular Python application for indexing Markdown into SQLite,
+auditing indexed content, and providing composable search tools.
 
-## Setup
+## Install
 
-Python 3.11 or newer is required. Install the project and its dependencies:
+Python 3.11 or newer is required.
 
 ```sh
-cd /path/to/matlock2  # the repository directory containing pyproject.toml
 python -m venv .venv
 . .venv/bin/activate
 python -m pip install -e .
 ```
 
-The configured embedding model is downloaded on first use.
+Audit and MCP dependencies are optional. Install `.[audit]` for heuristic
+auditing, `.[audit,audit-llm]` to add the local LLM layer, and `.[mcp]` for
+the MCP search integration. The embedding model is downloaded on first use.
 
-Optional extras: `.[mcp]` for the MCP search tools, `.[scanner]` for the
-[secret scanner](docs/secret-scanner.md)'s heuristic layer, and
-`.[scanner-llm]` to add its local LLM layer (`transformers` and `torch`, with a
-model download on first use).
-The `docs_local` link points to a separate local notes directory; it is not the
-Python project directory.
+## Configure and run
 
-## Configure
-
-Copy `matlock2.toml.example` to `matlock2.toml` and edit the paths and settings
-for your environment. Hook callables are listed under `[hooks]` using
-`module:function` names.
-
-## Run
+Copy `matlock.toml.example` to `matlock.toml` and update its `[ingest]` paths.
+Ingestion settings live under `[ingest]`; optional audit settings live under
+`[audit]`.
 
 ```sh
-matlock-ingest --config matlock2.toml check-config
-matlock-ingest --config matlock2.toml ingest
-matlock-ingest --config matlock2.toml watch
+matlock --config matlock.toml check-config
+matlock --config matlock.toml ingest
+matlock --config matlock.toml watch
+matlock --config matlock.toml audit check-config
+matlock --config matlock.toml audit scan
 ```
 
-`ingest` performs one pass (`scan` remains a compatibility alias). `watch`
-runs continuously until interrupted.
+The same CLI is available as `python -m matlock`. The default config is
+`./matlock.toml`; the default database location is `.matlock/index.sqlite3`.
+Old configuration and state are not migrated automatically.
 
-## Tests
+## MCP integration
 
-Run the self-contained suite with:
+Matlock supplies importable search tools for registration on an existing,
+host-owned FastMCP application. It does not ship a supported MCP server. One
+small runnable stdio host is retained solely as an embedding example; see
+[MCP integration](docs/mcp.md).
+
+## Tests and examples
 
 ```sh
-python -m pip install -e '.[dev,mcp]'
+python -m pip install -e '.[dev,mcp,audit]'
 pytest
 ```
 
 Tests use temporary databases and synthetic Markdown files. Set
-`MATLOCK2_TEST_VAULT` to a local test corpus to enable the optional integration
+`MATLOCK_TEST_VAULT` to a local test corpus to enable the optional integration
 test.
 
-## Documentation and example
-
 - [Getting started](docs/getting-started.md)
-- [Configuration and metadata hooks](docs/configuration.md)
+- [Configuration and hooks](docs/configuration.md)
 - [Database and troubleshooting](docs/operations.md)
 - [Database structure](docs/database.md), [query examples](docs/queries.md),
   and [Python internals](docs/python-internals.md)
 - [Shared SQLite index contract](docs/index-contract.md)
-- [Complete example](docs/example.md), with a small fictional vault in
+- [Complete ingestion example](docs/example.md), with a fictional vault in
   [`examples/second-brain/`](examples/second-brain/)
-- [Secret scanner](docs/secret-scanner.md) and its [example](docs/secret-scanner-example.md),
-  with a vault in [`examples/secret-scanner/`](examples/secret-scanner/)
-- [Modular MCP search tools and example host](docs/mcp.md)
+- [Secret-audit guide](docs/secret-scanner.md) and
+  [example](docs/secret-scanner-example.md), with a vault in
+  [`examples/secret-scanner/`](examples/secret-scanner/)
+- [MCP integration](docs/mcp.md)
 - [Changelog](docs/CHANGELOG.md)

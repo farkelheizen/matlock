@@ -12,16 +12,16 @@ from unittest.mock import patch
 
 import pytest
 
-from matlock2_ingest.chunking import chunk_markdown
-from matlock2_ingest import cli
-from matlock2_ingest.cli import main
-from matlock2_ingest.config import ConfigurationError, load_config
-from matlock2_ingest.database import Database, DatabaseError
-from matlock2_ingest.ingest import IngestionEngine
-from matlock2_ingest.markdown import MarkdownParseError, parse_markdown
-from matlock2_ingest.models import Chunk, IngestConfig, ScanReport
-from matlock2_ingest.watcher import _PendingEvent, _VaultEventHandler
-from matlock2_ingest.watcher import VaultWatcher
+from matlock_ingest.chunking import chunk_markdown
+from matlock_ingest import cli
+from matlock_ingest.cli import main
+from matlock_ingest.config import ConfigurationError, load_config
+from matlock_ingest.database import Database, DatabaseError
+from matlock_ingest.ingest import IngestionEngine
+from matlock_ingest.markdown import MarkdownParseError, parse_markdown
+from matlock_ingest.models import Chunk, IngestConfig, ScanReport
+from matlock_ingest.watcher import _PendingEvent, _VaultEventHandler
+from matlock_ingest.watcher import VaultWatcher
 from watchdog.events import FileMovedEvent, FileModifiedEvent
 
 
@@ -163,7 +163,7 @@ def test_unbroken_oversized_text_does_not_create_pathological_overlap() -> None:
 
 
 def test_scan_hashes_idempotency_fts_and_vector_persistence(tmp_path: Path) -> None:
-    config = _config(tmp_path, hooks=("matlock2_ingest.hooks:project_id_from_path",))
+    config = _config(tmp_path, hooks=("matlock_ingest.hooks:project_id_from_path",))
     path = config.vault_path / "projects" / "alpha" / "decision.md"
     path.parent.mkdir(parents=True)
     path.write_text(
@@ -344,7 +344,7 @@ def test_later_stage_failure_resolves_obsolete_same_hash_error(tmp_path: Path) -
     db, engine = _engine(config)
     try:
         with patch(
-            "matlock2_ingest.ingest.parse_markdown",
+            "matlock_ingest.ingest.parse_markdown",
             side_effect=ValueError("temporary"),
         ):
             parse_failure = engine.ingest_path("note.md")
@@ -459,7 +459,7 @@ def test_incomplete_discovery_does_not_prune_indexed_sources(
             )
             return iter(())
 
-        with patch("matlock2_ingest.ingest.os.walk", failing_walk):
+        with patch("matlock_ingest.ingest.os.walk", failing_walk):
             report = engine.scan()
         assert not report.discovery_complete
         assert report.failures[0].stage == "discover"
@@ -513,11 +513,11 @@ def test_database_rejects_vector_dimension_change(tmp_path: Path) -> None:
 def test_config_load_and_validation(tmp_path: Path) -> None:
     vault = tmp_path / "vault"
     vault.mkdir()
-    config_path = tmp_path / "matlock2.toml"
+    config_path = tmp_path / "matlock.toml"
     config_path.write_text(
         '[ingest]\nvault_path = "vault"\ndatabase_path = "db/index.sqlite3"\n'
-        "[chunking]\ntarget_tokens = 20\noverlap_tokens = 3\n"
-        "[embedding]\ndimensions = 2\nmax_input_tokens = 24\n",
+        "[ingest.chunking]\ntarget_tokens = 20\noverlap_tokens = 3\n"
+        "[ingest.embedding]\ndimensions = 2\nmax_input_tokens = 24\n",
         encoding="utf-8",
     )
     config = load_config(config_path)
@@ -525,7 +525,7 @@ def test_config_load_and_validation(tmp_path: Path) -> None:
     assert config.database_path == tmp_path / "db" / "index.sqlite3"
 
     config_path.write_text(
-        '[ingest]\nvault_path = "vault"\n[chunking]\ntarget_tokens = 20\n'
+        '[ingest]\nvault_path = "vault"\n[ingest.chunking]\ntarget_tokens = 20\n'
         "overlap_tokens = 20\n",
         encoding="utf-8",
     )
@@ -533,31 +533,63 @@ def test_config_load_and_validation(tmp_path: Path) -> None:
         load_config(config_path)
 
 
+@pytest.mark.parametrize("section", ["chunking", "embedding", "hooks", "secret_scanner"])
+def test_obsolete_top_level_sections_are_rejected(tmp_path: Path, section: str) -> None:
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    config_path = tmp_path / "matlock.toml"
+    config_path.write_text(
+        f'[ingest]\nvault_path = "{vault}"\n[{section}]\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigurationError, match="Obsolete top-level section"):
+        load_config(config_path)
+
+
+def test_unknown_top_level_section_is_rejected(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    config_path = tmp_path / "matlock.toml"
+    config_path.write_text(
+        f'[ingest]\nvault_path = "{vault}"\n[mcp]\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigurationError, match="Unknown top-level section"):
+        load_config(config_path)
+
+
+def test_default_database_path_uses_matlock_state_directory(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    config_path = tmp_path / "matlock.toml"
+    config_path.write_text(f'[ingest]\nvault_path = "{vault}"\n', encoding="utf-8")
+
+    assert load_config(config_path).database_path == tmp_path / ".matlock" / "index.sqlite3"
+
+
 def test_cli_validates_sample_configuration_without_loading_model(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     vault = tmp_path / "vault"
     vault.mkdir()
-    config_path = tmp_path / "matlock2.toml"
+    config_path = tmp_path / "matlock.toml"
     config_path.write_text(
-        '[ingest]\nvault_path = "vault"\n[hooks]\n'
-        'configured = ["matlock2_ingest.hooks:project_id_from_path"]\n',
+        '[ingest]\nvault_path = "vault"\n[ingest.hooks]\n'
+        'configured = ["matlock_ingest.hooks:project_id_from_path"]\n',
         encoding="utf-8",
     )
     assert main(["--config", str(config_path), "check-config"]) == 0
     assert "Configuration valid" in capsys.readouterr().out
 
 
-@pytest.mark.parametrize("command", ["ingest", "scan"])
-def test_ingest_command_and_scan_alias(
+def test_ingest_command(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
-    command: str,
 ) -> None:
     vault = tmp_path / "vault"
     vault.mkdir()
-    config_path = tmp_path / "matlock2.toml"
+    config_path = tmp_path / "matlock.toml"
     config_path.write_text('[ingest]\nvault_path = "vault"\n', encoding="utf-8")
 
     class DatabaseStub:
@@ -569,15 +601,15 @@ def test_ingest_command_and_scan_alias(
             return ScanReport(1, 1, 0, 0, (), 0)
 
     monkeypatch.setattr(cli, "_make_engine", lambda config: (DatabaseStub(), EngineStub()))
-    assert main(["--config", str(config_path), command]) == 0
+    assert main(["--config", str(config_path), "ingest"]) == 0
     assert "Ingest complete" in capsys.readouterr().out
 
 
-def test_legacy_hook_import_remains_available() -> None:
-    from matlock2.hooks import project_id_from_path as legacy_hook
-    from matlock2_ingest.hooks import project_id_from_path
-
-    assert legacy_hook is project_id_from_path
+def test_scan_alias_is_removed(tmp_path: Path) -> None:
+    config_path = tmp_path / "matlock.toml"
+    with pytest.raises(SystemExit) as exc_info:
+        main(["--config", str(config_path), "scan"])
+    assert exc_info.value.code == 2
 
 
 def test_watcher_event_handler_filters_and_tracks_moves(tmp_path: Path) -> None:
@@ -648,9 +680,9 @@ def test_watcher_ingests_created_file_and_stops_cleanly(tmp_path: Path) -> None:
 
 
 def test_approved_fake_corpus_can_be_ingested_optionally(tmp_path: Path) -> None:
-    corpus = os.environ.get("MATLOCK2_TEST_VAULT")
+    corpus = os.environ.get("MATLOCK_TEST_VAULT")
     if not corpus:
-        pytest.skip("Set MATLOCK2_TEST_VAULT to run the optional fake-corpus test")
+        pytest.skip("Set MATLOCK_TEST_VAULT to run the optional fake-corpus test")
     source = Path(corpus).resolve()
     if not source.is_dir():
         pytest.skip("Configured fake corpus is unavailable")

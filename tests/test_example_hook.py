@@ -8,10 +8,10 @@ from typing import Any
 
 import pytest
 
-from matlock2_ingest.config import load_config
-from matlock2_ingest.database import Database
-from matlock2_ingest.ingest import IngestionEngine
-from matlock2_ingest.models import DocumentContext
+from matlock_ingest.config import load_config
+from matlock_ingest.database import Database
+from matlock_ingest.ingest import IngestionEngine
+from matlock_ingest.models import DocumentContext
 from tests.test_ingest import TestEmbedder
 
 EXAMPLE = Path(__file__).resolve().parents[1] / "examples" / "second-brain"
@@ -62,7 +62,7 @@ def test_example_hook_indexes_frontmatter_without_changing_sources(
         (project / name).write_text(content, encoding="utf-8")
 
     config = replace(
-        load_config(EXAMPLE / "matlock2.toml"),
+        load_config(EXAMPLE / "matlock.toml"),
         vault_path=vault,
         database_path=tmp_path / "index.sqlite3",
         embedding_dimensions=2,

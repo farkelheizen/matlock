@@ -1,35 +1,34 @@
 # Configuration and hooks
 
-Pass `--config` before the command. If omitted, Matlock2 looks for
-`matlock2.toml` in the current directory. Relative paths in the TOML file are
-resolved relative to the file's directory, not the shell's working directory.
-`check-config` validates settings and paths; it does not load the embedding
-model or run an ingestion.
+Pass `--config` before the command. If omitted, Matlock reads `matlock.toml`
+from the current directory. Relative paths in the TOML file are resolved
+relative to its directory. `matlock check-config` validates ingest settings
+without loading the embedding model; `matlock audit check-config` validates
+the audit settings.
 
-## Settings
+## Ingest settings
 
 | Section | Key | Default | Description |
 | --- | --- | --- | --- |
-| `ingest` | `vault_path` | `.` | Existing directory to scan. |
-| `ingest` | `database_path` | `.matlock2/index.sqlite3` | SQLite database path. |
-| `ingest` | `busy_timeout_ms` | `5000` | SQLite lock wait in milliseconds; positive integer. |
-| `ingest` | `reconcile_interval_seconds` | `300` | Time between watcher reconciliation scans; positive integer. |
-| `ingest` | `retry_attempts` | `3` | Maximum attempts for a watcher file event; at least one. |
-| `ingest` | `retry_base_seconds` | `1.0` | Initial retry delay; nonnegative number. |
-| `chunking` | `target_tokens` | `400` | Token budget per chunk, including heading context. |
-| `chunking` | `overlap_tokens` | `50` | Overlap when splitting oversized text; nonnegative and less than the target. |
-| `embedding` | `model` | `BAAI/bge-small-en-v1.5` | FastEmbed model name, also used to load a matching tokenizer. |
-| `embedding` | `dimensions` | `384` | Number of values expected in each embedding. |
-| `embedding` | `max_input_tokens` | `512` | Configured chunk input limit; must be at least the target. |
-| `hooks` | `configured` | `[]` | Ordered array of importable `module:function` names. |
+| `[ingest]` | `vault_path` | `.` | Existing directory to ingest. |
+| `[ingest]` | `database_path` | `.matlock/index.sqlite3` | SQLite database path. |
+| `[ingest]` | `busy_timeout_ms` | `5000` | SQLite lock wait in milliseconds; positive integer. |
+| `[ingest]` | `reconcile_interval_seconds` | `300` | Time between watcher reconciliation scans; positive integer. |
+| `[ingest]` | `retry_attempts` | `3` | Maximum attempts for a watcher file event; at least one. |
+| `[ingest]` | `retry_base_seconds` | `1.0` | Initial retry delay; nonnegative number. |
+| `[ingest.chunking]` | `target_tokens` | `400` | Token budget per chunk, including heading context. |
+| `[ingest.chunking]` | `overlap_tokens` | `50` | Overlap when splitting oversized text; nonnegative and less than the target. |
+| `[ingest.embedding]` | `model` | `BAAI/bge-small-en-v1.5` | FastEmbed model name, also used to load a matching tokenizer. |
+| `[ingest.embedding]` | `dimensions` | `384` | Number of values expected in each embedding. |
+| `[ingest.embedding]` | `max_input_tokens` | `512` | Configured chunk input limit; must be at least the target. |
+| `[ingest.hooks]` | `configured` | `[]` | Ordered array of importable `module:function` names. |
 
-Use the settings appropriate to the selected model; changing the model name
-alone does not automatically update `dimensions` or `max_input_tokens`. The
-database rejects a change in vector dimensions: use a new database or migrate
-the existing one. Changes to chunk settings, hooks or model configuration
-cause existing notes to be reprocessed on the next ingest.
+Use settings appropriate to the selected model; changing the model name alone
+does not update `dimensions` or `max_input_tokens`. The database rejects
+incompatible vector dimensions. Changes to chunk settings, hooks, or model
+configuration cause existing notes to be reprocessed on the next ingest.
 
-## Metadata hooks
+## Ingest metadata hooks
 
 YAML frontmatter is loaded into a metadata dictionary. Configured hooks run in
 order after parsing and receive a `DocumentContext` and the mutable dictionary.
@@ -40,24 +39,20 @@ trusted Python code, not sandboxed plugins.
 The built-in hook can be enabled as follows:
 
 ```toml
-[hooks]
-configured = ["matlock2_ingest.hooks:project_id_from_path"]
+[ingest.hooks]
+configured = ["matlock_ingest.hooks:project_id_from_path"]
 ```
-
-Existing configuration using `matlock2.hooks:project_id_from_path` continues
-to work through a compatibility shim; use the `matlock2_ingest` path for new
-configurations.
 
 For `projects/orion/decision.md`, it sets `project_id` to `orion` if the
 frontmatter did not already specify it, even as null. It does not write to the
-source file. For a separate example hook that replaces null values, see the
+source file. For another example hook, see the
 [fictional vault example](example.md).
 
-To supply your own, place an importable module on the Python import path and
-configure `your_module:your_function`. For example:
+To supply a hook, place an importable module on the Python path and configure
+`your_module:your_function`. For example:
 
 ```python
-from matlock2_ingest.models import DocumentContext
+from matlock_ingest.models import DocumentContext
 
 
 def enrich(context: DocumentContext, metadata: dict[str, object]) -> None:
@@ -66,15 +61,24 @@ def enrich(context: DocumentContext, metadata: dict[str, object]) -> None:
 ```
 
 If a hook raises an exception or leaves invalid metadata, that note fails
-ingestion. Hook and embedding error details are intentionally redacted in the
-recorded error message. See [operations](operations.md).
+ingestion. Hook and embedding error details are redacted in the recorded error
+message. See [operations](operations.md).
 
-## Secret scanner settings
+## Audit settings
 
-The optional `[secret_scanner]` table configures `matlock2-scanner`, which reads
-the same `[ingest]` settings (database path and busy timeout). Its keys, prompt
-template, and the six scanner hook slots are described in the
-[secret scanner guide](secret-scanner.md). These are separate from the ingest
-metadata hooks above, and the ingestion command ignores the table.
-The shared SQLite schema and connection boundary is documented in the
-[index contract](index-contract.md).
+The optional `[audit]` table configures `matlock audit` to read the shared
+index and store scan annotations. It uses `[ingest]`'s database path and busy
+timeout. Audit configuration, including LLM settings and audit hooks, is
+described in the [secret-audit guide](secret-scanner.md). Install `.[audit]`
+for heuristic scanning; add `.[audit-llm]` for the local LLM layer.
+
+MCP host configuration remains the responsibility of the embedding host.
+Matlock's importable MCP tools do not create or configure a server.
+
+## Existing configuration and state
+
+Matlock uses `matlock.toml` and `.matlock/` by default. It does not discover,
+move, or migrate an older config or database automatically. Before reusing an
+older configuration, manually move its settings into `[ingest]` (including
+the nested chunking, embedding, and hook tables) and rename `[secret_scanner]`
+to `[audit]`. Keep a backup of any config and database before changing paths.

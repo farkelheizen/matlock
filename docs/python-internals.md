@@ -5,7 +5,7 @@ stable extension API except where a hook contract is documented.
 
 ## Data structures
 
-All records below are defined in `src/matlock2_ingest/models.py`. `frozen=True`
+All records below are defined in `src/matlock_ingest/models.py`. `frozen=True`
 prevents field reassignment but does not deep-freeze mutable values.
 
 | Type | Fields and role |
@@ -42,7 +42,7 @@ The ingestion engine is responsible for closing its database through the CLI;
 independent callers using `Database` should use its context manager or close
 it explicitly.
 
-The ingestion package is `matlock2_ingest`; its console command is
-`matlock-ingest`. The old hook import path is retained as a compatibility shim.
-`matlock2_index` defines the SQLite schema-version and connection contract
-shared with the scanner and MCP consumer. See the [index contract](index-contract.md).
+The ingestion package is `matlock_ingest`; the unified command is `matlock`
+and can also be run as `python -m matlock`. `matlock_index` defines the SQLite
+schema-version and connection contract shared with audit and MCP consumers.
+See the [index contract](index-contract.md).

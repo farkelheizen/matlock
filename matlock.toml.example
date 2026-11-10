@@ -1,0 +1,31 @@
+[ingest]
+vault_path = "./my-markdown-vault"
+database_path = "./.matlock/index.sqlite3"
+busy_timeout_ms = 5000
+reconcile_interval_seconds = 300
+
+[ingest.hooks]
+configured = ["matlock_ingest.hooks:project_id_from_path"]
+
+[ingest.chunking]
+target_tokens = 400
+overlap_tokens = 50
+
+[ingest.embedding]
+model = "BAAI/bge-small-en-v1.5"
+dimensions = 384
+max_input_tokens = 512
+
+# Optional: settings for `matlock audit` (see docs/secret-scanner.md).
+# [audit]
+# enabled_layers = ["heuristic", "llm"]
+# interval_seconds = 60
+# max_chunk_chars = 4000
+# max_document_chars = 50000
+#
+# [audit.llm]
+# model_id = "Qwen/Qwen2.5-1.5B-Instruct"
+# prompt_file = "./prompt.txt"
+#
+# [audit.hooks]
+# pre_scan = "my_hooks:skip_public"

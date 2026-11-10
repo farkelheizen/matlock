@@ -9,11 +9,11 @@ import pytest
 
 pytest.importorskip("detect_secrets")
 
-from matlock2_ingest.config import load_config
-from matlock2_ingest.database import Database
-from matlock2_ingest.ingest import IngestionEngine
-from matlock2_scanner.cli import main
-from tests.scanner_helpers import FakeAuditor, make_engine
+from matlock_ingest.config import load_config
+from matlock_ingest.database import Database
+from matlock_ingest.ingest import IngestionEngine
+from matlock_audit.cli import main
+from tests.audit_helpers import FakeAuditor, make_engine
 from tests.test_ingest import TestEmbedder
 
 EXAMPLE = Path(__file__).resolve().parents[1] / "examples" / "secret-scanner"
@@ -23,8 +23,8 @@ FAKE_AWS_KEY = "AKIAIOSFODNN7EXAMPLE"
 @pytest.fixture
 def example(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     target = tmp_path / "example"
-    shutil.copytree(EXAMPLE, target, ignore=shutil.ignore_patterns(".matlock2", "__pycache__"))
-    config_path = target / "matlock2.toml"
+    shutil.copytree(EXAMPLE, target, ignore=shutil.ignore_patterns(".matlock", "__pycache__"))
+    config_path = target / "matlock.toml"
     config_path.write_text(
         config_path.read_text().replace("dimensions = 384", "dimensions = 2"), encoding="utf-8"
     )
@@ -108,7 +108,7 @@ def test_every_hook_and_custom_prompt_are_exercised(example: Path) -> None:
     assert all("{content}" not in prompt for prompt in auditor.prompts)
 
     # post_scan: content-free report of risky items
-    lines = [json.loads(line) for line in Path(".matlock2/secret-scan-report.jsonl").read_text().splitlines()]
+    lines = [json.loads(line) for line in Path(".matlock/secret-scan-report.jsonl").read_text().splitlines()]
     assert lines and all(entry["risk_score"] >= 5 for entry in lines)
     assert FAKE_AWS_KEY not in json.dumps(lines)
 
@@ -128,7 +128,7 @@ def test_example_runs_in_heuristic_only_mode_via_cli(
 
 def test_example_hook_functions_directly(example: Path) -> None:
     import secret_scan_hooks as hooks
-    from matlock2_scanner.models import ScanItem, ScanResult
+    from matlock_audit.models import ScanItem, ScanResult
 
     item = ScanItem("chunk", "0" * 64, "a" * 3000, ("x.md",), (0,), {"x.md": {}})
     assert hooks.skip_public(item) is True

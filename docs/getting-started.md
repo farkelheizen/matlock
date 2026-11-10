@@ -2,56 +2,56 @@
 
 ## Install
 
-Open a terminal in the Git repository root, the directory containing
-`pyproject.toml`. On macOS or Linux:
+From the repository root, the directory containing `pyproject.toml`:
 
 ```sh
-cd /path/to/matlock2
 python3 -m venv .venv
 . .venv/bin/activate
 python -m pip install -e .
 ```
 
-If you already created the repository's `.venv`, activate it instead of
-creating it again. The local `docs_local` link is a separate documentation
-directory, not the repository root.
-
-Optional extras are installed the same way, for example
-`python -m pip install -e ".[mcp]"` for the [MCP search tools](mcp.md),
-`".[scanner]"` for the heuristic [secret scanner](secret-scanner.md), and
-`".[scanner-llm]"` to add its local LLM layer.
-
 Python 3.11 or later is required. The first run that initializes the configured
-embedding model may need network access to download model files. Embedding
-inference runs locally. SQLite must support loading the required `sqlite-vec`
-extension.
+embedding model may download model files. Embedding inference runs locally.
+SQLite must support loading the required `sqlite-vec` extension.
+
+Install optional features as needed:
+
+```sh
+python -m pip install -e '.[audit]'
+python -m pip install -e '.[audit,audit-llm]'
+python -m pip install -e '.[mcp]'
+```
+
+The `audit` extra installs the heuristic layer. Add `audit-llm` for the
+transformers and torch dependencies used by the local LLM layer.
 
 ## Configure and run
 
 From the repository root:
 
 ```sh
-cp matlock2.toml.example matlock2.toml
+cp matlock.toml.example matlock.toml
 ```
 
-Edit `matlock2.toml` to set `vault_path` to an existing directory containing
-Markdown and `database_path` to the desired SQLite file. The root
-`matlock2.toml` and `*.sqlite3` database files are ignored by Git; do not put
-secrets in tracked examples.
+Edit `[ingest]` in `matlock.toml` to set `vault_path` to an existing directory
+and `database_path` to the desired SQLite file. Chunking, embedding, and ingest
+hooks are nested under `[ingest.chunking]`, `[ingest.embedding]`, and
+`[ingest.hooks]`. Optional audit settings use `[audit]`.
 
 ```sh
-matlock-ingest --config matlock2.toml check-config
-matlock-ingest --config matlock2.toml ingest
-matlock-ingest --config matlock2.toml watch
+matlock --config matlock.toml check-config
+matlock --config matlock.toml ingest
+matlock --config matlock.toml watch
 ```
 
-Run `ingest` for one pass (`scan` remains an alias), or `watch` to keep the
-process running. Stop the watcher with Ctrl-C. A watcher starts with an ingest
-pass and periodically repeats it.
-See [configuration](configuration.md) and [operations](operations.md) for
-options and behavior.
+The `matlock` command also works as `python -m matlock`. `ingest` performs one
+pass; `watch` repeats ingestion until interrupted. `--config` goes before the
+command. Paths in the TOML file are resolved relative to that file.
 
-To try this without pointing at your own notes, follow the
-[fictional second-brain example](example.md).
+The default config and database paths are `matlock.toml` and
+`.matlock/index.sqlite3`. Existing configuration and `.matlock2/` state are
+left untouched; Matlock does not migrate or move them automatically.
 
-To scan indexed content for secrets, see the [secret scanner](secret-scanner.md).
+For a self-contained ingestion walkthrough, see the
+[fictional second-brain example](example.md). To audit indexed content, see the
+[audit guide](secret-scanner.md).

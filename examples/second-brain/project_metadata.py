@@ -1,6 +1,6 @@
 """Example metadata enrichment hook for project notes."""
 
-from matlock2_ingest.models import DocumentContext
+from matlock_ingest.models import DocumentContext
 
 
 def project_id_from_path(context: DocumentContext, metadata: dict[str, object]) -> None:

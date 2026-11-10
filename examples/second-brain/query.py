@@ -9,7 +9,7 @@ from pathlib import Path
 
 import sqlite_vec
 
-from matlock2_ingest.embedding import FastEmbedder
+from matlock_ingest.embedding import FastEmbedder
 
 
 def main() -> None:
@@ -17,7 +17,7 @@ def main() -> None:
     parser.add_argument(
         "--database",
         type=Path,
-        default=Path(__file__).parent / ".matlock2" / "index.sqlite3",
+        default=Path(__file__).parent / ".matlock" / "index.sqlite3",
         help="Path to the populated example database",
     )
     args = parser.parse_args()
