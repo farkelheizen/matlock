@@ -123,7 +123,7 @@ def create_server(database: Path, *, enable_semantic: bool = False) -> FastMCP:
         base_url=base_url.rstrip("/"),
         jwt_signing_key=signing_key,
     )
-    server = FastMCP("Matlock2 Google example", auth=auth)
+    server = FastMCP("Matlock2 Google Example 2026-11-08-a", auth=auth)
     register_tools(server, create_search_service(database, enable_semantic))
     return server
 
