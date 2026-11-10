@@ -162,6 +162,17 @@ do not commit credentials:
 | `MATLOCK2_GOOGLE_CLIENT_SECRET` | Google OAuth client secret. |
 | `MATLOCK2_GOOGLE_ALLOWED_EMAILS` | Comma-separated allowlist of Google email addresses. |
 
+For example, export these variables in the shell that starts the host, using
+your own values:
+
+```sh
+export MATLOCK2_MCP_BASE_URL="https://<public-origin>"
+export MATLOCK2_MCP_SIGNING_KEY="<random-secret-at-least-32-characters>"
+export MATLOCK2_GOOGLE_CLIENT_ID="<google-oauth-client-id>"
+export MATLOCK2_GOOGLE_CLIENT_SECRET="<google-oauth-client-secret>"
+export MATLOCK2_GOOGLE_ALLOWED_EMAILS="<allowed-account@example.com>"
+```
+
 Configure the Google OAuth client with `https://<public-origin>/auth/callback`
 as an authorized redirect URI. Point a tunnel or reverse proxy at
 `http://127.0.0.1:8081`, and keep `MATLOCK2_MCP_BASE_URL` set to the HTTPS

@@ -38,9 +38,9 @@ Old configuration and state are not migrated automatically.
 ## MCP integration
 
 Matlock supplies importable search tools for registration on an existing,
-host-owned FastMCP application. It does not ship a supported MCP server. One
-small runnable stdio host is retained solely as an embedding example; see
-[MCP integration](docs/mcp.md).
+host-owned FastMCP application, not a supported MCP service. Runnable stdio
+and Google-authenticated HTTP hosts demonstrate local tool registration and
+host configuration; see [MCP integration](docs/mcp.md).
 
 ## Tests and examples
 
