@@ -1,7 +1,9 @@
-# Matlock
+# Matlock 2.0.0
 
 Matlock is a modular Python application for indexing Markdown into SQLite,
 auditing indexed content, and providing composable search tools.
+
+Matlock is licensed under the [Apache License 2.0](LICENSE).
 
 ## Install
 

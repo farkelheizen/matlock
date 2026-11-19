@@ -28,6 +28,7 @@ not necessarily been published as a release.
 
 ### Added
 
+- Added the Apache 2.0 license and a private security reporting policy.
 - Added a `dsec` manifest for the Google OIDC MCP example that maps required
   `MATLOCK_*` variables to non-secret and secret declarations.
 - Shared `[ingest]` and `[audit]` configuration sections.
