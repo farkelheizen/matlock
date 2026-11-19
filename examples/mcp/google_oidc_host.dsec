@@ -1,0 +1,8 @@
+# @schema: dsec/v1
+note | Matlock Google OIDC MCP host configuration for {{TARGET}}.
+source | matlock/mcp-google-oidc/{{TARGET}} | opt | Non-secret settings for the Google OIDC host
+var | MATLOCK_MCP_BASE_URL | str | | | Public HTTPS origin without path, query, or fragment
+var | MATLOCK_GOOGLE_CLIENT_ID | str | | | Google OAuth client ID
+secret | MATLOCK_MCP_SIGNING_KEY | str | matlock-{{TARGET}}-mcp-signing-key | Random signing key (at least 32 characters)
+secret | MATLOCK_GOOGLE_CLIENT_SECRET | str | matlock-{{TARGET}}-google-client-secret | Google OAuth client secret
+secret | MATLOCK_GOOGLE_ALLOWED_EMAILS | str | matlock-{{TARGET}}-google-allowed-emails | Comma-separated allowlist of Google email addresses
