@@ -1,0 +1,16 @@
+[ingest]
+vault_path = "./vault"
+database_path = "./.matlock/index.sqlite3"
+reconcile_interval_seconds = 300
+
+[ingest.hooks]
+configured = ["project_metadata:project_id_from_path"]
+
+[ingest.chunking]
+target_tokens = 400
+overlap_tokens = 50
+
+[ingest.embedding]
+model = "BAAI/bge-small-en-v1.5"
+dimensions = 384
+max_input_tokens = 512
