@@ -1,50 +1,66 @@
-# Byte-compiled / optimized / DLL files
+# Byte-compiled / optimized files
 __pycache__/
 *.py[cod]
 *$py.class
 
-# Distribution / packaging
-build/
-dist/
-*.egg-info/
-
 # Virtual environments
 .venv/
 venv/
+ENV/
+env/
 
-# Tool caches
+# Distribution / packaging
+build/
+dist/
+site/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# Test and coverage reports
 .pytest_cache/
-.mypy_cache/
-.ruff_cache/
+.tox/
+.nox/
 .coverage
 .coverage.*
+coverage.xml
 htmlcov/
 
-# Editors and OS files
-.DS_Store
+# Type checking and linting caches
+.mypy_cache/
+.dmypy.json
+.pyre/
+.ruff_cache/
+.hypothesis/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDE and editor files
 .idea/
 .vscode/
+*.swp
+*.swo
 
-# Local Matlock vault artifacts
-config.yaml
-config.yaml.*.bak
-*.db
-*.db-*
-*.sqlite
+# Operating system files
+.DS_Store
+Thumbs.db
+
+# Local-only requirements and notes
+/docs_local
+
+# Local database and configuration
+/.matlock/
+/.matlock2/
+examples/*/.matlock/
+examples/*/.matlock2/
+/matlock.toml
+/matlock2.toml
 *.sqlite3
-*.log
-_Matlock/
-
-# Matlock 
-docs_local
-docs_local/
-
-matlock.code-workspace
-
-search_docs/
-
-.github/agents/search-*.md
-
-.github/skills/*
-
-.github/skill-templates/*
+*.sqlite3-shm
+*.sqlite3-wal

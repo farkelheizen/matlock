@@ -1,49 +1,36 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "matlock"
-version = "0.9.1"
-description = "Pipeline-driven task extractor and report generator for Markdown second brains"
+version = "2.0.0"
+description = "Local Markdown indexing and modular SQLite search tools"
 readme = "README.md"
-license = "Apache-2.0"
-license-files = ["LICENSE"]
-authors = [
-    {name = "William Spratley"}
-]
-requires-python = ">=3.11,<4.0"
-keywords = ["markdown", "obsidian", "tasks", "productivity", "reports"]
-classifiers = [
-    "Development Status :: 3 - Alpha",
-    "Environment :: Console",
-    "Intended Audience :: End Users/Desktop",
-    "Operating System :: OS Independent",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3 :: Only",
-    "Topic :: Office/Business :: Scheduling",
-    "Topic :: Text Processing :: Markup :: Markdown"
-]
+requires-python = ">=3.11"
 dependencies = [
-    "marko (>=2.2.2,<3.0.0)",
-    "pytimeparse (>=1.1.8,<2.0.0)",
-    "python-frontmatter (>=1.1.0,<2.0.0)",
-    "pydantic (>=2.0.0,<3.0.0)",
-    "pyyaml (>=6.0.3,<7.0.0)",
-    "typer[all] (>=0.25.0,<0.26.0)",
-    "jinja2 (>=3.1.6,<4.0.0)",
-    "watchdog (>=6.0.0,<7.0.0)",
-    "fastembed (>=0.8.0,<0.9.0)",
-    "detect-secrets (>=1.5.0,<2.0.0)"
+    "fastembed>=0.7,<1",
+    "PyYAML>=6,<7",
+    "sqlite-vec>=0.1.6,<1",
+    "tokenizers>=0.21,<1",
+    "watchdog>=6,<7",
 ]
 
-[project.urls]
-Homepage = "https://github.com/farkelheizen/matlock"
-Repository = "https://github.com/farkelheizen/matlock.git"
-Issues = "https://github.com/farkelheizen/matlock/issues"
+[project.optional-dependencies]
+dev = ["pytest>=8,<9", "detect-secrets>=1.5,<2", "pydantic>=2,<3"]
+mcp = ["fastmcp>=2.14,<3"]
+audit = ["detect-secrets>=1.5,<2", "pydantic>=2,<3"]
+audit-llm = ["pydantic>=2,<3", "transformers>=4.56", "torch>=2.2"]
 
 [project.scripts]
-matlock = "matlock.cli:app"
+matlock = "matlock.cli:main"
 
-[tool.poetry.group.dev.dependencies]
-pytest = ">=8.0.0,<9.0.0"
+[tool.setuptools.packages.find]
+where = ["src"]
 
-[build-system]
-requires = ["poetry-core>=2.0.0,<3.0.0"]
-build-backend = "poetry.core.masonry.api"
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"

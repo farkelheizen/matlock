@@ -1,433 +1,68 @@
 # Matlock
 
-Pipeline-driven task extractor, report generator, and local search engine for Markdown second brains.
-
-Matlock walks an Obsidian/Markdown vault, extracts checkbox tasks, maps files to projects, calculates daily metrics, renders Jinja2 Markdown dashboards, and can build a local search index for human and machine query flows.
-
-## Requirements
-
-- Python 3.11+
-- Poetry 2.x
+Matlock is a modular Python application for indexing Markdown into SQLite,
+auditing indexed content, and providing composable search tools.
 
 ## Install
 
-```bash
-poetry install
+Python 3.11 or newer is required.
+
+```sh
+python -m venv .venv
+. .venv/bin/activate
+python -m pip install -e .
 ```
 
-This registers the `matlock` command in the Poetry virtual environment.
+Audit and MCP dependencies are optional. Install `.[audit]` for heuristic
+auditing, `.[audit,audit-llm]` to add the local LLM layer, and `.[mcp]` for
+the MCP search integration. The embedding model is downloaded on first use.
 
-See [SECURITY.md](SECURITY.md) for recommended separation between the public code repository and private vault data.
+## Configure and run
 
-## Quick Start
+Copy `matlock.toml.example` to `matlock.toml` and update its `[ingest]` paths.
+Ingestion settings live under `[ingest]`; optional audit settings live under
+`[audit]`.
 
-```bash
-# Run the full pipeline (sync → extract → projects map → metrics rollup → reports render)
-poetry run matlock pipeline run
-
-# Run full pipeline and do an opt-in project scan/merge first
-poetry run matlock pipeline run --discover-projects
-
-# Run full pipeline, then refresh the local search index
-poetry run matlock pipeline run --index-search
-
-# Or run each stage individually
-poetry run matlock sync
-poetry run matlock extract
-poetry run matlock secrets backfill
-poetry run matlock document read Notes/today.md
-poetry run matlock projects map
-poetry run matlock metrics rollup
-poetry run matlock reports render
-
-# Query project and task records directly from SQLite-backed metadata
-poetry run matlock projects query
-poetry run matlock projects query --text "alpha"
-poetry run matlock super-projects list
-poetry run matlock tasks query --checked --text "review"
-
-# Or build/query the local search index directly
-poetry run matlock search index
-poetry run matlock search query "database"
-printf '{"query": "database", "search_mode": "fts_only"}' | poetry run matlock search query --stdio
-
-# Or run the server daemon (watch vault continuously)
-poetry run matlock serve
-poetry run matlock serve --index-search --index-search-continuous
+```sh
+matlock --config matlock.toml check-config
+matlock --config matlock.toml ingest
+matlock --config matlock.toml watch
+matlock --config matlock.toml audit check-config
+matlock --config matlock.toml audit scan
 ```
 
-## Configuration
+The same CLI is available as `python -m matlock`. The default config is
+`./matlock.toml`; the default database location is `.matlock/index.sqlite3`.
+Old configuration and state are not migrated automatically.
 
-Matlock is configured via a `config.yaml` file (default: `./config.yaml`). Pass a custom path with `--config PATH` (or `-c PATH`) on any command.
+## MCP integration
 
-```yaml
-base_directory: /path/to/vault
-db_path: matlock.db
-output_directory: /path/to/vault/_Matlock
+Matlock supplies importable search tools for registration on an existing,
+host-owned FastMCP application, not a supported MCP service. Runnable stdio
+and Google-authenticated HTTP hosts demonstrate local tool registration and
+host configuration; see [MCP integration](docs/mcp.md).
 
-ignore_dirs:
-  - .obsidian
-  - _Matlock
+## Tests and examples
 
-debounce_seconds: 5
-
-headers:
-  header_text_maxlen: 200
-
-tasks:
-  task_text_maxlen: 500
-
-cache:
-  redacted_dir: ~/.matlock/cache/redacted
-
-task_attributes:
-  due_date:
-    type: date
-    alias: "📅"
-  act_comp_date:
-    type: date
-    alias: "✅"
-  priority:
-    type: domain
-    values:
-      low:
-        alias: "🔽"
-      medium:
-        alias: "🔼"
-      high:
-        alias: "⏫"
-  estimate:
-    type: time
-
-super_projects:
-  - id: work
-    title: Work
-    priority: high
-
-projects:
-  - id: backend_api
-    title: Backend API
-    super_project_id: work
-    home_file: Projects/Backend API.md
-    resources:
-      - type: DIRECTORY
-        path: Tech/Backend
-      - type: FILE
-        path: Projects/Backend API.md
+```sh
+python -m pip install -e '.[dev,mcp,audit]'
+pytest
 ```
 
-Secret safety behavior:
-
-- Parse records document-level secret detection state.
-- `secrets backfill` scans existing unknown-state tracked documents and can retry prior scanner-error rows.
-- Search indexing/query and the `document read` command redact unsafe content.
-- Legacy documents (unknown secret state) are scanned lazily and then persisted.
-- Redaction cache files are stored by hash under `cache.redacted_dir/<sha256[:2]>/<sha256[2:4]>/<sha256>.txt`, with backward-compatible reads for older flat cache files.
-
-Project `resources` control which files are associated with a project during `projects map`:
-
-- `type: DIRECTORY` matches every non-generated, non-deleted file under that directory.
-- `type: FILE` matches one exact relative path.
-
-Examples:
-
-```yaml
-projects:
-  - id: backend_api
-    title: Backend API
-    resources:
-      - type: DIRECTORY
-        path: Tech/Backend
-
-  - id: planning
-    title: Planning
-    resources:
-      - type: FILE
-        path: Projects/Planning.md
-```
-
-Notes:
-
-- Resource paths are relative to `base_directory`.
-- `DIRECTORY` matching is path-based, so `Tech/Backend` matches `Tech/Backend/api.md` but not `Tech/BackendExtra/api.md`.
-- A file may belong to multiple projects if it matches multiple resource rules.
-
-## Search
-
-Matlock Search is an optional local-first subsystem layered on top of the core pipeline.
-
-- `matlock search index` chunks active vault files, injects optional frontmatter context, and stores FTS plus embedding-backed search records in SQLite.
-- `matlock search query` supports human CLI output and strict `--stdio` JSON transport for editor and agent integrations.
-- `matlock documents query` provides paginated JSON document and chunk retrieval with named metadata filters.
-- `matlock pipeline run --index-search` runs indexing after the core pipeline.
-- `matlock serve --index-search --index-search-continuous` can do one startup indexing pass and continue polling for stale search work in the background.
-
-See [docs/matlock-search.md](docs/matlock-search.md) for the full search guide.
-
-## CLI Reference
-
-All commands accept `--config PATH` to override the default config location.
-
-### `matlock pipeline run`
-
-Run all pipeline stages in sequence, with optional `projects discover` pre-stage.
-
-```
-matlock pipeline run [--discover-projects] [--skip-rollup] [--force-sync] [--force-report] [--config PATH]
-```
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--discover-projects` | False | Run `projects discover --merge` before `sync` (opt-in) |
-| `--skip-rollup` | False | Skip Stage IV rollup (useful for mid-day runs) |
-| `--force-sync` | False | Re-hash every file regardless of stored hash |
-| `--force-report` | False | Regenerate all reports and delete stale generated files |
-| `--index-search` | False | Run search indexing after `reports render` completes (opt-in) |
-
-```bash
-poetry run matlock pipeline run
-poetry run matlock pipeline run --discover-projects
-poetry run matlock pipeline run --skip-rollup
-poetry run matlock pipeline run --force-sync
-poetry run matlock pipeline run --force-report
-poetry run matlock pipeline run --index-search
-```
-
----
-
-### `matlock sync`
-
-**Stage I.** Walk the vault, hash all Markdown files, update the `file` table, and flag changed files for re-parsing.
-
-```bash
-poetry run matlock sync
-poetry run matlock sync --force
-```
-
-### `matlock extract`
-
-**Stage II.** Extract tasks from all files flagged `needs_parsing = 1`.
-
-```bash
-poetry run matlock extract
-```
-
-### `matlock secrets backfill`
-
-Scan tracked files to populate or retry persisted secret-detection state.
-
-```bash
-poetry run matlock secrets backfill
-poetry run matlock secrets backfill --retry-errors
-```
-
-Behavior:
-
-- Default mode scans only active, non-generated tracked files with `has_secrets IS NULL`.
-- `--retry-errors` additionally rescans rows where `secret_detection_error IS NOT NULL`.
-- Missing/unreadable files are reported as skipped and retain existing state.
-- The command does not re-parse tasks, generate redaction cache files, or reindex search.
-
-### `matlock document read`
-
-Read one tracked document from the vault. Matlock rejects paths outside `base_directory`, untracked files, and files marked deleted. Files with detected secrets are served from the redacted cache.
-
-```bash
-poetry run matlock document read Notes/today.md
-poetry run matlock document read /absolute/path/inside/your/vault/Notes/today.md
-```
-
-### `matlock documents query`
-
-Return active, non-generated documents as a paginated JSON envelope. File results are the default; use chunk granularity for indexed chunk hits. Empty text uses metadata-only browsing, and content remains secret-safe.
-
-```bash
-poetry run matlock documents query
-poetry run matlock documents query --text "database" --search-mode fts_only
-poetry run matlock documents query --file-path /Notes/ --file-ext .md --attributes "status:eq:active"
-poetry run matlock documents query --modified ">=2026-01-01" --modified "<2026-02-01" --count-only
-```
-
-Named options are repeatable: values within one option are ORed and categories are ANDed. Use `--granularity chunk` and `--surrounding-chunks` for chunk details. `matlock search query` is deprecated for human use but its strict `--stdio` contract remains available during migration.
-
-### `matlock projects discover`
-
-Walk the vault and discover project and super-project definitions from frontmatter. This command does not require an initialized database.
-
-```bash
-poetry run matlock projects discover
-poetry run matlock projects discover --diff
-poetry run matlock projects discover --merge
-```
-
-### `matlock projects query`
-
-Return a paginated JSON envelope of project records: `{"total_matches": N, "returned_matches": N, "limit": N|null, "offset": N, "results": [...]}` (breaking change in 0.8.0 — this command previously returned a bare array and accepted free text positionally). Without `--text` it returns all projects; with `--text` it performs a case-insensitive literal substring match across all project columns and automatically unions in projects associated with matching indexed files. Field filters can be combined with AND semantics using flags such as `--project-id`, `--title`, `--home-file`, `--priority`, `--status`, and ISO date predicates. Supports `--limit`/`--offset`/`--count-only` (default limit from `queries.default_limit`) and `--min-score` for the automatic file-backed text-search path.
-
-```bash
-poetry run matlock projects query
-poetry run matlock projects query --text "alpha"
-poetry run matlock projects query --text "alpha" --search-mode hybrid --min-score 0.5
-poetry run matlock projects query --project-id backend --status active
-poetry run matlock projects query --limit 10 --offset 20
-poetry run matlock projects query --count-only
-```
-
-### `matlock super-projects list`
-
-Return every super-project row as a JSON list.
-
-```bash
-poetry run matlock super-projects list
-```
-
-### `matlock tasks query`
-
-Return a paginated JSON envelope of active, non-generated task rows: `{"total_matches": N, "returned_matches": N, "limit": N|null, "offset": N, "results": [...]}` (breaking change in 0.8.0 — this command previously returned a bare array and used `--task-text`). Supports repeatable `--due-date`, `--est-comp-date`, and `--act-comp-date` predicates, `--checked/--unchecked`, `--text`, `--headers`, `--attributes`, repeatable structured `--attribute-filter PATH:OP:VALUE` (JSON-path filtering against `task.attributes`), `--project-id`, and `--super-project-id` filters, plus `--limit`/`--offset`/`--count-only` (default limit from `queries.default_limit`).
-
-```bash
-poetry run matlock tasks query
-poetry run matlock tasks query --checked --text "review"
-poetry run matlock tasks query --project-id backend --due-date ">=2026-01-01"
-poetry run matlock tasks query --attribute-filter "owner:eq:ops"
-poetry run matlock tasks query --limit 10 --offset 20 --count-only
-```
-
-### `matlock projects map`
-
-**Stage III.** Rebuild the `project`, `super_project`, and `file_project` tables from `config.yaml`. Always a full rebuild.
-
-```bash
-poetry run matlock projects map
-```
-
-### `matlock metrics rollup`
-
-**Stage IV.** Calculate and persist daily metrics for the previous day (or a given date). Designed for nightly use; idempotent.
-
-```bash
-poetry run matlock metrics rollup
-poetry run matlock metrics rollup --date 2026-04-20
-```
-
-### `matlock reports render`
-
-**Stage V.** Render Jinja2 Markdown dashboards into `output_directory`.
-
-```bash
-poetry run matlock reports render
-poetry run matlock reports render --target projects
-poetry run matlock reports render --project-id backend_api
-```
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--target` | `all` | One of: `all`, `dashboard`, `projects`, `history` |
-| `--project-id ID` | None | Regenerate a single project page |
-
-`--target projects` regenerates both project pages and super-project pages. There is no separate `super-projects` target in the current CLI.
-
----
-
-### `matlock serve`
-
-Run a persistent daemon that monitors the vault in real time and orchestrates the pipeline automatically.
-
-```
-matlock serve [--debounce SECONDS] [--discover-projects] [--force-sync] [--force-report] [--skip-rollup] [--index-search] [--index-search-continuous] [--config PATH]
-```
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--debounce SECONDS` | From config (`debounce_seconds`) | Idle window before triggering `report` after file changes |
-| `--discover-projects` | `False` | Run `projects discover --merge` once at startup before the watcher starts |
-| `--force-sync` | `False` | Run a full forced sync+parse once at startup before the watcher starts |
-| `--force-report` | `False` | Run a full forced report once at startup (after any startup sync) |
-| `--skip-rollup` | `False` | Skip rollup in the nightly scheduled job |
-| `--index-search` | `False` | Run search indexing once at startup before the watcher starts |
-| `--index-search-continuous` | `False` | Continuously poll for stale search work in the background |
-
-Three integrated triggers:
-
-1. **File Watcher** — on create/modify/delete under `base_directory`: runs `sync` + `parse`, marks affected project(s) dirty.
-2. **Debouncer** — after `debounce_seconds` of idle time, runs `report` for all dirty projects.
-3. **Scheduler** — at 00:01 each night: runs `rollup` then a full `report` rebuild.
-
-```bash
-poetry run matlock serve
-poetry run matlock serve --debounce 10
-poetry run matlock serve --force-sync --force-report
-poetry run matlock serve --skip-rollup
-poetry run matlock serve --index-search --index-search-continuous
-```
-
-Press `Ctrl+C` for a clean shutdown.
-
-## Pipeline Overview
-
-```
-Vault (Markdown files)
-        │
-        ▼
-   Stage I: sync          ── file table (hash, needs_parsing)
-        │
-        ▼
-  Stage II: extract       ── task table (checkbox tasks)
-        │
-        ▼
- Stage III: projects map  ── project / super_project / file_project tables
-        │
-        ▼
-  Stage IV: metrics rollup ── daily_metric table
-        │
-        ▼
-  Stage V: reports render ── Markdown dashboards written to output_directory
-```
-
-## Project Layout
-
-```text
-matlock/
-    cli.py              ← Typer CLI entrypoint
-    config.py           ← MatlockConfig (Pydantic v2)
-    db.py               ← SQLite connection, schema, CRUD helpers
-    server.py           ← Server daemon (watcher, debouncer, scheduler)
-    stages/
-        sync.py
-        parse.py
-        map_projects.py
-        rollup.py
-        report.py
-    templates/          ← Jinja2 Markdown templates (.md.j2)
-docs/
-    matlock-cli.md
-  matlock-configuration.md
-  matlock-data-model.md
-  matlock-high-level-design.md
-  matlock-search.md
-    matlock-pipeline-specification.md
-    roadmap/
-        index.md
-tests/
-pyproject.toml
-config.yaml             ← your local config (not committed)
-```
-
-## Documentation
-
-- [docs/matlock-search.md](docs/matlock-search.md) — search indexing, query modes, STDIO transport, and server/search orchestration.
-- [docs/matlock-cli.md](docs/matlock-cli.md) — full CLI reference including document, query, and search commands.
-- [docs/matlock-configuration.md](docs/matlock-configuration.md) — `config.yaml` schema, including the `search` block.
-- [docs/matlock-data-model.md](docs/matlock-data-model.md) — SQLite search tables plus request/response model contracts.
-- [docs/matlock-pipeline-specification.md](docs/matlock-pipeline-specification.md) — core pipeline stages and optional search indexing hooks.
-- [docs/matlock-high-level-design.md](docs/matlock-high-level-design.md) — architecture overview and execution modes.
-
-## Development
-
-```bash
-# Run all tests
-poetry run pytest
-
-# Run a specific test file
-poetry run pytest tests/test_cli_run_all.py -v
-```
+Tests use temporary databases and synthetic Markdown files. Set
+`MATLOCK_TEST_VAULT` to a local test corpus to enable the optional integration
+test.
+
+- [Getting started](docs/getting-started.md)
+- [Configuration and hooks](docs/configuration.md)
+- [Database and troubleshooting](docs/operations.md)
+- [Database structure](docs/database.md), [query examples](docs/queries.md),
+  and [Python internals](docs/python-internals.md)
+- [Shared SQLite index contract](docs/index-contract.md)
+- [Complete ingestion example](docs/example.md), with a fictional vault in
+  [`examples/second-brain/`](examples/second-brain/)
+- [Secret-audit guide](docs/secret-scanner.md) and
+  [example](docs/secret-scanner-example.md), with a vault in
+  [`examples/secret-scanner/`](examples/secret-scanner/)
+- [MCP integration](docs/mcp.md)
+- [Changelog](docs/CHANGELOG.md)
