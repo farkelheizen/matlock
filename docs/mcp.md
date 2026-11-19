@@ -173,6 +173,16 @@ export MATLOCK_GOOGLE_CLIENT_SECRET="<google-oauth-client-secret>"
 export MATLOCK_GOOGLE_ALLOWED_EMAILS="<allowed-account@example.com>"
 ```
 
+If you use `dsec`, this repository includes
+[`examples/mcp/google_oidc_host.dsec`](../examples/mcp/google_oidc_host.dsec),
+which maps the same required variables to non-secret `var` entries and
+`secret` entries:
+
+```sh
+dsec init examples/mcp/google_oidc_host.dsec -t dev
+dsec run examples/mcp/google_oidc_host.dsec -t dev -- python examples/mcp/google_oidc_host.py
+```
+
 Configure the Google OAuth client with `https://<public-origin>/auth/callback`
 as an authorized redirect URI. Point a tunnel or reverse proxy at
 `http://127.0.0.1:8081`, and keep `MATLOCK_MCP_BASE_URL` set to the HTTPS

@@ -28,6 +28,8 @@ not necessarily been published as a release.
 
 ### Added
 
+- Added a `dsec` manifest for the Google OIDC MCP example that maps required
+  `MATLOCK_*` variables to non-secret and secret declarations.
 - Shared `[ingest]` and `[audit]` configuration sections.
 - Optional `audit` and `audit-llm` extras, keeping audit and local-LLM
   dependencies out of ingestion-only use.
